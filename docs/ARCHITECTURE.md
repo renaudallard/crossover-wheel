@@ -105,7 +105,7 @@ include/t150/     the contracts, portable, compiled and tested on Linux
   proto.h           the DLL to daemon wire protocol
 src/probe/        the Phase 0 measurement tools, macOS only
 tests/            what CI can run without a Mac or a wheel
-docs/             PROTOCOL.md, PROBES.md, this file
+docs/             HANDOFF.md, RESEARCH.md, PROBES.md, PROTOCOL.md, this file
 ```
 
 ## Status

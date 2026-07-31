@@ -1,4 +1,4 @@
-# t150ffb - force feedback for the Thrustmaster T150 under CrossOver
+# crossover-wheel - force feedback for the Thrustmaster T150 under CrossOver
 #
 # Copyright (c) 2026 Renaud Allard
 # SPDX-License-Identifier: BSD-2-Clause

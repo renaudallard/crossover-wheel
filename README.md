@@ -1,4 +1,4 @@
-# t150ffb
+# crossover-wheel
 
 Force feedback for the **Thrustmaster T150** in games running under
 **CrossOver** on macOS, with nothing installed system wide: no kext, no
@@ -9,6 +9,12 @@ extension approval.
 > shared headers and the build exist. The project is deliberately gated on
 > one experiment, described in [`docs/PROBES.md`](docs/PROBES.md), because
 > if it fails nothing else here is worth writing.
+
+**Picking this up?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first. It is
+written for someone starting with no context: what is decided, what is
+verified, what is still unknown, and what to build in what order.
+[`docs/RESEARCH.md`](docs/RESEARCH.md) is the evidence behind every claim,
+including the routes that were investigated and are dead.
 
 ## Why this exists
 
