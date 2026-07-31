@@ -98,6 +98,70 @@
 
 #define T150_OP_GAIN		0x43u	/* [0x43, gain], one byte, not two */
 
+/*
+ * Force feedback packets. An effect uploads as ff_first, then ff_update,
+ * then ff_commit, and is started or stopped by a separate control packet.
+ * Source: scarburato/t150_driver hid-t150/forcefeedback.{c,h}. See
+ * docs/PROTOCOL.md for the field-by-field layouts.
+ */
+#define T150_FF_FIRST_LEN	11u
+#define T150_FF_COMMIT_LEN	15u
+#define T150_FF_CONTROL_LEN	4u
+
+/* ff_first byte 0, the effect class. Constant and periodic share a code. */
+#define T150_FF_FIRST_CONSTANT	0x02u
+#define T150_FF_FIRST_PERIODIC	0x02u
+#define T150_FF_FIRST_CONDITION	0x05u
+
+/* ff_first trailing constants, unexplained by the driver. */
+#define T150_FF_FIRST_F2	0x46u
+#define T150_FF_FIRST_F3	0x54u
+
+/* ff_update byte 0, a different class encoding from ff_first. */
+#define T150_FF_UPDATE_CONSTANT		0x03u
+#define T150_FF_UPDATE_PERIODIC		0x04u
+#define T150_FF_UPDATE_CONDITION	0x05u
+
+/* ff_update total length, which varies with the class. */
+#define T150_FF_UPDATE_LEN_CONSTANT	4u
+#define T150_FF_UPDATE_LEN_PERIODIC	8u
+#define T150_FF_UPDATE_LEN_CONDITION	11u
+
+/* ff_commit byte 0, and its endless-duration marker. */
+#define T150_FF_COMMIT_F0	0x01u
+#define T150_FF_LENGTH_INFINITE	0xffffu
+
+/*
+ * ff_commit effect type codes. The driver implements no square or triangle
+ * and declares no code for either. The codes are contiguous around the
+ * periodics, so 0x4020, 0x4021 and 0x4025 may be the missing waveforms, but
+ * that is a guess and is not used until hardware confirms it.
+ */
+#define T150_FF_TYPE_CONSTANT	0x4000u
+#define T150_FF_TYPE_SINE	0x4022u
+#define T150_FF_TYPE_SAW_UP	0x4023u
+#define T150_FF_TYPE_SAW_DOWN	0x4024u
+#define T150_FF_TYPE_SPRING	0x4040u
+#define T150_FF_TYPE_DAMPER	0x4041u
+
+/* Control packet: [0x41, slot, mode, times]. There is no erase packet. */
+#define T150_FF_OP_CONTROL	0x41u
+#define T150_FF_CTRL_PLAY	0x41u
+#define T150_FF_CTRL_STOP	0x00u
+
+/* The two slot keys that correlate an effect's three upload packets. */
+static inline uint8_t
+t150_ff_pk_id0(unsigned int slot)
+{
+	return (uint8_t)(slot * 0x1cu + 0x1cu);
+}
+
+static inline uint8_t
+t150_ff_pk_id1(unsigned int slot)
+{
+	return (uint8_t)(slot * 0x1cu + 0x0eu);
+}
+
 /* Rotation range accepted by the firmware. Values below the minimum are
  * capped by the wheel itself. */
 #define T150_RANGE_MIN		270u

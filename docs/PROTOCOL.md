@@ -119,30 +119,96 @@ Rotation range is clamped by the firmware below 270 degrees. The scaling in
 ## Force feedback upload
 
 Not yet implemented here. Recorded now so the work does not have to be
-re-derived.
+re-derived. Every field below is transcribed from `t150_driver`'s
+`hid-t150/forcefeedback.h` structures and the functions in
+`hid-t150/forcefeedback.c` that fill them. All structures are `__packed` and
+every multi-byte field is little-endian.
 
-Each effect uploads as three interrupt OUT packets:
+Each effect uploads as three packets, sent on the interrupt OUT endpoint in
+this order. `slot` below is the driver's `effect->id`.
 
-1. `ff_first`, 11 bytes, opcode `0xF0`: envelope and slot keys. Carries
-   attack length and level, fade length and level, and two slot-derived
-   markers, where `pk_id0 = slot * 0x1C + 0x1C`.
-2. `ff_update`, 4 to 8 bytes, the effect-class parameters.
-   - `0x03` constant: one `int8` level.
-   - `0x04` periodic: magnitude, offset, phase, period
-     (`int8`, `int8`, `uint8`, `uint16` LE).
-   - `0x05` condition: right and left coefficient, centre, deadband, right
-     and left saturation.
-3. `ff_commit`, 15 bytes: correlates the first two through `pk_id0`, and
-   declares the effect type code, duration and start delay. Type codes:
-   `0x4000` constant, `0x4022` sine, `0x4023` sawtooth up, `0x4024` sawtooth
-   down, `0x4040` spring, `0x4041` damper.
-
-An effect control packet then starts or stops it:
+**1. `ff_first`, 11 bytes.** Envelope and the first slot key.
 
 ```
-[0x60, slot, control, repeats]
-// control: 0x00 stop, 0x01 play, 0x41 play and loop
+f0  pk_id0  f1  attack_length:u16  attack_level  fade_length:u16  fade_level  f2  f3
 ```
+
+`f0` is the effect class, not a fixed opcode: `0x02` for constant and for
+periodic, `0x05` for spring and damper. `f1` is 0, `f2` is `0x46` and `f3` is
+`0x54`, all three unexplained by the driver. `pk_id0 = slot * 0x1C + 0x1C`.
+Lengths are milliseconds. The driver's own comment marks the two level fields
+as wrong, and it fills `fade_length` from the attack length, which is a bug in
+that driver and must not be copied.
+
+**2. `ff_update`, 4, 8 or 11 bytes.** The effect-class parameters.
+
+```
+class  pk_id1  f1  <class-specific payload>
+```
+
+`f1` is 0 and `pk_id1 = slot * 0x1C + 0x0E`. The class byte here uses a
+different set from `ff_first`:
+
+| class | payload | bytes |
+| --- | --- | --- |
+| `0x03` constant | `level:i8` | 4 |
+| `0x04` periodic | `magnitude:i8 offset:i8 phase:u8 period:u16` | 8 |
+| `0x05` condition | `right_coeff:i8 left_coeff:i8 center:i16 deadband:i16 right_sat:u8 left_sat:u8` | 11 |
+
+**3. `ff_commit`, 15 bytes.** Correlates the other two through both slot keys
+and declares the effect type, duration and start delay.
+
+```
+f0  id  effect_type:u16  length:u16  f1:u16  f2  pk_id1  f3  pk_id0  f4  delay  f5
+```
+
+`f0` is `0x01`, `id` is the slot, and `f1` through `f5` are 0. `length` is the
+duration in milliseconds, with `0xFFFF` meaning endless. `delay` is a single
+byte holding the *high* byte of the start delay in milliseconds.
+
+| `effect_type` | Effect |
+| --- | --- |
+| `0x4000` | constant |
+| `0x4022` | sine |
+| `0x4023` | sawtooth up |
+| `0x4024` | sawtooth down |
+| `0x4040` | spring |
+| `0x4041` | damper |
+
+The codes are contiguous around the periodics, so `0x4020`, `0x4021` and
+`0x4025` may well be the waveforms the Linux driver never implemented. That is
+a guess, and `probe_setreport -x` can settle it in a minute.
+
+**Effect control**, 4 bytes, starts or stops an uploaded effect:
+
+```
+[0x41, slot, mode, times]
+// mode: 0x41 play, 0x00 stop
+// times: repeat count when playing, 0x01 when stopping
+```
+
+There is no erase packet. The driver's `t150_ff_erase()` sends nothing and
+just frees the slot, having observed that the Windows driver does the same.
+
+### Converting DirectInput units to the wire
+
+The driver converts from Linux `ff_effect` units. Ours arrive in DirectInput
+units instead, so both are recorded here; the divisors are the wheel's, the
+input ranges are not.
+
+| Field | From Linux `ff_effect` | Wire range |
+| --- | --- | --- |
+| periodic magnitude, offset | `value >> 8` | `int8` |
+| periodic phase | `phase / ((360 * 100) / 0xFF)` | 0..255 = 0..360 degrees |
+| periodic period | milliseconds, unscaled | `uint16` |
+| constant level | direction-projected, then `/ 0x01FF` | `int8` |
+| condition coefficients | `/ 0x147` | -100..+100 |
+| condition centre | `/ (0x7FFF / 0x01F4)` | -500..+500 |
+| condition deadband | `/ (0xFFFF / 0x03E8)` | 0..1000 |
+| spring saturation | `/ 0x030C` | 0..0x54 |
+| damper saturation | `/ 0x028F` | 0..0x64 |
+| autocenter force | `round(force * 100 / 0xFFFF)` | 0..100 |
+| gain | low byte only | 0..255 |
 
 Note that `ff_commit` is 15 bytes while the declared output report is 14. If
 the HID framing turns out to be the one the firmware honours, the report id

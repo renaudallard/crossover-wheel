@@ -30,6 +30,18 @@ _Static_assert(T150_OUT_REPORT_ID == 0x0a, "declared output report id");
 _Static_assert(T150_OUT_REPORT_LEN == 14, "declared output report length");
 _Static_assert(T150_PROTO_HDR_LEN == 8, "wire header length");
 
+/* Force feedback packet shapes and type codes. */
+_Static_assert(T150_FF_FIRST_LEN == 11, "ff_first length");
+_Static_assert(T150_FF_COMMIT_LEN == 15, "ff_commit length");
+_Static_assert(T150_FF_UPDATE_LEN_CONDITION == 11, "ff_update condition length");
+_Static_assert(T150_FF_TYPE_CONSTANT == 0x4000, "constant type code");
+_Static_assert(T150_FF_TYPE_SINE == 0x4022, "sine type code");
+_Static_assert(T150_FF_TYPE_SAW_UP == 0x4023, "sawtooth up type code");
+_Static_assert(T150_FF_TYPE_SAW_DOWN == 0x4024, "sawtooth down type code");
+_Static_assert(T150_FF_TYPE_SPRING == 0x4040, "spring type code");
+_Static_assert(T150_FF_TYPE_DAMPER == 0x4041, "damper type code");
+_Static_assert(T150_FF_OP_CONTROL == 0x41, "effect control opcode");
+
 static int failures;
 
 static void
@@ -40,6 +52,24 @@ expect_range(unsigned int degrees, unsigned int want)
 	if (got != want) {
 		fprintf(stderr, "FAIL t150_range_arg(%u): want 0x%04x, "
 		    "got 0x%04x\n", degrees, want, got);
+		failures++;
+	}
+}
+
+static void
+expect_pk_id(unsigned int slot, unsigned int want0, unsigned int want1)
+{
+	unsigned int got0 = t150_ff_pk_id0(slot);
+	unsigned int got1 = t150_ff_pk_id1(slot);
+
+	if (got0 != want0) {
+		fprintf(stderr, "FAIL t150_ff_pk_id0(%u): want 0x%02x, "
+		    "got 0x%02x\n", slot, want0, got0);
+		failures++;
+	}
+	if (got1 != want1) {
+		fprintf(stderr, "FAIL t150_ff_pk_id1(%u): want 0x%02x, "
+		    "got 0x%02x\n", slot, want1, got1);
 		failures++;
 	}
 }
@@ -57,6 +87,19 @@ main(void)
 	/* Anything above the hardware maximum clamps rather than wrapping. */
 	expect_range(1081, 0xffff);
 	expect_range(65535, 0xffff);
+
+	/*
+	 * Slot keys. Both fields are one byte on the wire, so the high slots
+	 * wrap. That is inherited from the driver rather than chosen, and the
+	 * two families still never collide: 28k+28 and 28j+14 stay distinct
+	 * modulo 256 for every slot below T150_SLOT_MAX.
+	 */
+	expect_pk_id(0, 0x1c, 0x0e);
+	expect_pk_id(1, 0x38, 0x2a);
+	expect_pk_id(2, 0x54, 0x46);
+	expect_pk_id(8, 0xfc, 0xee);
+	expect_pk_id(9, 0x18, 0x0a);
+	expect_pk_id(T150_SLOT_MAX - 1, 0xc0, 0xb2);
 
 	if (failures != 0) {
 		fprintf(stderr, "header_check: %d failure(s)\n", failures);
