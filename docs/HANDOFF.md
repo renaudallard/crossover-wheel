@@ -98,6 +98,8 @@ Implemented and working:
 - `src/probe/` : three macOS measurement tools, see section 6.
 - `include/t150/` : wire constants, normalized effect model, wire protocol.
   Portable, compiled and self-tested on Linux.
+- `src/lib/encode.c` : M1, the wire encoders. Pure functions, golden-vector
+  tested by `tests/encode_check.c` on any machine.
 - `Makefile`, CI, `README.md`, man pages, docs.
 
 Not started: `t150d`, `t150-dinput8.dll`, `t150boot`, `t150ctl`.
@@ -150,15 +152,21 @@ Two traps:
 Each milestone ends in something checkable. Do not start the next until the
 previous one is verified.
 
-**M1. Encoder, on Linux.** Port the T150 settings and force feedback encoders
-to C from the byte layouts in [PROTOCOL.md](PROTOCOL.md), into `src/lib/`.
-Pure functions, no I/O, no allocation: the caller supplies the buffer and the
-function returns the byte count. The constants are already in `t150.h` and
-the slot key arithmetic is already tested, so this is transcription plus the
-DirectInput to wire conversions, which live here and nowhere else.
-*Done when:* `make test` is green with golden vectors asserting the exact
-byte sequences in PROTOCOL.md, including the `0x43` gain narrowing, the
-`0x40 0x11` range scaling and one full three-packet constant force upload.
+**M1. Encoder, on Linux. Done.** `src/lib/encode.c` and
+`include/t150/encode.h`. Pure functions, no I/O, no allocation: the caller
+supplies the buffer and the function returns the byte count, or 0 if it
+refuses. All DirectInput to wire conversion lives here and nowhere else,
+which is what keeps the DLL free of wheel knowledge and the daemon free of
+DirectInput knowledge.
+
+Read the three flagged conversions in [PROTOCOL.md](PROTOCOL.md) before
+trusting the output: the constant level ceiling, the envelope level scaling
+and the 256ms delay unit are derived or guessed rather than transcribed.
+`t150_effect_downgrade()` is here too, so M2 does not have to invent it.
+*Done:* `make test` is green with golden vectors for every packet, derived
+from PROTOCOL.md independently of the encoder, including the `0x43` gain
+narrowing, the `0x40 0x11` range scaling and full uploads of a constant, a
+periodic and both conditions.
 
 **M2. Protocol and daemon core, on Linux.** Implement
 `t150_proto_pack_*`/`unpack_*` from `include/t150/proto.h`, the socket

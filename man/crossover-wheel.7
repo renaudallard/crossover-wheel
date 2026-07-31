@@ -56,11 +56,18 @@ a reset on a graceful unacquire. A crashed game would therefore leave the
 last commanded force latched on the wheel. The daemon treats silence as a
 fault and stops every effect after half a second without traffic.
 .Sh STATUS
-Pre-implementation. Only the probe tools, the shared headers and the build
-exist. The project is gated on one measurement, whether an unprivileged
+Pre-implementation. The probe tools, the shared headers, the wire encoders
+and the build exist; the daemon, the proxy and the command line tools do not.
+The project is gated on one measurement, whether an unprivileged
 .Fn IOHIDDeviceSetReport
 physically moves the wheel, described in
 .Pa docs/PROBES.md .
+.Pp
+The encoders are pure functions checked by
+.Cm make test
+against golden vectors on any machine. That proves they emit the bytes
+.Pa docs/PROTOCOL.md
+describes, and nothing about whether the wheel honours them.
 .Sh SEE ALSO
 .Xr t150-probe 1
 .Pp

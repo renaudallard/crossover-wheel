@@ -27,6 +27,14 @@
 #define T150_DURATION_INFINITE	UINT32_MAX
 
 /*
+ * Full scale for the DirectInput units above. Magnitudes and coefficients
+ * run from -T150_DI_MAX to +T150_DI_MAX, saturations and gains from 0 to it.
+ * Directions are 0 to T150_DI_DIR_MAX exclusive.
+ */
+#define T150_DI_MAX		10000
+#define T150_DI_DIR_MAX		36000
+
+/*
  * Effect slots. The wheel addresses effects by slot; the DLL allocates them
  * and is responsible for keeping the mapping stable for the life of an
  * IDirectInputEffect.

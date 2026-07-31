@@ -71,8 +71,15 @@ in-bottle bus driver was considered and rejected.
 | --- | --- |
 | `probe_hid`, `probe_setreport`, `probe_ep0` | working, macOS only |
 | `include/t150/*.h` shared contracts | written, compiled and tested on Linux |
+| `src/lib/encode.c` wire encoders | written, golden-vector tested on Linux |
 | build, CI, docs, man pages | working |
 | `t150d`, `t150-dinput8.dll`, `t150boot`, `t150ctl` | not started |
+
+The encoders turn a normalized effect into the wheel's packets and are the
+only code that knows both DirectInput units and wheel units. They do no I/O,
+so `make test` checks every byte they produce against vectors derived from
+`docs/PROTOCOL.md`, on any machine. Whether the wheel agrees with those bytes
+is a separate question, and an open one.
 
 ## Building
 

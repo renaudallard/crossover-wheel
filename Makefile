@@ -26,10 +26,18 @@ endif
 BUILD	= build
 BIN	= $(BUILD)/bin
 OBJ	= $(BUILD)/obj
+LIBOBJ	= $(OBJ)/lib
 
 PROBE_NAMES  = probe_hid probe_setreport probe_ep0
 PROBE_BINS   = $(addprefix $(BIN)/,$(PROBE_NAMES))
 PROBE_COMMON = $(OBJ)/common.o
+
+# The portable half: no I/O, no platform calls, tested everywhere.
+LIB_NAMES = encode
+LIB_OBJS  = $(addprefix $(LIBOBJ)/,$(addsuffix .o,$(LIB_NAMES)))
+
+TEST_NAMES = header_check encode_check
+TEST_BINS  = $(addprefix $(BIN)/,$(TEST_NAMES))
 
 .PHONY: all probes test check strict clean help
 
@@ -56,20 +64,23 @@ ifneq ($(UNAME_S),Darwin)
 	@false
 endif
 
-$(BIN) $(OBJ):
+$(BIN) $(OBJ) $(LIBOBJ):
 	@mkdir -p $@
 
 $(OBJ)/%.o: src/probe/%.c | $(OBJ)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
+$(LIBOBJ)/%.o: src/lib/%.c | $(LIBOBJ)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
+
 $(BIN)/probe_%: $(OBJ)/probe_%.o $(PROBE_COMMON) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(FRAMEWORKS)
 
-$(BIN)/header_check: tests/header_check.c | $(BIN)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $< $(LDFLAGS)
+$(BIN)/%_check: tests/%_check.c $(LIB_OBJS) | $(BIN)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: $(BIN)/header_check
-	@$(BIN)/header_check
+test: $(TEST_BINS)
+	@for t in $(TEST_BINS); do "$$t" || exit 1; done
 
 check: test
 

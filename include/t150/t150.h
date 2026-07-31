@@ -144,6 +144,36 @@
 #define T150_FF_TYPE_SPRING	0x4040u
 #define T150_FF_TYPE_DAMPER	0x4041u
 
+/*
+ * Wire ranges for the effect parameter fields. Each is derived from the
+ * divisor t150_driver applies to a full scale Linux force feedback value,
+ * which is how that driver encodes the wheel's real limits: the condition
+ * ones land exactly on the maxima its own struct comments document, so the
+ * derivation is sound.
+ *
+ * The constant level stops at 64 while a periodic magnitude reaches 127,
+ * which is asymmetric and may simply be conservative. Only hardware can say,
+ * and probe_setreport can ask it directly.
+ */
+#define T150_FF_LEVEL_MAX	64u	/* constant, from /0x01ff on an int16 */
+#define T150_FF_PERIODIC_MAX	127u	/* periodic magnitude and offset, from >>8 */
+#define T150_FF_PHASE_MAX	0xffu	/* a full turn */
+#define T150_FF_COEFF_MAX	100u	/* from /0x147 */
+#define T150_FF_CENTER_MAX	500u	/* from /(0x7fff / 0x01f4) */
+#define T150_FF_DEADBAND_MAX	1000u	/* from /(0xffff / 0x03e8) */
+#define T150_FF_SAT_SPRING_MAX	0x54u	/* from /0x030c */
+#define T150_FF_SAT_DAMPER_MAX	0x64u	/* from /0x028f */
+
+/*
+ * Envelope levels are one byte each and the driver's own comment says its
+ * scaling of them is wrong, so full scale is a guess rather than a
+ * transcription. See docs/PROTOCOL.md.
+ */
+#define T150_FF_ENVELOPE_MAX	0xffu
+
+#define T150_GAIN_MAX		0xffu
+#define T150_AUTOCENTER_MAX	100u
+
 /* Control packet: [0x41, slot, mode, times]. There is no erase packet. */
 #define T150_FF_OP_CONTROL	0x41u
 #define T150_FF_CTRL_PLAY	0x41u

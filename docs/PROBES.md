@@ -139,10 +139,16 @@ across a close. Slot 0, a constant force at half level, endless:
 ./build/bin/probe_setreport -g 0x60         # moderate gain first
 ./build/bin/probe_setreport \
     -x "02 1c 00 00 00 00 00 00 00 46 54" \
-    -x "03 0e 00 40" \
+    -x "03 0e 00 20" \
     -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
     -x "41 00 41 01"
 ```
+
+The level byte is `0x20` because a constant appears to top out at `0x40`, not
+at `0x7f`: the driver divides a full scale value by `0x1ff`, which lands on
+64. A periodic magnitude reaches `0x7f`. If `0x40` and `0x7f` feel the same,
+the ceiling is real and `T150_FF_LEVEL_MAX` is right; if `0x7f` is stronger,
+raise it.
 
 **Hold the wheel or keep a hand on the plug.** A constant force with no
 duration limit does not stop on its own. Stop it with:

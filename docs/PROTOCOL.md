@@ -210,6 +210,29 @@ input ranges are not.
 | autocenter force | `round(force * 100 / 0xFFFF)` | 0..100 |
 | gain | low byte only | 0..255 |
 
+Three of those are worth flagging rather than trusting.
+
+The **constant level stops at 64** while a periodic magnitude reaches 127.
+The condition divisors all land exactly on maxima the driver's own struct
+comments document, which is good evidence the derivation is sound, but no
+comment documents a constant's ceiling. It may just be conservative.
+`probe_setreport` can compare `0x40` against `0x7f` directly.
+
+The **envelope levels are a guess.** The driver divides by `0x1fff`, which
+would give a range of 0 to 4, and its own comment says the field is wrong.
+The encoder maps to the full byte instead, which is the least surprising
+reading of a one-byte field, and nothing confirms it.
+
+The **start delay carries only the high byte** of a millisecond value, so its
+unit is 256 ms. That is what the driver sends. It is coarse enough to be
+suspicious, and harmless in practice because almost every effect starts at
+once.
+
+One more asymmetry, in the encoder rather than the protocol: the direction is
+projected onto the X axis for a constant force and ignored for everything
+else, because that is what the driver does. A periodic arguably deserves the
+same treatment. Left alone until hardware can say.
+
 Note that `ff_commit` is 15 bytes while the declared output report is 14. If
 the HID framing turns out to be the one the firmware honours, the report id
 byte accounts for the difference and the payload is 14; if the raw framing
