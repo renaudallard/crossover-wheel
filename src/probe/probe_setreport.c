@@ -22,6 +22,12 @@
  *        may reject or clip a short write.
  *   -n   which HID node to write to, when the wheel publishes more than one.
  *
+ * -x is repeatable so a whole sequence lands on one open handle. A force
+ * feedback upload is four packets that correlate through slot keys, and
+ * whether the wheel keeps an uploaded effect across a close is itself
+ * unknown, so sending them in separate runs would confuse a negative result
+ * with a lost one.
+ *
  * The device is opened with kIOHIDOptionsTypeNone, never with
  * kIOHIDOptionsTypeSeizeDevice, so a running game keeps receiving input.
  *
@@ -40,7 +46,8 @@
 #include "t150/t150.h"
 
 #define MAX_PAYLOAD	64
-#define MAX_PACKETS	2
+/* Four is what a force feedback upload needs: first, update, commit, play. */
+#define MAX_PACKETS	4
 
 struct packet {
 	uint8_t	bytes[MAX_PAYLOAD];
@@ -97,8 +104,10 @@ usage(void)
 	    "  -A           disable autocenter\n"
 	    "  -r degrees   set rotation range (%u..%u)\n"
 	    "  -g gain      set gain (0..255)\n"
-	    "  -x \"40 11 ..\"  send these raw bytes\n",
-	    T150_VID, T150_PID_FIRMWARE, T150_RANGE_MIN, T150_RANGE_MAX);
+	    "  -x \"40 11 ..\"  send these raw bytes, repeatable up to %d times\n"
+	    "               to send a whole sequence on one open handle\n",
+	    T150_VID, T150_PID_FIRMWARE, T150_RANGE_MIN, T150_RANGE_MAX,
+	    MAX_PACKETS);
 	exit(2);
 }
 
@@ -115,7 +124,9 @@ main(int argc, char *argv[])
 	enum action act = ACT_NONE;
 	size_t npkt = 0, i, padto = 0;
 	int ch, pad = 0, rc = 0, raw_len = 0;
-	uint8_t raw[MAX_PAYLOAD];
+
+	/* Cleared before parsing, because -x fills packets as it goes. */
+	memset(pkt, 0, sizeof(pkt));
 
 	while ((ch = getopt(argc, argv, "v:p:n:i:Pa:Ar:g:x:")) != -1) {
 		switch (ch) {
@@ -164,11 +175,15 @@ main(int argc, char *argv[])
 			act = ACT_GAIN;
 			break;
 		case 'x':
-			if (act != ACT_NONE)
+			if (act != ACT_NONE && act != ACT_RAW)
 				usage();
-			if ((raw_len = probe_parse_hex(optarg, raw,
-			    sizeof(raw))) <= 0)
+			if (npkt >= MAX_PACKETS)
+				errx(2, "at most %d -x packets", MAX_PACKETS);
+			if ((raw_len = probe_parse_hex(optarg,
+			    pkt[npkt].bytes, sizeof(pkt[npkt].bytes))) <= 0)
 				usage();
+			pkt[npkt].len = (size_t)raw_len;
+			npkt++;
 			act = ACT_RAW;
 			break;
 		default:
@@ -182,8 +197,6 @@ main(int argc, char *argv[])
 		act = ACT_AUTOCENTER;
 		arg = 100;
 	}
-
-	memset(pkt, 0, sizeof(pkt));
 
 	switch (act) {
 	case ACT_AUTOCENTER:
@@ -225,9 +238,7 @@ main(int argc, char *argv[])
 		npkt = 1;
 		break;
 	case ACT_RAW:
-		memcpy(pkt[0].bytes, raw, (size_t)raw_len);
-		pkt[0].len = (size_t)raw_len;
-		npkt = 1;
+		/* Already built by -x while parsing. */
 		break;
 	case ACT_NONE:
 		usage();

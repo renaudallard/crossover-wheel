@@ -22,7 +22,7 @@
 .Fl A |
 .Fl r Ar degrees |
 .Fl g Ar gain |
-.Fl x Ar bytes
+.Fl x Ar bytes ...
 .Oc
 .Nm probe_ep0
 .Op Fl v Ar vid
@@ -85,6 +85,10 @@ Set the gain, 0 to 255.
 .It Fl x Ar bytes
 Send a raw payload given as hex, for example
 .Dq 40 11 ff 7f .
+May be given up to four times, in which case every payload is sent in order
+on the same open handle. A force feedback upload needs exactly that: three
+packets that the wheel correlates through slot keys, then a fourth to start
+the effect.
 .El
 .Pp
 .Nm probe_ep0

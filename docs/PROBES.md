@@ -15,6 +15,20 @@ or take them from the `probes-macos` artifact of the `build` workflow.
 Run everything as your normal user first. Only add `sudo` where a step says
 to, and only after the unprivileged run has been recorded.
 
+## Before you start
+
+Three things on macOS 26 will otherwise waste a run:
+
+- **Approve the accessory.** On an Apple Silicon laptop, new USB accessories
+  need approval before they connect at all. If the wheel appears nowhere, look
+  in System Settings, Privacy and Security, Accessories. Desktop Macs have no
+  such pane and are unaffected.
+- **Be the console user.** `setReport` is gated on
+  `kIOClientPrivilegeConsoleUser`, so it fails from an SSH session, from the
+  login window, and from a fast-user-switched session. Sit at the machine.
+- **No sandbox.** These tools are not sandboxed and must not become so:
+  App Sandbox breaks IOKit HID access silently.
+
 ---
 
 ## Question 1: is the wheel already in firmware mode?
@@ -88,6 +102,79 @@ another:
 ./build/bin/probe_setreport -r 1080         # back to full
 ```
 
+### Also try it in boot mode
+
+`probe_setreport` defaults to the firmware product id, so if question 1 found
+the wheel at `B65D` the runs above matched nothing. Point it at the boot id
+and repeat:
+
+```sh
+./build/bin/probe_setreport -p 0xb65d
+```
+
+This is worth five minutes even when the wheel is already at `B677`, because
+a wheel that honours settings in boot mode makes the whole endpoint 0 problem
+in question 3 go away.
+
+### Also try it with CrossOver running
+
+Everything above is worth repeating once with a game running in a bottle.
+macOS 26 fails `setReport` from every client the moment any process seizes
+the device, and the design depends on CrossOver not doing that. A run that
+succeeds on an idle desktop and fails with a game running has found something
+important.
+
+## Question 2b: does the force feedback protocol work too?
+
+Only once question 2 has moved the wheel. The settings opcodes prove the
+transport; this proves the part the daemon will actually spend its time on,
+and it costs one more run.
+
+An effect uploads as three packets that correlate through slot keys, then a
+fourth starts it. `-x` is repeatable so all four land on one open handle,
+which matters because nobody knows whether the wheel keeps an uploaded effect
+across a close. Slot 0, a constant force at half level, endless:
+
+```sh
+./build/bin/probe_setreport -g 0x60         # moderate gain first
+./build/bin/probe_setreport \
+    -x "02 1c 00 00 00 00 00 00 00 46 54" \
+    -x "03 0e 00 40" \
+    -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
+    -x "41 00 41 01"
+```
+
+**Hold the wheel or keep a hand on the plug.** A constant force with no
+duration limit does not stop on its own. Stop it with:
+
+```sh
+./build/bin/probe_setreport -x "41 00 00 01"
+```
+
+If the settings packets moved the wheel and this does nothing, retry it with
+the same framing flags that worked for question 2, then say so plainly: it
+means the transport is fine and the force feedback layout is wrong, which is
+a much better place to be than the alternative.
+
+### While you are here: the two missing waveforms
+
+The protocol has type codes for sine, sawtooth up and sawtooth down but none
+for square or triangle, and the codes are contiguous. So `0x4020`, `0x4021`
+and `0x4025` may be waveforms the Linux driver never implemented. Upload a
+periodic and vary only the commit type code:
+
+```sh
+./build/bin/probe_setreport \
+    -x "02 1c 00 00 00 00 00 00 00 46 54" \
+    -x "04 0e 00 40 00 00 e8 03" \
+    -x "01 00 20 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
+    -x "41 00 41 01"
+```
+
+That is a one second period at half magnitude with type `0x4020`. Repeat with
+`21 40` and `25 40` in the third packet. Anything that oscillates is a
+waveform we can stop downgrading. Stop it the same way as above.
+
 ## Question 3: does endpoint 0 work, and as whom?
 
 Only needed if question 1 found the wheel at `B65D`.
@@ -126,7 +213,11 @@ degraded mode but a different design.
 | Outcome | Consequence |
 | --- | --- |
 | Wheel already at `B677` | No control transfer, no root, anywhere. Best case. |
+| Wheel at `B65D` but honours settings there | Almost as good: the mode switch stops being load bearing. |
 | SetReport moves the wheel unprivileged | The architecture works. Build it. |
+| It moves on an idle desktop but not with a game running | Something in the bottle is seizing the device. Find out what before writing anything. |
+| Settings work but the force feedback packets do nothing | The transport is fine and the packet layout is wrong. Recoverable, and much the better failure. |
+| A contiguous type code plays a waveform | Square or triangle stops being a downgrade. Record which code. |
 | SetReport succeeds but nothing moves | Try every framing above before giving up; if none work the HID path is closed and only raw interrupt OUT is left, which needs device capture and root. |
 | ep0 works unprivileged | One clean tool, no password. |
 | ep0 needs root | One `sudo` per plug-in. Note that sleep, wake or a replug drops the wheel back to boot mode, so this is a mid-race failure, not just an install-time annoyance. |
