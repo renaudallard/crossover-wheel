@@ -220,9 +220,21 @@ wins, the packet is 15 bytes on the wire. Another thing Phase 0 settles.
 | DirectInput effect | T150 hardware | Plan |
 | --- | --- | --- |
 | Constant | yes | pass through |
-| Square, sine, triangle, sawtooth up and down | yes | pass through |
+| Sine, sawtooth up, sawtooth down | yes | pass through |
 | Spring | yes | pass through |
 | Damper | yes | pass through |
-| Friction | no | refusing risks a game disabling force feedback entirely, so downgrade |
+| Square | no | downgrade to sine |
+| Triangle | no | downgrade to sine |
+| Friction | no | downgrade to damper |
 | Inertia | no | downgrade to damper |
 | Ramp | not in the protocol | synthesize as a time-sliced constant |
+
+Square and triangle were previously recorded here as native. They are not.
+`t150_driver`'s supported effect list is `FF_GAIN`, `FF_PERIODIC`, `FF_SINE`,
+`FF_SAW_UP`, `FF_SAW_DOWN`, `FF_CONSTANT`, `FF_SPRING` and `FF_DAMPER`, and
+`ff_commit` has no type code for either waveform. Whether the firmware knows
+them anyway is the `0x4020`/`0x4021` question above.
+
+Downgrading rather than refusing is deliberate: a game that gets
+`DIERR_UNSUPPORTED` from `CreateEffect` may disable force feedback outright,
+which is a worse outcome than an approximated waveform.

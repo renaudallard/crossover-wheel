@@ -42,10 +42,12 @@ implemented.
 The three Phase 0 measurement tools. Implemented.
 .El
 .Sh IMPLEMENTATION NOTES
-The T150 renders constant force, the five periodics, spring and damper in
-hardware. Friction and inertia are not in its protocol and ramp is not
-either. Refusing those outright risks a game disabling force feedback
-altogether, so the daemon downgrades them instead.
+The T150 renders constant force, sine, both sawtooths, spring and damper in
+hardware. Square and triangle are not in its protocol despite being
+periodics, and neither are friction, inertia and ramp. Refusing those
+outright risks a game disabling force feedback altogether, so the daemon
+downgrades them instead: square and triangle to sine, friction and inertia to
+damper, and ramp to a time-sliced constant.
 .Pp
 Nothing in this stack learns that a game has exited: Wine's
 .Pa hidclass.sys

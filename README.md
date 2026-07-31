@@ -117,10 +117,11 @@ settles it is whether the wheel physically reacted.
 The T150 only. Other Thrustmaster and Logitech wheels use different wire
 protocols and are out of scope by choice, not by accident.
 
-The T150 renders constant force, the five periodics, spring and damper in
-hardware. Friction and inertia are not in its protocol, and neither is ramp;
-those will be downgraded rather than refused, because a game that gets a
-refusal from `CreateEffect` may disable force feedback altogether.
+The T150 renders constant force, sine, both sawtooths, spring and damper in
+hardware. Square and triangle are not in its protocol despite being periodics,
+and neither are friction, inertia or ramp. Those are downgraded rather than
+refused, because a game that gets a refusal from `CreateEffect` may disable
+force feedback altogether.
 
 ## Prior art
 

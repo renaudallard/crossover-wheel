@@ -42,6 +42,19 @@ _Static_assert(T150_FF_TYPE_SPRING == 0x4040, "spring type code");
 _Static_assert(T150_FF_TYPE_DAMPER == 0x4041, "damper type code");
 _Static_assert(T150_FF_OP_CONTROL == 0x41, "effect control opcode");
 
+/*
+ * Square and triangle read like periodics the wheel ought to render, and
+ * were once recorded as native here. The protocol has no type code for
+ * either, so pin them down.
+ */
+_Static_assert(T150_SUPPORTS_NATIVE(T150_EFFECT_SINE), "sine is native");
+_Static_assert(T150_SUPPORTS_NATIVE(T150_EFFECT_DAMPER), "damper is native");
+_Static_assert(!T150_SUPPORTS_NATIVE(T150_EFFECT_SQUARE), "square is not native");
+_Static_assert(!T150_SUPPORTS_NATIVE(T150_EFFECT_TRIANGLE), "triangle is not native");
+_Static_assert(!T150_SUPPORTS_NATIVE(T150_EFFECT_RAMP), "ramp is not native");
+_Static_assert(!T150_SUPPORTS_NATIVE(T150_EFFECT_FRICTION), "friction is not native");
+_Static_assert(!T150_SUPPORTS_NATIVE(T150_EFFECT_INERTIA), "inertia is not native");
+
 static int failures;
 
 static void
