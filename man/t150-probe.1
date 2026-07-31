@@ -1,0 +1,155 @@
+.Dd July 31, 2026
+.Dt T150-PROBE 1
+.Os
+.Sh NAME
+.Nm probe_hid ,
+.Nm probe_setreport ,
+.Nm probe_ep0
+.Nd measure what macOS userspace can do to a Thrustmaster T150
+.Sh SYNOPSIS
+.Nm probe_hid
+.Op Fl v Ar vid
+.Op Fl p Ar pid
+.Op Fl o Ar dir
+.Nm probe_setreport
+.Op Fl v Ar vid
+.Op Fl p Ar pid
+.Op Fl n Ar node
+.Op Fl i Ar id
+.Op Fl P
+.Oo
+.Fl a Ar force |
+.Fl A |
+.Fl r Ar degrees |
+.Fl g Ar gain |
+.Fl x Ar bytes
+.Oc
+.Nm probe_ep0
+.Op Fl v Ar vid
+.Op Fl p Ar pid
+.Op Fl s
+.Op Fl w
+.Op Fl V Ar value
+.Sh DESCRIPTION
+These three tools answer the questions the
+.Xr t150ffb 7
+design depends on. They are measurement instruments, not part of the
+finished software, and they are macOS only.
+.Pp
+.Nm probe_hid
+inventories the HID nodes macOS publishes for the wheel. It reads properties
+only and never opens a device, so it cannot disturb a running game and cannot
+raise a privacy prompt. It reports the product id, which says whether the
+wheel is still in boot mode, the number of nodes and their usages, the
+maximum report sizes, and the full report descriptor.
+.Bl -tag -width Ds
+.It Fl v Ar vid
+Match this USB vendor id. The default is 0x044f.
+.It Fl p Ar pid
+Also match this product id.
+.It Fl o Ar dir
+Write each report descriptor into
+.Ar dir
+as a
+.Pa .bin
+file for offline analysis.
+.El
+.Pp
+.Nm probe_setreport
+is the decisive experiment: it tries to make the wheel physically react from
+an ordinary unprivileged process using
+.Fn IOHIDDeviceSetReport .
+The device is opened without
+.Dv kIOHIDOptionsTypeSeizeDevice ,
+so a running game keeps receiving input. With no action given it sets the
+autocenter spring to full and enables it, because that reaction is
+unmistakable.
+.Bl -tag -width Ds
+.It Fl n Ar node
+Which matching HID node to write to. The default is 0.
+.It Fl i Ar id
+HID report id. The default is 0, meaning unnumbered. The payload never
+includes the report id itself.
+.It Fl P
+Zero-pad the payload to the node's declared MaxOutputReportSize.
+.It Fl a Ar force
+Set the autocenter spring to
+.Ar force ,
+0 to 100, and enable it.
+.It Fl A
+Disable the autocenter spring.
+.It Fl r Ar degrees
+Set the rotation range, 270 to 1080.
+.It Fl g Ar gain
+Set the gain, 0 to 255.
+.It Fl x Ar bytes
+Send a raw payload given as hex, for example
+.Dq 40 11 ff 7f .
+.El
+.Pp
+.Nm probe_ep0
+determines whether the boot to firmware vendor control transfers can be
+issued, and with what privilege. It tries three escalating approaches, the
+request on an unopened device, then after
+.Fn USBDeviceOpen ,
+then after
+.Fn USBDeviceOpenSeize ,
+and prints the
+.Vt IOReturn
+of every step. By default it performs only the read-only model query.
+.Bl -tag -width Ds
+.It Fl s
+Also try
+.Fn USBDeviceOpenSeize
+if
+.Fn USBDeviceOpen
+fails. This takes the device away from every other client, including
+CrossOver.
+.It Fl w
+Actually send the mode switch rather than only querying the model.
+.It Fl V Ar value
+Switch value to use with
+.Fl w .
+The default is 0x0006, the T150 row.
+.El
+.Sh EXIT STATUS
+.Nm probe_hid
+exits 0 whenever enumeration succeeded, including when nothing matched.
+.Nm probe_setreport
+and
+.Nm probe_ep0
+exit 0 only when every operation they attempted succeeded, 1 on a device or
+transfer failure, and 2 on a usage error.
+.Pp
+For
+.Nm probe_setreport
+a zero exit is necessary but not sufficient: macOS can accept a report the
+firmware then ignores, so what settles the run is whether the wheel
+physically moved.
+.Sh EXAMPLES
+Record the wheel's identity and descriptors:
+.Pp
+.Dl $ probe_hid -o .
+.Pp
+Try to make the wheel self-centre, then stop:
+.Pp
+.Dl $ probe_setreport
+.Dl $ probe_setreport -A
+.Pp
+If that returned success but nothing moved, work through the framings:
+.Pp
+.Dl $ probe_setreport -i 0x0a
+.Dl $ probe_setreport -P
+.Dl $ probe_setreport -i 0x0a -P
+.Pp
+Find out whether endpoint 0 needs root:
+.Pp
+.Dl $ probe_ep0
+.Dl $ sudo probe_ep0
+.Sh SEE ALSO
+.Xr t150ffb 7
+.Pp
+The full procedure and what each outcome implies are in
+.Pa docs/PROBES.md .
+.Sh AUTHORS
+.An Renaud Allard

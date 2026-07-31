@@ -1,0 +1,38 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    name: portable headers and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build and test
+        run: make strict
+
+  macos:
+    name: probe tools
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build everything
+        run: make strict
+      - name: confirm the probes run
+        # No wheel is attached to a CI runner, so the only thing that can be
+        # checked here is that each tool starts, parses arguments and exits
+        # cleanly rather than crashing. probe_hid reports zero matches and
+        # succeeds; the other two are expected to fail with "no device", so
+        # only their usage path is exercised.
+        run: |
+          ./build/bin/probe_hid
+          ./build/bin/probe_setreport -h || test $? -eq 2
+          ./build/bin/probe_ep0 -h || test $? -eq 2
+      - name: upload the probe tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: probes-macos
+          path: build/bin/probe_*
+          if-no-files-found: error

@@ -1,0 +1,74 @@
+.Dd July 31, 2026
+.Dt T150FFB 7
+.Os
+.Sh NAME
+.Nm t150ffb
+.Nd force feedback for the Thrustmaster T150 under CrossOver
+.Sh DESCRIPTION
+.Nm
+gives a Thrustmaster T150 working force feedback in games running under
+CrossOver on macOS, without installing anything system wide: no kext, no
+DriverKit system extension, no SIP change and no AMFI change.
+.Pp
+Two things already work on a stock Mac with nothing installed. macOS
+enumerates the wheel as an ordinary joystick once it is in firmware mode, and
+CrossOver's HID backend passes the wheel's own report descriptor into the
+bottle unchanged, so axes, pedals, buttons and the hat reach games already.
+What is missing is force feedback, because the wheel's descriptor contains no
+Physical Interface Device collection and Wine performs no force feedback
+translation of its own on macOS.
+.Pp
+Rather than trying to present a force feedback device to macOS, which is
+blocked by restricted entitlements no free path can obtain,
+.Nm
+presents it inside the bottle. A proxy
+.Pa dinput8.dll
+wraps DirectInput's force feedback surface and forwards effects to an
+unprivileged macOS daemon that owns the wheel through
+.Fn IOHIDDeviceSetReport .
+.Sh COMPONENTS
+.Bl -tag -width "t150-dinput8.dll"
+.It Nm t150d
+The macOS daemon. Owns the wheel, encodes effects, writes output reports.
+Not yet implemented.
+.It Nm t150-dinput8.dll
+The in-bottle proxy. Not yet implemented.
+.It Nm t150boot
+One-shot boot to firmware mode switch. Not yet implemented.
+.It Nm t150ctl
+Rotation range, gain and autocenter from the command line. Not yet
+implemented.
+.It Xr t150-probe 1
+The three Phase 0 measurement tools. Implemented.
+.El
+.Sh IMPLEMENTATION NOTES
+The T150 renders constant force, the five periodics, spring and damper in
+hardware. Friction and inertia are not in its protocol and ramp is not
+either. Refusing those outright risks a game disabling force feedback
+altogether, so the daemon downgrades them instead.
+.Pp
+Nothing in this stack learns that a game has exited: Wine's
+.Pa hidclass.sys
+consumes the close at the physical device object, and DirectInput only sends
+a reset on a graceful unacquire. A crashed game would therefore leave the
+last commanded force latched on the wheel. The daemon treats silence as a
+fault and stops every effect after half a second without traffic.
+.Sh STATUS
+Pre-implementation. Only the probe tools, the shared headers and the build
+exist. The project is gated on one measurement, whether an unprivileged
+.Fn IOHIDDeviceSetReport
+physically moves the wheel, described in
+.Pa docs/PROBES.md .
+.Sh SEE ALSO
+.Xr t150-probe 1
+.Pp
+.Pa docs/ARCHITECTURE.md ,
+.Pa docs/PROTOCOL.md ,
+.Pa docs/PROBES.md
+.Sh AUTHORS
+.An Renaud Allard
+.Sh CAVEATS
+The T150 wire protocol is not published by Thrustmaster. Everything here is
+derived from the Linux drivers cited in
+.Pa docs/PROTOCOL.md
+and from a firmware 3.5 descriptor capture, not from current hardware.
