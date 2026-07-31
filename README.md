@@ -115,8 +115,23 @@ settles it is whether the wheel physically reacted.
 
 ## Scope
 
-The T150 only. Other Thrustmaster and Logitech wheels use different wire
-protocols and are out of scope by choice, not by accident.
+The T150 only, on macOS 26 or newer, on Apple Silicon. Other Thrustmaster and
+Logitech wheels use different wire protocols and are out of scope by choice,
+not by accident.
+
+In the bottle, DirectInput 8 games and SDL games both count: SDL implements
+Windows force feedback over DirectInput 8, so the same proxy serves both, as
+long as it is installed where SDL's `CoCreateInstance` will find it.
+
+XInput does not count, and cannot. winebus only marks a device XInput capable
+for vendor `0x045e`, so a T150 never appears there, and XInput carries two
+rumble motors rather than force feedback effects.
+
+Native macOS games are close to unreachable: no public API drives an
+arbitrary HID wheel, and library validation blocks injecting into signed
+games. The one exception is Euro Truck Simulator 2 and American Truck
+Simulator, which load third-party telemetry plugins, and even there the game
+sends no forces, so any plugin has to invent them from telemetry.
 
 The T150 renders constant force, sine, both sawtooths, spring and damper in
 hardware. Square and triangle are not in its protocol despite being periodics,
