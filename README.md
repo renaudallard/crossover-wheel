@@ -22,17 +22,18 @@ A T150 on a Mac is already half working, and it is worth being precise about
 which half.
 
 **Already works, with nothing installed.** macOS enumerates the wheel as an
-ordinary joystick once it is in firmware mode, and CrossOver's
-`dlls/winebus.sys/bus_iohid.c` copies the wheel's real HID report descriptor
-into the bottle unchanged. Axes, pedals, buttons and the hat reach games
-today.
+ordinary joystick once it is in firmware mode, and CrossOver passes it into
+the bottle. Axes, pedals, buttons and the hat reach games today.
 
-**Does not work.** Force feedback. The wheel's descriptor contains no
-Physical Interface Device collection, and Wine's DirectInput sets
-`DIDC_FORCEFEEDBACK` only from PID collections it finds in a descriptor. Wine
-adds nothing of its own on macOS either: `bus_iohid.c` implements
-`raw_device_vtbl`, not `hid_device_vtbl`, so unlike the Linux evdev backend
-it never synthesises a PID descriptor.
+**Does not work.** Force feedback. Wine's DirectInput sets
+`DIDC_FORCEFEEDBACK` only from a Physical Interface Device collection it
+finds in a descriptor, and nothing puts one there. On macOS the wheel arrives
+through winebus's SDL backend rather than its IOHID one, because winebus
+discards the IOHID copy of any Generic Desktop joystick that is not on its
+hidraw allow-list. The SDL backend would synthesise a PID collection, but
+only for a device SDL calls haptic, and SDL's macOS haptic backend is
+`ForceFeedback.framework`, which reaches only devices whose driver published
+a plug-in. No wheel vendor ships one.
 
 **Cannot be fixed at the macOS layer.** Presenting the wheel to macOS as a
 force feedback device is closed off for reasons unrelated to code signing.

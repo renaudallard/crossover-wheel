@@ -47,7 +47,8 @@ Wine.
 **B1. The macOS HID backend is a raw pass-through.** `bus_iohid.c` implements
 `raw_device_vtbl`, not `hid_device_vtbl`. It copies the device's real report
 descriptor out of `kIOHIDReportDescriptorKey` and hands it to the bottle
-unchanged.
+unchanged. But see B8: for this wheel that backend's device is normally
+discarded before the bottle ever sees it.
 
 > `dlls/winebus.sys/bus_iohid.c`, `iohid_device_vtbl` and
 > `iohid_device_get_report_descriptor()`.
@@ -65,7 +66,8 @@ packet->reportId, packet->reportBuffer, packet->reportBufferLen)`.
 `physical_effect_update` appear, and it never calls
 `hid_device_add_physical()`. The Linux evdev backend does exactly the
 opposite: `lnxev_device_vtbl` is a `hid_device_vtbl` and synthesises a PID
-descriptor from evdev capabilities.
+descriptor from evdev capabilities. This is true of the file and irrelevant
+to the outcome, because of B8 and B9.
 
 > `bus_iohid.c` versus `bus_udev.c:1096` and `bus_udev.c:626`.
 
@@ -106,6 +108,48 @@ write into `kIOReturnNotPermitted`.
 > Same file, `resourceNotificationGated()`. Practical consequence: the write
 > path cannot be tested from a headless or SSH session, and macOS CI cannot
 > cover it.
+
+**B8. On macOS the wheel does not reach the bottle through `bus_iohid.c`.**
+winebus creates one device per backend and then arbitrates between them.
+`bus_iohid.c` marks everything it creates `is_hidraw = TRUE`, and on
+`BUS_EVENT_TYPE_DEVICE_CREATED` the main loop removes any device whose
+`is_hidraw` flag disagrees with `is_hidraw_enabled()`. For a Generic Desktop
+joystick or gamepad that function returns a `prefer_hidraw` default of FALSE
+unless the VID:PID is on a hardcoded list or in the `EnableHidraw` registry
+value. The T150's `044f:b677` is on neither: the Thrustmaster entries are the
+T-Rudder `b679`, the TWCS Throttle `b687` and the T.16000M `b10a`. `Enable
+SDL` defaults to 1. So the IOHID instance is discarded and the SDL one is
+what the bottle sees.
+
+> `dlls/winebus.sys/main.c`, `bus_options_init()`, `is_hidraw_enabled()` and
+> the `BUS_EVENT_TYPE_DEVICE_CREATED` case; `bus_iohid.c`, the
+> `.is_hidraw = TRUE` initialiser. Checked against Wine master.
+
+**B9. So the absent PID collection is SDL's doing, not the descriptor's.**
+`bus_sdl.c` is a `hid_device_vtbl` and does synthesise a PID collection, but
+only inside `if (impl->effect_support & EFFECT_SUPPORT_PHYSICAL)`, and
+`descriptor_add_haptic()` sets `effect_support` to 0 whenever
+`SDL_JoystickIsHaptic()` is false or `SDL_HapticOpenFromJoystick()` fails.
+SDL's macOS haptic backend is `ForceFeedback.framework`, which by D1 only
+sees devices whose driver published an `IOCFPlugInTypes` plug-in, so a wheel
+with no macOS driver is never haptic there.
+
+Worth noticing what this means: winebus already passes `force = TRUE` for a
+device whose usage is `HID_USAGE_SIMULATION_AUTOMOBILE_SIMULATION_DEVICE`,
+which declares every `PID_USAGE_ET_*` effect type rather than only the ones
+SDL reports. The descriptor machinery is present and willing. It is the
+capability query underneath it that returns nothing.
+
+> `dlls/winebus.sys/bus_sdl.c`, `descriptor_add_haptic()` and its wheel
+> caller; SDL `src/haptic/darwin/SDL_syshaptic.c`, the `FFIsForceFeedback()`
+> gate.
+
+B4 still decides the outcome and the design is unaffected, because the proxy
+sits above DirectInput and never reads a descriptor. One practical
+consequence though: putting `044f:b677` in `EnableHidraw` routes the wheel
+back through `bus_iohid.c`, and the bottle then sees the wheel's own
+descriptor instead of SDL's synthesised one. That is an input fidelity knob,
+not a force feedback fix.
 
 ---
 

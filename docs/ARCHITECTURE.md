@@ -24,16 +24,16 @@ both:
 
 - macOS enumerates the wheel as an ordinary joystick once it is in firmware
   mode, so axes, pedals, buttons and the hat already reach games.
-- CrossOver's `dlls/winebus.sys/bus_iohid.c` is a raw pass-through. It copies
-  the device's real report descriptor out of `kIOHIDReportDescriptorKey` and
-  hands it to the bottle unchanged, and its `set_output_report` is a direct
-  call to `IOHIDDeviceSetReport`.
+- CrossOver carries it into the bottle without any driver, and it opens the
+  device without seizing it, so a second process can still write to it.
 
-Only the force feedback output channel is missing. Wine performs no force
-feedback translation on macOS: `bus_iohid.c` implements `raw_device_vtbl`,
-not `hid_device_vtbl`, so unlike the Linux evdev backend it never synthesises
-a PID descriptor. DirectInput therefore reports no force feedback for the
-wheel, because `dlls/dinput/joystick_hid.c` sets `DIDC_FORCEFEEDBACK` and
+Only the force feedback output channel is missing. On macOS the wheel reaches
+the bottle through winebus's SDL backend, not its IOHID one (RESEARCH.md B8),
+and that backend synthesises a PID descriptor only for a device SDL considers
+haptic. SDL's macOS haptic backend is `ForceFeedback.framework`, which only
+reaches devices whose driver published a plug-in, so it considers no
+driverless wheel haptic (B9). DirectInput therefore reports no force feedback,
+because `dlls/dinput/joystick_hid.c` sets `DIDC_FORCEFEEDBACK` and
 `guidFFDriver` only from PID collections it finds in the descriptor.
 
 ## The shape
