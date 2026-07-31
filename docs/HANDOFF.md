@@ -76,11 +76,10 @@ Implemented and working:
 
 Not started: `t150d`, `t150-dinput8.dll`, `t150boot`, `t150ctl`.
 
-The probe sources have **never been compiled on macOS**. They were
-type-checked on Linux against hand-written stub CoreFoundation and IOKit
-headers, which catches syntax, types and misuse of this project's own APIs
-but cannot catch misuse of the real IOKit API. The `macos` CI job is the
-first genuine compile.
+The probe tools compile clean on `macos-latest` with `-Werror` against the
+real CoreFoundation and IOKit headers, and their argument handling runs. They
+have **never been run against a wheel**, so while the API usage type-checks,
+nothing here is confirmed to work on hardware. That is what section 6 is for.
 
 ## 6. The gate
 
