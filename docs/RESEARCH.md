@@ -37,6 +37,47 @@ and writes Logitech's classic 7-byte force feedback commands with
 > Note it opens with `kIOHIDOptionsTypeSeizeDevice`, which this project must
 > not do. See B6.
 
+**A4. The wheel's physical selector decides which device macOS sees, and only
+one of the two is this project's.** Measured on a T150 on macOS, the first
+hardware this project has been run against:
+
+| Switch | Enumerates as | Node | Max output |
+| --- | --- | --- | --- |
+| PS3 | `044f:b65d` "Thrustmaster FFB Wheel" | one, page `0x01` usage `0x05` | 8 |
+| PS4 | `044f:b66d` "Thrustmaster Racing Wheel FFB" | page `0x01` usage `0x05` and page `0xfff0` usage `0x40` | 32 |
+
+`b65d` is the boot identity every T-series wheel shares, so the wheel still
+needs the C6 mode switch to reach `b677`. `b66d` is a PlayStation 4
+personality: a DualShock 4 shaped descriptor with an output report id 5 of 31
+bytes and the `0xF0` to `0xF3` authentication feature reports. Both its
+product string and `b65d`'s are generic rather than naming a model, so
+neither identifies the wheel; only the C6 model query does.
+
+**Everything in this project assumes the PS3 position.** In the PS4 position
+there is no `b677`, none of the protocol in PROTOCOL.md applies, and
+`probe_setreport` matches nothing.
+
+> Measured, plus scarburato/t150_driver's README: "For T150, always put the
+> switch of your wheel to the `PS3` position before plug it into your
+> machine!"
+
+**A5. Two open questions answered, and one still open.** From the same run,
+in boot mode: no node carries `ProtectedAccess`, so A2's restricted-device
+case does not apply here. Unprivileged `IOHIDDeviceSetReport` of a four byte
+unnumbered payload returned `kIOReturnSuccess`, both on an idle desktop and
+with Assetto Corsa running in a bottle, so nothing CrossOver does provoked
+B6's `kIOReturnExclusiveAccess`.
+
+What that run did **not** record is whether the wheel physically moved, which
+is the only thing that answers E1. It was also a T150 settings opcode sent to
+a wheel still in boot mode, where it has no reason to be honoured. E1 remains
+open.
+
+> Measured. Boot mode publishes an unnumbered 8-byte vendor output report
+> (usage `0x2621`) and a matching feature report, not the id `0x0A` 14-byte
+> report C5 decodes from a firmware 3.5 capture. That descriptor describes
+> firmware mode, which this wheel has not yet been switched into.
+
 ---
 
 ## B. How CrossOver handles HID and force feedback

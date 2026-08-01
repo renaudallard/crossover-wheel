@@ -28,7 +28,16 @@ that `probe_hid` actually reported.
 
 ## Before you start
 
-Three things on macOS 26 will otherwise waste a run:
+**Put the wheel's switch in the PS3 position before plugging it in.** The
+T150 has a physical selector and it decides which device macOS sees. In the
+PS3 position the wheel is `044f:b65d`, the shared boot identity, and the mode
+switch in question 3 takes it to `044f:b677` where everything in
+[PROTOCOL.md](PROTOCOL.md) applies. In the PS4 position it is `044f:b66d`
+instead, a DualShock 4 shaped device with a different descriptor and a
+different protocol, and nothing here applies to it: `probe_setreport` will
+match no node at all. See RESEARCH.md A4.
+
+Three more things on macOS 26 will otherwise waste a run:
 
 - **Approve the accessory.** On an Apple Silicon laptop, new USB accessories
   need approval before they connect at all. If the wheel appears nowhere, look

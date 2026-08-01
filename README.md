@@ -282,9 +282,18 @@ Every step, in order, for the two things that can be tested right now.
 [`docs/PROBES.md`](docs/PROBES.md) is the authority on what each outcome
 means; this is the sequence to type.
 
-Both need the Mac. Sit at it: `IOHIDDeviceSetReport` is gated on being the
-console user and fails over SSH. On an Apple Silicon laptop, approve the
-wheel first under System Settings, Privacy and Security, Accessories.
+Both need the Mac. Three things first, each of which otherwise costs a whole
+session:
+
+- **Put the wheel's switch in the PS3 position** before plugging it in. The
+  selector decides which device macOS sees: PS3 gives `044f:b65d`, the shared
+  boot identity that the mode switch takes to `044f:b677`, which is what this
+  project drives. PS4 gives `044f:b66d`, a DualShock 4 shaped device with a
+  different protocol that nothing here applies to.
+- **Sit at the machine.** `IOHIDDeviceSetReport` is gated on being the
+  console user and fails over SSH.
+- **Approve the wheel** on an Apple Silicon laptop, under System Settings,
+  Privacy and Security, Accessories.
 
 The command blocks carry no inline `# comments`, deliberately. macOS's zsh
 does not treat `#` as a comment when you paste a line interactively, so a
