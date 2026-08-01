@@ -131,39 +131,52 @@ with the spring released between each variant, then both rotation range
 extremes. Every write returned `kIOReturnSuccess`. The wheel never moved and
 never became turnable.
 
-**A9. The wheel is not in a state where any of this can be measured.**
-Thrustmaster documents the T150's normal startup as a calibration sweep,
-"wheel movements counterclockwise, clockwise then back to center", and
-documents a failure mode that matches what is being seen: "the racing wheel
-does not calibrate ... Insufficient power from the power outlet or USB port
-may interfere with the T150's motor, calibration, and force feedback." Its
-advice is a wall outlet directly rather than a strip or extension, and a USB
-port on the machine directly rather than a hub.
+**A9. The wheel is healthy, and rigid is its resting state.** An earlier
+reading of this blamed power, on the strength of Thrustmaster documenting a
+wheel that fails to calibrate. That is not what is happening: **the wheel
+does perform its startup calibration** whenever it has mains power, sweeping
+and centring as documented. So the motor drives, the position sensor reads
+and the firmware runs. Nothing is broken.
 
-A wheel that has not completed its calibration sweep has not learned its end
-stops, and nothing in this project's protocol is expected to work on one.
+What it does *after* calibrating is hold itself rigid, and it does that in
+every mode.
 
-**And it is locked in the PS4 position too.** That is the observation that
-settles it. In the PS4 position the wheel is a self-contained console device:
-it takes no mode switch, no driver, no initialisation and nothing at all from
-this project, and it was still rigid. Nothing software-side reaches a wheel
-in that state, so nothing software-side can be holding it.
+**It is rigid in the PS4 position too**, where the wheel takes no mode
+switch, no driver and nothing at all from this project. So the rigidity is
+not a response to anything sent: it is what this wheel does on its own once
+it has calibrated, in every mode, with no host software involved.
 
-**E1 is therefore not answerable on this wheel, and none of the three runs
-measured what they were pointed at.** Every write returning
-`kIOReturnSuccess` while the wheel never moves is consistent with a firmware
-that ignores HID output, and equally consistent with a wheel that is not in a
-condition to move for reasons that have nothing to do with the bytes. Those
-two cannot be told apart until the wheel calibrates and turns freely with
-nothing attached to it, so **the gate is blocked on hardware, not on
-protocol.**
+That is worth knowing because it is consistent with the wheel's own default.
+`t150_setup_task` in the Linux driver explicitly *disables* the autocenter as
+one of the first things it does after probing, which only makes sense if the
+wheel powers up with it on. A T150 holding full autocenter is genuinely hard
+to move.
 
-Nothing in the project should be changed on the strength of these runs. The
-transport facts they established stand on their own, because they do not
-depend on the motor: USB communication is healthy, the descriptors read, the
-endpoint 0 path works unprivileged, `setReport` is accepted, no node is
-protected and CrossOver does not seize. What is missing is a wheel that can
-demonstrate a reaction.
+**Two hypotheses remain, and they are not yet separated:**
+
+1. **HID output never reaches the firmware.** The writes are accepted by
+   macOS and discarded, so nothing can change the wheel's resting state. This
+   is C3's risk arriving exactly as feared, and it would mean E1 is answered
+   no.
+2. **The wheel wants something first.** The Linux driver sends a packet on
+   the interrupt OUT pipe when the input device is opened, before any setting
+   is honoured. Its bytes are not recoverable from the published source,
+   where the pointer is left null, so this project has never sent it. If the
+   firmware gates settings behind that, every write so far would be accepted
+   and ignored regardless of framing.
+
+Both predict precisely what was measured, which is why neither can be
+concluded. What separates them is a wheel that unlocks under a driver known
+to work: on Windows with Thrustmaster's own driver, or on Linux with
+`hid_thrustmaster` and `t150_driver`. If it frees up there, the wheel and the
+protocol are both fine and the fault is in the macOS HID path. If it stays
+rigid there too, the wheel's resting behaviour is simply this and the
+autocenter theory is wrong.
+
+Nothing in the project should be changed until that is known. The transport
+facts stand on their own either way, because none of them depend on the
+motor: the descriptors read, the endpoint 0 path works unprivileged,
+`setReport` is accepted, no node is protected and CrossOver does not seize.
 
 > Thrustmaster T150 help centre, sections 1.1, 2.1 and 2.2, plus the PS4
 > position observation.

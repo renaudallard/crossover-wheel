@@ -10,9 +10,11 @@ extension approval.
 > the probes three times. USB communication is healthy, the mode switch works
 > unprivileged and every write is accepted, but the wheel is held rigid and
 > cannot be turned by hand: in boot mode, in firmware mode, and in the PS4
-> position where it takes nothing from this project at all. A wheel that
-> cannot move cannot demonstrate a reaction, so the gate stays open. See
-> [`docs/RESEARCH.md`](docs/RESEARCH.md) A4 to A9. Everything that can be
+> position where it takes nothing from this project at all. It calibrates
+> normally, so it is not broken; holding itself appears to be its resting
+> state. Whether that is because the writes never reach the firmware, or
+> because the wheel wants an initialisation nobody has captured, is not yet
+> separated. See [`docs/RESEARCH.md`](docs/RESEARCH.md) A4 to A9. Everything that can be
 > built and tested without a wheel has been: see
 > [what exists today](#what-exists-today).
 
@@ -289,10 +291,9 @@ Both need the Mac. Three things first, each of which otherwise costs a whole
 session:
 
 - **Watch it calibrate.** A healthy T150 sweeps counterclockwise, then
-  clockwise, then back to centre as soon as it has power, and turns freely by
-  hand afterwards. If it does not, nothing below can be measured on it:
-  Thrustmaster attributes that to power, so use a wall outlet directly rather
-  than a strip, and a USB port on the machine rather than a hub.
+  clockwise, then back to centre as soon as it has mains power. If it does
+  not, Thrustmaster attributes that to power: wall outlet directly rather
+  than a strip, USB into the machine rather than a hub.
 - **Put the wheel's switch in the PS3 position** before plugging it in. The
   selector decides which device macOS sees: PS3 gives `044f:b65d`, the shared
   boot identity that the mode switch takes to `044f:b677`, which is what this

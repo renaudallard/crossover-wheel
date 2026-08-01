@@ -51,23 +51,19 @@ rejected: the steering and pedals are buried in a 54-byte vendor blob that
 nothing decodes without replacing the report descriptor, which a kernel
 driver may do and this project may not. RESEARCH.md D7 has the evidence.
 
-**Watch the wheel start up, and do not proceed until it does.** A healthy
-T150 performs a calibration sweep the moment it has power: counterclockwise,
-then clockwise, then back to centre, with the LED on. Afterwards it turns
-freely by hand. A wheel that does not do this has not learned its end stops,
-and no measurement below means anything on one.
+**Watch the wheel start up.** A healthy T150 sweeps counterclockwise, then
+clockwise, then back to centre as soon as it has mains power. If it does not,
+Thrustmaster attributes that to power: use a wall outlet directly rather than
+a strip or extension, and a USB port on the machine rather than a hub. A
+wheel that has not swept has not learned its end stops and nothing below
+means anything on one.
 
-Thrustmaster attributes exactly that failure to power, and its advice costs
-nothing to follow:
-
-- power adapter **directly into a wall outlet**, not a strip, extension or
-  transformer,
-- USB **directly into the machine**, not a hub, dock or extension, and try a
-  different port,
-- check the LED is lit.
-
-If it still will not calibrate, the wheel needs its firmware checked or its
-bootloader recovery run before this project can say anything about it.
+**A wheel that sweeps and is then rigid is a different matter, and is what
+has been measured here.** It means the motor, the sensor and the firmware all
+work. See RESEARCH.md A9 before spending time on it: the wheel appears to
+hold itself by default in every mode, including one where nothing has been
+sent to it, so being unable to turn it is not by itself evidence about
+anything this project sends.
 
 Three more things on macOS 26 will otherwise waste a run:
 
