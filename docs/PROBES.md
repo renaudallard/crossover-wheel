@@ -41,6 +41,12 @@ instead, a DualShock 4 shaped device with a different descriptor and a
 different protocol, and nothing here applies to it: `probe_setreport` will
 match no node at all. See RESEARCH.md A4.
 
+PS4 mode looks attractive because it needs no mode switch and its force
+feedback is better documented than the T150's. It was investigated and
+rejected: the steering and pedals are buried in a 54-byte vendor blob that
+nothing decodes without replacing the report descriptor, which a kernel
+driver may do and this project may not. RESEARCH.md D7 has the evidence.
+
 Three more things on macOS 26 will otherwise waste a run:
 
 - **Approve the accessory.** On an Apple Silicon laptop, new USB accessories

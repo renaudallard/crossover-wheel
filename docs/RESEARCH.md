@@ -335,6 +335,53 @@ That failure presents as a force feedback tab that exists and does nothing.
 
 ---
 
+**D7. Driving the wheel in its PS4 position instead.** Tempting, and wrong,
+though not for the reason it looks.
+
+The attraction is real. In the PS4 position the wheel is `044f:b66d` with no
+mode switch needed, so the whole endpoint 0 question in C6 disappears, along
+with any privilege it might have demanded. Its force feedback is also better
+understood than the T150's: `hid-tmff2` binds `0xb66d` in the same case group
+as the PS3 ids and drives it through `hid_hw_request(HID_REQ_SET_REPORT)`
+with a flat 31-byte packet, the same command set as PS3 mode with only the
+buffer length differing. Nothing in that driver ever touches the `0xF0` to
+`0xF3` authentication reports, so the PlayStation handshake does not gate
+force feedback.
+
+What kills it is input, not output. In PS4 mode the wheel presents a
+DualShock 4 shaped descriptor whose Generic Desktop axes are the pad's dead
+sticks; the steering and pedals live inside a 54-byte vendor blob that
+nothing interprets. `hid-tmff2` fixes this by **substituting a whole report
+descriptor**, which a kernel driver may do and this project may not.
+
+> Kimplul, hid-tmff2 issue #30: "the buttons from the wheel worked just fine
+> but pedals and wheel rotation didn't. Seems that the wheel uses a 54 byte
+> input section marked as `Vendor defined 1` usage page, which means that
+> Linux doesn't know how to interpret the data it gets. I modified the
+> `rdesc` to get input based on what I saw with my own wheel." The same
+> 54-byte section is visible in the descriptor measured in A4:
+> `06 00 ff 09 21 95 36 81 02`.
+
+That breaks the premise this whole design rests on, that input already works
+and only the force feedback channel is missing (see ARCHITECTURE.md). Wine
+passes the descriptor into the bottle verbatim (B1), so a game would see
+dead sticks and no steering. Recovering it means the daemon streaming input
+reports and the proxy synthesising a DirectInput device, which is D5's
+rejected bus driver arriving through a side door.
+
+So: **worse target, kept as the fallback.** If C6's mode switch turns out to
+be impossible on macOS, PS4 mode is where this goes next, and the cost is
+an input path the architecture does not currently have. Note also that
+`hid-tmff2` supports no T150 at all, so that its packet set works on this
+wheel is likely rather than known.
+
+One free diagnostic in the meantime: the PS4 position needs no
+initialisation, so if the wheel turns freely there and is rigid in the PS3
+position, the motor is healthy and the rigidity is the uninitialised boot
+state rather than a fault.
+
+---
+
 ## E. Open questions. Only the Mac can answer these
 
 In rough order of how much they matter.
