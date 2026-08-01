@@ -28,9 +28,10 @@ unprivileged macOS daemon that owns the wheel through
 .Fn IOHIDDeviceSetReport .
 .Sh COMPONENTS
 .Bl -tag -width "t150-dinput8.dll"
-.It Nm t150d
+.It Xr t150d 8
 The macOS daemon. Owns the wheel, encodes effects, writes output reports.
-Not yet implemented.
+The protocol, the slot table, the downgrades and the watchdog work; the
+backend that would reach a wheel does not exist yet, so it logs instead.
 .It Nm t150-dinput8.dll
 The in-bottle proxy. Not yet implemented.
 .It Nm t150boot
@@ -56,18 +57,21 @@ a reset on a graceful unacquire. A crashed game would therefore leave the
 last commanded force latched on the wheel. The daemon treats silence as a
 fault and stops every effect after half a second without traffic.
 .Sh STATUS
-Pre-implementation. The probe tools, the shared headers, the wire encoders
-and the build exist; the daemon, the proxy and the command line tools do not.
-The project is gated on one measurement, whether an unprivileged
+The probe tools, the shared headers, the wire encoders, the wire protocol and
+the daemon's logic exist. The macOS HID backend, the proxy and the command
+line tools do not. The project is gated on one measurement, whether an
+unprivileged
 .Fn IOHIDDeviceSetReport
 physically moves the wheel, described in
 .Pa docs/PROBES.md .
 .Pp
-The encoders are pure functions checked by
+Everything written so far is checked by
 .Cm make test
-against golden vectors on any machine. That proves they emit the bytes
+on any machine: golden vectors for the encoders, round trips for the
+protocol, and the daemon driven through simulated time and over a real
+socket. That proves the bytes are the ones
 .Pa docs/PROTOCOL.md
-describes, and nothing about whether the wheel honours them.
+describes, and nothing at all about whether the wheel honours them.
 .Sh SEE ALSO
 .Xr t150-probe 1
 .Pp

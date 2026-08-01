@@ -72,14 +72,26 @@ in-bottle bus driver was considered and rejected.
 | `probe_hid`, `probe_setreport`, `probe_ep0` | working, macOS only |
 | `include/t150/*.h` shared contracts | written, compiled and tested on Linux |
 | `src/lib/encode.c` wire encoders | written, golden-vector tested on Linux |
+| `src/lib/proto.c` DLL to daemon protocol | written, round-trip tested on Linux |
+| `t150d` protocol, slots, downgrades, watchdog | written and tested on Linux |
+| `t150d` macOS HID backend | not started |
 | build, CI, docs, man pages | working |
-| `t150d`, `t150-dinput8.dll`, `t150boot`, `t150ctl` | not started |
+| `t150-dinput8.dll`, `t150boot`, `t150ctl` | not started |
 
 The encoders turn a normalized effect into the wheel's packets and are the
 only code that knows both DirectInput units and wheel units. They do no I/O,
 so `make test` checks every byte they produce against vectors derived from
-`docs/PROTOCOL.md`, on any machine. Whether the wheel agrees with those bytes
-is a separate question, and an open one.
+`docs/PROTOCOL.md`, on any machine.
+
+The daemon is complete except for the part that touches a wheel. It listens,
+speaks the protocol, keeps the slot table, downgrades the effects the wheel
+cannot render, slides ramps, and runs the watchdog; the packets go to a log
+rather than to hardware. That is enough to drive the whole stack from a test
+without a Mac, which is what `socket_check` does, including holding a socket
+open and going quiet to prove the wheel gets released.
+
+None of this says the wheel agrees with the bytes. That is
+[`docs/PROBES.md`](docs/PROBES.md), and it has not been answered.
 
 ## Building
 
@@ -98,6 +110,21 @@ make probes
 
 `make strict` is the same with warnings as errors, and is what CI runs.
 `make help` lists the targets.
+
+## Running the daemon
+
+`make` builds `build/bin/t150d`. It drives nothing yet and says so:
+
+```sh
+./build/bin/t150d -v
+t150d: listening on 127.0.0.1:49713, endpoint .../t150ffb/endpoint
+t150d: backend fake, no wheel is being driven
+```
+
+Every packet it would have sent to the wheel is printed instead, in the same
+form `probe_setreport` prints, so the two can be compared directly. See
+[`t150d(8)`](man/t150d.8) for the endpoint file, the watchdog and the effect
+downgrades.
 
 Development happens on Linux; the Mac is only needed to run the probes.
 Because the probe sources cannot be compiled on Linux, CI builds them on

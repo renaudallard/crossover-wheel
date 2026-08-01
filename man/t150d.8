@@ -1,0 +1,102 @@
+.Dd August 1, 2026
+.Dt T150D 8
+.Os
+.Sh NAME
+.Nm t150d
+.Nd force feedback daemon for the Thrustmaster T150
+.Sh SYNOPSIS
+.Nm
+.Op Fl v
+.Op Fl e Ar endpoint
+.Sh DESCRIPTION
+.Nm
+is the macOS half of the force feedback bridge. It listens on loopback for
+the proxy
+.Pa dinput8.dll
+running inside a CrossOver bottle, turns the effects that arrive into the
+wheel's own packets, and hands them to a backend.
+.Pp
+It needs no entitlement, no root and no system extension. It must run as the
+console user, because
+.Fn IOHIDDeviceSetReport
+is gated on that privilege, and it must not be sandboxed, because App Sandbox
+breaks IOKit HID access.
+.Pp
+One client is served at a time. A second connection displaces the first, but
+only after the first has been put back into a safe state, because the usual
+reason for a second connection is a game that crashed and was restarted.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl e Ar endpoint
+Where to publish the port and token. The default is
+.Pa ~/Library/Application Support/t150ffb/endpoint ,
+which the proxy reads through Wine's
+.Pa Z:
+mapping.
+.It Fl v
+Log connections, effect downgrades and every entry into the safe state.
+.El
+.Sh THE ENDPOINT FILE
+.Nm
+binds an ephemeral port and writes two lines, the port and a per-run token:
+.Bd -literal -offset indent
+49713
+6a607d5fcea96d0e8c3356cc56790fe9
+.Ed
+.Pp
+It is written to a temporary and renamed, so a client never reads half a
+file, and created with mode 0600. The token stops another local process
+driving the motors by guessing a port. It is not a security boundary against
+a process running as the same user, and it is not meant to be: what bounds
+the damage is the watchdog.
+.Sh THE WATCHDOG
+Nothing in this stack learns that a game has exited. Wine's
+.Pa hidclass.sys
+consumes the close at the physical device object, and DirectInput sends a
+reset only on a graceful unacquire, so a game that crashes or is force quit
+leaves the wheel holding whatever force it was last given.
+.Pp
+.Nm
+therefore treats silence as a fault. If no frame arrives for half a second it
+stops every effect and releases the autocenter, whether or not the socket is
+still open, which leaves the wheel limp rather than latched. A client is
+expected to send
+.Dv T150_OP_KEEPALIVE
+often enough to stay ahead of this. The same safe state is entered when a
+client disconnects, when one displaces another, and on the way out.
+.Sh EFFECTS
+The wheel renders constant force, sine, both sawtooths, spring and damper.
+Square and triangle are not in its protocol, and neither are friction,
+inertia or ramp.
+.Nm
+downgrades those rather than refusing them, because a game that gets
+.Dv DIERR_UNSUPPORTED
+from
+.Fn CreateEffect
+may switch force feedback off altogether: square and triangle become sine,
+friction and inertia become damper, and a ramp becomes a constant that
+.Nm
+re-sends as it slides.
+.Pp
+A per-effect gain has no equivalent on the wheel, which has one device gain,
+so it is folded into the effect's magnitude before encoding.
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa ~/Library/Application Support/t150ffb/endpoint
+The port and token, removed on exit.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr crossover-wheel 7 ,
+.Xr t150-probe 1
+.Sh AUTHORS
+.An Renaud Allard
+.Sh CAVEATS
+There is no macOS HID backend yet, so
+.Nm
+drives nothing: every packet goes to a log instead, and it says so at
+startup. Whether the wheel honours these packets at all is the measurement
+described in
+.Pa docs/PROBES.md ,
+and it has not been made.

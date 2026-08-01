@@ -100,9 +100,15 @@ Implemented and working:
   Portable, compiled and self-tested on Linux.
 - `src/lib/encode.c` : M1, the wire encoders. Pure functions, golden-vector
   tested by `tests/encode_check.c` on any machine.
+- `src/lib/proto.c` : M2, the DLL to daemon codec.
+- `src/t150d/` : M2, the daemon. Socket, session, slot table, downgrades,
+  ramp slicing and the watchdog. Driven by `tests/daemon_check.c` in
+  simulated time and by `tests/socket_check.c` over a real socket.
 - `Makefile`, CI, `README.md`, man pages, docs.
 
-Not started: `t150d`, `t150-dinput8.dll`, `t150boot`, `t150ctl`.
+Not started: the daemon's macOS HID backend, `t150-dinput8.dll`, `t150boot`,
+`t150ctl`. Until the backend exists `t150d` logs its packets instead of
+sending them, and says so at startup.
 
 The probe tools compile clean on `macos-latest` with `-Werror` against the
 real CoreFoundation and IOKit headers, and their argument handling runs. They
@@ -168,12 +174,20 @@ from PROTOCOL.md independently of the encoder, including the `0x43` gain
 narrowing, the `0x40 0x11` range scaling and full uploads of a constant, a
 periodic and both conditions.
 
-**M2. Protocol and daemon core, on Linux.** Implement
-`t150_proto_pack_*`/`unpack_*` from `include/t150/proto.h`, the socket
-server, the slot table, the effect downgrades, and a fake HID backend that
-logs the bytes it would have written.
-*Done when:* a test client drives the fake backend end to end and the logged
-bytes match the M1 golden vectors. Still no Mac needed.
+**M2. Protocol and daemon core, on Linux. Done.** `src/lib/proto.c` and
+`src/t150d/`. The session holds every rule and touches neither a socket nor a
+clock, which is what makes the watchdog testable without waiting; `main.c`
+owns the socket and the endpoint file; `backend_fake.c` logs what a wheel
+would have received.
+
+Two decisions worth knowing before extending it. A per-effect gain is folded
+into the magnitude, because the wheel has one device gain and no per-slot
+one. A ramp is uploaded as a constant at its start value and re-sent every
+20ms as it slides, which is the only way the wheel can express one.
+*Done:* `daemon_check` drives every rule in simulated time against the
+golden vectors, and `socket_check` runs the real daemon, speaks the protocol
+over loopback, then goes quiet with the socket still open and watches the
+wheel get released.
 
 **M3. macOS HID backend.** Device matching, non-seizing open, output writes,
 hot plug. Plus `t150ctl`, and `t150boot` if the gate says the mode switch is
@@ -311,5 +325,8 @@ The author's global instructions apply. The project-specific ones:
 | `include/t150/t150.h` | wire constants, each traced to a cited source |
 | `include/t150/effect.h` | the normalized effect model the DLL sends |
 | `include/t150/proto.h` | the DLL to daemon wire protocol |
+| `include/t150/encode.h` | normalized effects to wheel packets |
+| `src/lib/` | the portable half: the encoders and the protocol codec |
+| `src/t150d/` | the daemon, and `man/t150d.8` for how to run it |
 | `src/probe/` | the three gate measurement tools |
-| `tests/header_check.c` | what CI can check without a Mac or a wheel |
+| `tests/` | what CI can check without a Mac or a wheel |

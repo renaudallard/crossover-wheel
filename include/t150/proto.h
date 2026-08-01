@@ -39,9 +39,28 @@
 
 #define T150_TOKEN_LEN		32u
 
+/*
+ * Operations, with the exact payload each one carries. The version travels
+ * in the header, so HELLO does not repeat it.
+ *
+ *   HELLO           32   the token, as ASCII hex
+ *   BYE              0
+ *   EFFECT_UPLOAD   59   see the effect layout below
+ *   EFFECT_START     2   slot, iterations
+ *   EFFECT_STOP      1   slot
+ *   EFFECT_DESTROY   1   slot
+ *   SET_GAIN         4   uint32
+ *   SET_AUTOCENTER   4   uint32
+ *   SET_RANGE        4   uint32 degrees
+ *   RESET            0
+ *   KEEPALIVE        0
+ *   OK               0
+ *   ERROR            2   uint16 t150_proto_err
+ *   STATE            4   present, firmware mode, uint16 slot bitmap
+ */
 enum t150_proto_op {
 	/* client to daemon */
-	T150_OP_HELLO = 1,	/* token, protocol version */
+	T150_OP_HELLO = 1,	/* token */
 	T150_OP_BYE,
 	T150_OP_EFFECT_UPLOAD,	/* struct t150_effect */
 	T150_OP_EFFECT_START,	/* slot, iterations */
@@ -58,6 +77,33 @@ enum t150_proto_op {
 	T150_OP_ERROR,		/* uint16 t150_proto_err */
 	T150_OP_STATE		/* wheel present, firmware mode, slot map */
 };
+
+/*
+ * An effect on the wire is fixed length, because a variable one would buy
+ * twenty bytes and cost a parser that has to be right about six shapes.
+ *
+ *    0  kind                    u8
+ *    1  slot                    u8
+ *    2  duration                u32
+ *    6  start_delay             u32
+ *   10  gain                    u32
+ *   14  direction               u32
+ *   18  envelope.attack_time    u32
+ *   22  envelope.attack_level   i32
+ *   26  envelope.fade_time      u32
+ *   30  envelope.fade_level     i32
+ *   34  envelope.present        u8
+ *   35  six i32 parameters, read according to kind
+ *
+ * The six parameter slots carry, in order:
+ *
+ *   constant   magnitude
+ *   ramp       start, end
+ *   periodic   magnitude, offset, phase, period
+ *   condition  center, pos_coeff, neg_coeff, pos_saturation,
+ *              neg_saturation, deadband
+ */
+#define T150_PROTO_EFFECT_LEN	59u
 
 enum t150_proto_err {
 	T150_ERR_NONE = 0,
@@ -79,8 +125,9 @@ enum t150_proto_err {
  * DirectInput only sends its reset on a graceful Unacquire, so a crashed or
  * force-quit game leaves the last commanded force latched on a wheel that
  * pulls hard enough to hurt. The daemon therefore treats silence as a fault:
- * if no frame arrives for this long it stops every effect and restores a
- * safe autocenter, whether or not the socket is still open.
+ * if no frame arrives for this long it stops every effect and releases the
+ * autocenter, whether or not the socket is still open, which leaves the
+ * wheel limp rather than latched or fighting.
  */
 #define T150_WATCHDOG_MS	500u
 
