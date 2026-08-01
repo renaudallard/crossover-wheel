@@ -112,7 +112,8 @@ with two experiments, both needing the Mac, and **they are independent of
 each other**: the second is worth running even if the first fails, and if the
 first succeeds the second is the next thing in the way regardless.
 
-**1. Answer the gate.** [`docs/PROBES.md`](docs/PROBES.md). Does an
+**1. Answer the gate**, step by step under
+[testing it today](#testing-it-today). Does an
 unprivileged, non-seizing `IOHIDDeviceSetReport` physically move the wheel?
 Half an hour, and nothing downstream is worth building until it is answered.
 While you are there it also settles three things the encoders currently guess
@@ -121,14 +122,11 @@ contiguous type codes `0x4020` and `0x4021` are the square and triangle the
 Linux driver never implemented, and whether the wheel obeys settings in boot
 mode, which would remove the endpoint 0 problem entirely.
 
-**2. Try the proxy in a bottle.** The DLL has never run under Wine. Install
-it as [below](#installing-the-proxy-into-a-bottle), run `t150d`, start a game
-with force feedback, and watch two things: whether `WINEDEBUG=+loaddll`
-reports `dinput8_orig.dll` as `builtin`, and whether the game's effects come
-out of the daemon's log as wheel packets. That needs no working force
-feedback at all, which is why it does not wait for the gate. If the
-chain-load does not resolve, the fallbacks are in
-[`docs/HANDOFF.md`](docs/HANDOFF.md) under M4.
+**2. Try the proxy in a bottle**, step by step under
+[testing it today](#testing-it-today). The DLL has never run under Wine, and
+finding out whether it loads and whether a game's effects reach the daemon
+needs no working force feedback at all, which is why it does not wait for the
+gate.
 
 Then, and only if the gate said yes:
 
@@ -278,21 +276,134 @@ guess is wrong. Verify the chain-load with `WINEDEBUG=+loaddll`: the
 None of this has been tried in a real bottle yet. If the chain-load does not
 resolve, the fallbacks are in [`docs/HANDOFF.md`](docs/HANDOFF.md) under M4.
 
-## Running the probes
+## Testing it today
 
-Read [`docs/PROBES.md`](docs/PROBES.md) first. In short, on the Mac with the
-wheel plugged in:
+Every step, in order, for the two things that can be tested right now.
+[`docs/PROBES.md`](docs/PROBES.md) is the authority on what each outcome
+means; this is the sequence to type.
+
+Both need the Mac. Sit at it: `IOHIDDeviceSetReport` is gated on being the
+console user and fails over SSH. On an Apple Silicon laptop, approve the
+wheel first under System Settings, Privacy and Security, Accessories.
+
+### Test A: does the wheel obey at all
+
+The decisive one. About half an hour, wheel plugged in, everything as your
+normal user unless a step says otherwise.
+
+**A1. See what macOS publishes.** Never opens the device, so it disturbs
+nothing:
 
 ```sh
-./build/bin/probe_hid -o .     # what does macOS publish for this wheel
-./build/bin/probe_setreport    # does an unprivileged write move it
-./build/bin/probe_setreport -A # stop it again
-./build/bin/probe_ep0          # does endpoint 0 work, and as whom
+system_profiler SPUSBDataType | grep -A5 -i thrustmaster
+./build/bin/probe_hid -o .
 ```
 
-The second one is the decisive measurement. Note that a success return is
-not the answer: macOS can accept a report the firmware then ignores, so what
-settles it is whether the wheel physically reacted.
+Record the product id (`B65D` is boot mode, `B677` is firmware mode), how
+many HID nodes appear for the one wheel, each node's usage page and usage,
+each `MaxOutputReportSize`, and whether `ProtectedAccess` is present.
+
+**A2. Only if A1 said `B65D`,** the mode switch. Read only by default, so the
+first three are safe:
+
+```sh
+./build/bin/probe_ep0                  # as your user
+sudo ./build/bin/probe_ep0             # then as root, compare
+sudo ./build/bin/probe_ep0 -s          # last resort, seizes the device
+sudo ./build/bin/probe_ep0 -w          # only after a query succeeded
+./build/bin/probe_hid                  # should now say B677
+```
+
+Record which of those first succeeded and as whom. That decides whether the
+finished tool needs a password once per plug-in or never. If only `-s` works,
+stop and reassess: seizing takes the wheel away from CrossOver.
+
+**A3. The measurement.** Autocenter, because its effect is unmistakable, the
+wheel starts pulling itself to centre:
+
+```sh
+./build/bin/probe_setreport            # spring to full, then enable
+./build/bin/probe_setreport -A         # switch it off again
+```
+
+**A success return is not the answer.** macOS can accept a report the
+firmware then discards. What settles this is whether the wheel physically
+moved.
+
+**A4. If it returned success and nothing moved,** work the framings before
+concluding anything:
+
+```sh
+./build/bin/probe_setreport -i 0x0a         # the declared output report id
+./build/bin/probe_setreport -P              # zero-padded to the declared size
+./build/bin/probe_setreport -i 0x0a -P
+./build/bin/probe_setreport -n 1            # the other node, if there is one
+./build/bin/probe_setreport -p 0xb65d       # and try it in boot mode
+./build/bin/probe_setreport -r 270          # a different opcode: short lock to lock
+./build/bin/probe_setreport -r 1080         # back to full
+```
+
+**A5. If the wheel moved,** prove the force feedback protocol too. Four
+packets on one open handle, a constant force at half level, endless:
+
+```sh
+./build/bin/probe_setreport -g 0x60
+./build/bin/probe_setreport \
+    -x "02 1c 00 00 00 00 00 00 00 46 54" \
+    -x "03 0e 00 20" \
+    -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
+    -x "41 00 41 01"
+```
+
+**Hold the wheel or keep a hand on the plug**, then stop it:
+
+```sh
+./build/bin/probe_setreport -x "41 00 00 01"
+```
+
+**A6. Three cheap answers while you are set up.** Compare `03 0e 00 40`
+against `03 0e 00 7f` in A5: if they feel the same, a constant really does
+stop at `0x40`. Try `20 40` and `21 40` in place of `00 40` in the third
+packet, which would mean square and triangle exist after all. And repeat A3
+once with a game running in a bottle, because macOS 26 fails `setReport` for
+every client the moment anything seizes the device.
+
+### Test B: does the proxy load in a bottle
+
+Independent of test A, and worth running even if A fails. Needs CrossOver and
+any DirectInput 8 or SDL game with force feedback settings. No working force
+feedback is required, because the daemon logs rather than drives.
+
+**B1. Install the proxy** as [above](#installing-the-proxy-into-a-bottle).
+
+**B2. Start the daemon** and leave it running where you can see it:
+
+```sh
+./build/bin/t150d -v
+```
+
+**B3. Start the game** from a terminal so the loader talks:
+
+```sh
+WINEDEBUG=+loaddll T150_DEBUG=1 \
+    "$CX_ROOT/bin/wine" --bottle "<name>" --cx-app "<game>.exe"
+```
+
+**B4. Watch for four things, in order.** Each one that appears rules out a
+whole class of failure:
+
+1. `dinput8_orig.dll` loaded as `builtin` in the `+loaddll` output. If it
+   says `native`, or does not appear, the chain-load did not resolve and the
+   fallbacks are in [`docs/HANDOFF.md`](docs/HANDOFF.md) under M4.
+2. `t150-dinput8: connected to the daemon on port ...` from `T150_DEBUG`. If
+   this is missing, the proxy could not find the endpoint file; set
+   `T150_ENDPOINT` to its Windows path explicitly.
+3. `t150-dinput8: wrapped the wheel`. If this is missing, the game's device
+   is not being recognised as the T150, or the game never created it.
+4. `write ...` lines in the daemon's output as the game's force feedback
+   starts. Those are the packets a wheel would have received.
+
+Getting to 4 means every layer above the missing HID backend works.
 
 ## Scope
 
