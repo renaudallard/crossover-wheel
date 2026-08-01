@@ -173,6 +173,35 @@ protocol are both fine and the fault is in the macOS HID path. If it stays
 rigid there too, the wheel's resting behaviour is simply this and the
 autocenter theory is wrong.
 
+**A10. Two facts bound how rigid the wheel can actually be.**
+
+The wheel calibrates, which means it drives itself through its whole range of
+travel moments before it is found immovable. **A mechanical jam in the belt
+or gear train is therefore ruled out**: a seized train cannot sweep.
+
+And the T150's motor produces roughly 2 Nm. On a rim of that size it is on
+the order of 1.4 kgf at the rim, which two hands beat comfortably. **No
+firmware state, however wedged, can make this wheel genuinely immovable.**
+Nor can a failed motor bridge: dynamic braking torque is proportional to
+speed, so at a standstill it is zero, and a shorted bridge feels like treacle
+rather than a wall.
+
+So "cannot be turned" is very likely "very strongly held", which is what a
+wheel sitting at maximum autocenter feels like to a light grip. That is
+consistent with everything else and it keeps hypothesis 1 alive: the wheel is
+holding, and nothing this project sends persuades it to stop.
+
+The cheap test that separates electrical from mechanical, if there is any
+doubt left: **pull the mains lead and leave USB connected.** The motor rail
+comes from mains, the logic rail from USB. If the wheel frees up, the hold is
+being produced electrically and the hardware is fine. Do not escalate force
+to find out: a stripped gear and a shredded belt are this wheel's signature
+failures.
+
+> T150 motor output from published reviews; dynamic braking behaviour from
+> standard motor control references. The mains-out test is reasoning from the
+> T150's two supply rails rather than a documented procedure.
+
 Nothing in the project should be changed until that is known. The transport
 facts stand on their own either way, because none of them depend on the
 motor: the descriptors read, the endpoint 0 path works unprivileged,
