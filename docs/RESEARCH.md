@@ -68,10 +68,19 @@ unnumbered payload returned `kIOReturnSuccess`, both on an idle desktop and
 with Assetto Corsa running in a bottle, so nothing CrossOver does provoked
 B6's `kIOReturnExclusiveAccess`.
 
-What that run did **not** record is whether the wheel physically moved, which
-is the only thing that answers E1. It was also a T150 settings opcode sent to
-a wheel still in boot mode, where it has no reason to be honoured. E1 remains
-open.
+The wheel did not react: it stayed locked rigid throughout, before, during
+and after every write. That is a negative result for those runs and **not**
+an answer to E1, for two reasons. They were firmware mode opcodes sent to a
+wheel still in boot mode, where nothing obliges the firmware to honour them.
+And a wheel that is already held rigid has no room to demonstrate an
+autocenter spring or a shorter lock to lock, so the observable the probe
+relies on was not visible even in principle.
+
+**So E1 cannot be answered until the wheel is out of boot mode and turning
+freely.** Whatever holds it rigid is doing so before any of this project's
+code reaches it, so a free wheel is a precondition of the measurement, not
+one of its possible outcomes. That makes C6's mode switch, and therefore
+`probe_ep0`, the next thing that has to work.
 
 > Measured. Boot mode publishes an unnumbered 8-byte vendor output report
 > (usage `0x2621`) and a matching feature report, not the id `0x0A` 14-byte

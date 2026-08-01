@@ -343,8 +343,14 @@ which of those first succeeded and as whom. That decides whether the
 finished tool needs a password once per plug-in or never. If only `-s` works,
 stop and reassess: seizing takes the wheel away from CrossOver.
 
-**A3. The measurement.** Autocenter, because its effect is unmistakable, the
-wheel starts pulling itself to centre:
+**A3. The measurement.** First check the wheel turns freely by hand. One
+measured wheel sat locked rigid in boot mode and stayed locked through every
+write, which is not an answer: a wheel already held immovable cannot show an
+autocenter spring or a shorter lock to lock, so there is nothing to watch
+for. If it will not turn, do A2 first and come back.
+
+Then autocenter, because its effect is unmistakable, the wheel starts pulling
+itself to centre:
 
 ```sh
 ./build/bin/probe_setreport

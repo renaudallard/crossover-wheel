@@ -83,6 +83,15 @@ descriptor dumps written by `-o .` can be parsed offline on Linux with
 This is the one that decides the project. It only applies once the wheel is
 in firmware mode.
 
+**Check the wheel turns freely first.** One measured wheel sat locked rigid
+in boot mode and stayed that way through every write. That is not an answer:
+a wheel already held immovable cannot demonstrate an autocenter spring or a
+shorter lock to lock, so the thing this question watches for is invisible
+before question 3 has run. If the wheel will not turn by hand, go to question
+3, come back, and check again. If it still will not turn once it reports
+`B677`, say so, because that is a different and much more interesting
+failure.
+
 ```sh
 ./build/bin/probe_setreport
 ```
