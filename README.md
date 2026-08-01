@@ -5,10 +5,13 @@ Force feedback for the **Thrustmaster T150** in games running under
 DriverKit system extension, no SIP change, no AMFI change, no system
 extension approval.
 
-> **Status: pre-implementation.** Only the Phase 0 measurement tools, the
-> shared headers and the build exist. The project is deliberately gated on
-> one experiment, described in [`docs/PROBES.md`](docs/PROBES.md), because
-> if it fails nothing else here is worth writing.
+> **Status: nothing here drives a wheel yet.** The measurement the whole
+> design rests on has never been made, and until it is, the daemon logs its
+> packets instead of sending them. It is described in
+> [`docs/PROBES.md`](docs/PROBES.md), it needs a Mac and a wheel and about
+> half an hour, and if it fails most of this project is wasted rather than
+> merely early. Everything that can be built and tested without a wheel has
+> been: see [what exists today](#what-exists-today).
 
 **Picking this up?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first. It is
 written for someone starting with no context: what is decided, what is
@@ -102,6 +105,58 @@ same way is the first thing M5 has to try.
 None of this says the wheel agrees with the bytes. That is
 [`docs/PROBES.md`](docs/PROBES.md), and it has not been answered.
 
+## Using a release
+
+Prebuilt binaries are on the
+[releases page](https://github.com/renaudallard/crossover-wheel/releases),
+built by CI from the tagged commit. Two archives:
+
+| Archive | Contains |
+| --- | --- |
+| `crossover-wheel-<v>-macos-arm64.tar.gz` | `probe_hid`, `probe_setreport`, `probe_ep0`, `t150d` |
+| `crossover-wheel-<v>-windows-x86_64.zip` | `t150-dinput8.dll`, the in-bottle proxy |
+
+Apple Silicon only, and there is no Intel build. Verify what you downloaded
+before running it:
+
+```sh
+shasum -a 256 -c SHA256SUMS
+tar xzf crossover-wheel-<v>-macos-arm64.tar.gz
+cd crossover-wheel-<v>-macos-arm64
+```
+
+**The binaries are unsigned and not notarized.** Downloaded through a browser
+they are quarantined and macOS will refuse to run them, with a message about
+an unidentified developer. Either fetch them with `curl`, which sets no
+quarantine attribute, or clear it:
+
+```sh
+xattr -d com.apple.quarantine probe_hid probe_setreport probe_ep0 t150d
+```
+
+Two more things will otherwise cost you a session, both of them macOS rather
+than this project:
+
+- **Sit at the machine.** `IOHIDDeviceSetReport` is gated on being the
+  console user, so `probe_setreport` and `t150d` fail over SSH, from the
+  login window, and from a fast-user-switched session.
+- **Approve the wheel.** On an Apple Silicon laptop, System Settings, Privacy
+  and Security, Accessories. Until you do, the wheel appears nowhere and
+  `probe_hid` reports no matches.
+
+Then do things in this order. The commands below are written as
+`./build/bin/...` because that is where a source build puts them; from a
+release archive, run them from the directory you just extracted.
+
+1. **Answer the gate first.** [`docs/PROBES.md`](docs/PROBES.md), summarised
+   under [running the probes](#running-the-probes). Nothing else is worth
+   your time until this says yes, and the tools in this archive are the only
+   reason it is worth downloading today.
+2. **Then, if it said yes**, there is still no macOS HID backend, so `t150d`
+   will log rather than drive. Running it and the proxy together (below)
+   shows the effects a game produces arriving as wheel packets, which is
+   worth seeing but is not force feedback.
+
 ## Building
 
 On Linux, which builds and tests everything portable:
@@ -119,6 +174,11 @@ make probes
 
 `make strict` is the same with warnings as errors, and is what CI runs.
 `make help` lists the targets.
+
+Development happens on Linux; the Mac is only needed to run the probes and
+the daemon. Because the probe sources cannot be compiled on Linux, CI builds
+them on `macos-latest` on every push and attaches them as an artifact, so a
+Mac is not needed to get a binary either.
 
 ## Running the daemon
 
@@ -157,15 +217,16 @@ cp build/bin/t150-dinput8.dll \
     'HKCU\Software\Wine\DllOverrides' /v dinput8 /t REG_SZ /d native,builtin /f
 ```
 
+From a release archive, use `t150-dinput8.dll` from the extracted directory
+in place of `build/bin/t150-dinput8.dll`.
+
 Set `T150_DEBUG=1` in the bottle to make the proxy say what it is doing, and
 `T150_ENDPOINT` to point it at the daemon's endpoint file if the default
 guess is wrong. Verify the chain-load with `WINEDEBUG=+loaddll`: the
 `dinput8_orig.dll` line must say `builtin`.
 
-Development happens on Linux; the Mac is only needed to run the probes.
-Because the probe sources cannot be compiled on Linux, CI builds them on
-`macos-latest` on every push and attaches them as an artifact, so a Mac is
-not needed to get a binary either.
+None of this has been tried in a real bottle yet. If the chain-load does not
+resolve, the fallbacks are in [`docs/HANDOFF.md`](docs/HANDOFF.md) under M4.
 
 ## Running the probes
 
