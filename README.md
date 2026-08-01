@@ -105,6 +105,57 @@ same way is the first thing M5 has to try.
 None of this says the wheel agrees with the bytes. That is
 [`docs/PROBES.md`](docs/PROBES.md), and it has not been answered.
 
+## What needs doing next
+
+Everything that can be built without hardware has been. What is left starts
+with two experiments, both needing the Mac, and **they are independent of
+each other**: the second is worth running even if the first fails, and if the
+first succeeds the second is the next thing in the way regardless.
+
+**1. Answer the gate.** [`docs/PROBES.md`](docs/PROBES.md). Does an
+unprivileged, non-seizing `IOHIDDeviceSetReport` physically move the wheel?
+Half an hour, and nothing downstream is worth building until it is answered.
+While you are there it also settles three things the encoders currently guess
+at: whether a constant force tops out at `0x40` or `0x7f`, whether the
+contiguous type codes `0x4020` and `0x4021` are the square and triangle the
+Linux driver never implemented, and whether the wheel obeys settings in boot
+mode, which would remove the endpoint 0 problem entirely.
+
+**2. Try the proxy in a bottle.** The DLL has never run under Wine. Install
+it as [below](#installing-the-proxy-into-a-bottle), run `t150d`, start a game
+with force feedback, and watch two things: whether `WINEDEBUG=+loaddll`
+reports `dinput8_orig.dll` as `builtin`, and whether the game's effects come
+out of the daemon's log as wheel packets. That needs no working force
+feedback at all, which is why it does not wait for the gate. If the
+chain-load does not resolve, the fallbacks are in
+[`docs/HANDOFF.md`](docs/HANDOFF.md) under M4.
+
+Then, and only if the gate said yes:
+
+**3. The macOS HID backend.** The one missing piece of the daemon: device
+matching, a non-seizing open, output writes and hot plug, behind the backend
+interface `backend_fake.c` already implements. `src/probe/common.c` is
+already the non-seizing enumeration it needs and should be moved rather than
+rewritten.
+
+**4. `t150ctl` and `t150boot`.** Rotation range, gain and autocenter from the
+command line; and the boot to firmware mode switch, if the gate found the
+wheel needs one. Ship the switch as a LaunchAgent matching the boot product
+id, because sleep, wake and replug all drop the wheel back.
+
+**5. Robustness, then a real game.** Reconnect on both ends, hot plug, and
+the watchdog under real crash conditions. Measure the latency and jitter of
+the whole path under Rosetta while you are there: a wheel wants updates near
+500 Hz and nobody has measured it.
+
+Later, and not blocking: an ARM64EC build for CrossOver 27's bottles, an
+installer that does the bottle setup in one step, and optionally an SCS
+telemetry plugin, which is the only way any native macOS game can be reached.
+
+If the gate says no, the ladder of fallbacks is in
+[`docs/HANDOFF.md`](docs/HANDOFF.md) section 8, and the honest last rung is
+to say so and stop.
+
 ## Using a release
 
 Prebuilt binaries are on the
@@ -144,18 +195,17 @@ than this project:
   and Security, Accessories. Until you do, the wheel appears nowhere and
   `probe_hid` reports no matches.
 
-Then do things in this order. The commands below are written as
-`./build/bin/...` because that is where a source build puts them; from a
-release archive, run them from the directory you just extracted.
+What to actually do with them is
+[what needs doing next](#what-needs-doing-next): the probes answer the gate,
+and the daemon and the proxy together let the bottle half be tried even
+before it is answered. Bear in mind throughout that `t150d` has no macOS HID
+backend yet, so it logs rather than driving: what you can see today is a
+game's effects arriving as wheel packets, which is worth seeing and is not
+force feedback.
 
-1. **Answer the gate first.** [`docs/PROBES.md`](docs/PROBES.md), summarised
-   under [running the probes](#running-the-probes). Nothing else is worth
-   your time until this says yes, and the tools in this archive are the only
-   reason it is worth downloading today.
-2. **Then, if it said yes**, there is still no macOS HID backend, so `t150d`
-   will log rather than drive. Running it and the proxy together (below)
-   shows the effects a game produces arriving as wheel packets, which is
-   worth seeing but is not force feedback.
+Commands below are written as `./build/bin/...` because that is where a
+source build puts them; from a release archive, run them from the directory
+you just extracted.
 
 ## Building
 
