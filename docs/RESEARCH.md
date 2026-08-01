@@ -98,9 +98,10 @@ Measured on the same wheel, in the PS3 position:
 - Afterwards `probe_setreport`, which defaults to `044f:b677`, matched a
   node. **The wheel reaches firmware mode.**
 
-The switch was only ever run under `sudo`, so whether the write also works
-unprivileged is still unmeasured, and it is the difference between a tool
-that needs a password once per plug-in and one that never does.
+**The switch write also needs no privilege.** A later run performed
+`probe_ep0 -w` as uid 501 and the wheel switched. So the whole endpoint 0
+path, query and switch, is open to an ordinary user on macOS 26, and the
+finished tool never needs a password. E5 is fully answered.
 
 **A7. Firmware mode is not the descriptor PROTOCOL.md describes.** The
 `b677` node reports usage page `0x01` **usage `0x04`**, a joystick, where
@@ -119,13 +120,34 @@ still locked.** Autocenter on and off, rotation range at both extremes, with
 and without report id `0x0A`, padded and unpadded: all `kIOReturnSuccess`,
 and the wheel stayed rigid at centre throughout, unable to be turned by hand.
 
-That reads as a straight negative for E1, and it is not one yet, because of
-how the run was ordered. Every framing variant in that matrix is the
+That reading was confounded the first time: every framing variant is the
 *autocenter* action, which sets the spring to maximum and enables it, and
-nothing disabled it in between. A wheel obeying a maximum autocenter and a
-wheel ignoring every byte both present as immovable. The run therefore
-cannot distinguish the two, and the procedure that produced it has been
-changed.
+nothing disabled it in between, so a wheel obeying perfectly and a wheel
+ignoring everything both ended up immovable.
+
+**A third run removed the confound and the answer did not change.** It sent
+`-A` first, on a wheel that was already rigid, then worked the whole matrix
+with the spring released between each variant, then both rotation range
+extremes. Every write returned `kIOReturnSuccess`. The wheel never moved and
+never became turnable.
+
+**A9. The wheel is not in a state where any of this can be measured.**
+Thrustmaster documents the T150's normal startup as a calibration sweep,
+"wheel movements counterclockwise, clockwise then back to center", and
+documents a failure mode that matches what is being seen: "the racing wheel
+does not calibrate ... Insufficient power from the power outlet or USB port
+may interfere with the T150's motor, calibration, and force feedback." Its
+advice is a wall outlet directly rather than a strip or extension, and a USB
+port on the machine directly rather than a hub.
+
+A wheel that has not completed its calibration sweep has not learned its end
+stops, and nothing in this project's protocol is expected to work on one.
+**Until the wheel calibrates and turns freely with nothing attached to it,
+E1 cannot be answered, and the probes are measuring the wrong thing.** That
+is a hardware state, not a protocol result, and it is the first thing to
+clear.
+
+> Thrustmaster T150 help centre, sections 1.1, 2.1 and 2.2.
 
 > Measured. Boot mode publishes an unnumbered 8-byte vendor output report
 > (usage `0x2621`) and a matching feature report, not the id `0x0A` 14-byte

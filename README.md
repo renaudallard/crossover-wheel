@@ -285,6 +285,11 @@ means; this is the sequence to type.
 Both need the Mac. Three things first, each of which otherwise costs a whole
 session:
 
+- **Watch it calibrate.** A healthy T150 sweeps counterclockwise, then
+  clockwise, then back to centre as soon as it has power, and turns freely by
+  hand afterwards. If it does not, nothing below can be measured on it:
+  Thrustmaster attributes that to power, so use a wall outlet directly rather
+  than a strip, and a USB port on the machine rather than a hub.
 - **Put the wheel's switch in the PS3 position** before plugging it in. The
   selector decides which device macOS sees: PS3 gives `044f:b65d`, the shared
   boot identity that the mode switch takes to `044f:b677`, which is what this

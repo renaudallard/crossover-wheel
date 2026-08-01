@@ -51,6 +51,24 @@ rejected: the steering and pedals are buried in a 54-byte vendor blob that
 nothing decodes without replacing the report descriptor, which a kernel
 driver may do and this project may not. RESEARCH.md D7 has the evidence.
 
+**Watch the wheel start up, and do not proceed until it does.** A healthy
+T150 performs a calibration sweep the moment it has power: counterclockwise,
+then clockwise, then back to centre, with the LED on. Afterwards it turns
+freely by hand. A wheel that does not do this has not learned its end stops,
+and no measurement below means anything on one.
+
+Thrustmaster attributes exactly that failure to power, and its advice costs
+nothing to follow:
+
+- power adapter **directly into a wall outlet**, not a strip, extension or
+  transformer,
+- USB **directly into the machine**, not a hub, dock or extension, and try a
+  different port,
+- check the LED is lit.
+
+If it still will not calibrate, the wheel needs its firmware checked or its
+bootloader recovery run before this project can say anything about it.
+
 Three more things on macOS 26 will otherwise waste a run:
 
 - **Approve the accessory.** On an Apple Silicon laptop, new USB accessories
