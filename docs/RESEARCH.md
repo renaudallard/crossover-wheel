@@ -152,7 +152,14 @@ one of the first things it does after probing, which only makes sense if the
 wheel powers up with it on. A T150 holding full autocenter is genuinely hard
 to move.
 
-**Two hypotheses remain, and they are not yet separated:**
+**C7 supplies a third, and it is now the leading one:** macOS's
+`IOHIDDeviceSetReport` reaches the wheel over the control pipe, and
+Thrustmaster firmware acknowledges that pipe and ignores it. An independent
+macOS driver for the sibling T300RS says exactly this and seizes the USB
+interface to write on the interrupt OUT pipe instead. Read C7 before
+spending any more time on framings; it predicts every result seen here.
+
+The two earlier hypotheses, which C7 largely subsumes:
 
 1. **HID output never reaches the firmware.** The writes are accepted by
    macOS and discarded, so nothing can change the wheel's resting state. This
@@ -420,6 +427,85 @@ driver never uses it.
 
 > linux `drivers/hid/hid-thrustmaster.c`. Both are recipient = interface with
 > `wIndex` 0, that is, directed at the interface macOS's HID driver owns.
+
+**C7. A macOS implementation reports that Thrustmaster firmware ACKs the
+control SET_REPORT and ignores it.** This is the most consequential external
+finding this project has, because it predicts exactly what A8 measured.
+
+`Akellacom/thrustmaster_t300rs_gt_macos_driver` is a userspace macOS driver
+for the T300RS on Apple Silicon. Its wheel configuration code carries this
+comment, and its implementation follows it:
+
+> Linux hid-tmff2 sends via interrupt OUT (usbhid_submit_report to urbout).
+> **SET_REPORT control pipe is ACKed but IGNORED by T300RS firmware.**
+> macOS IOHIDDeviceSetReport clips data to original descriptor (62 bytes),
+> but firmware needs 63 bytes (per Linux fixed descriptor).
+> Solution: USBInterfaceOpenSeize to take interface from HID driver,
+> write 63 bytes via WritePipe to interrupt OUT, then release.
+
+So an independent implementation, on the same operating system, concluded
+that `IOHIDDeviceSetReport` does not reach a Thrustmaster wheel's firmware,
+and took the device away from the HID driver to write on the interrupt OUT
+pipe instead. It also confirms E3's 62-byte clip, which until now rested on a
+single second-hand report.
+
+That is precisely the shape of what was measured here: every write accepted,
+nothing ever happens. It is C3 arriving as feared, one layer further out than
+expected. C3 said the T150's driver never uses the HID layer; C7 says that on
+macOS the HID layer is the only thing an unprivileged process has, and the
+firmware does not listen to it.
+
+**Two things stop this being conclusive for this project.** It is a T300RS
+finding, not a T150 one, and the T150's protocol and firmware differ. And the
+project has not itself demonstrated which pipe `IOHIDDeviceSetReport` uses on
+macOS 26; the claim that it is the control pipe is Akellacom's, inferred from
+behaviour rather than from Apple's sources, which are closed.
+
+It is nonetheless the best available explanation of A8, and it should be
+treated as the leading hypothesis rather than as one of several.
+
+> `Sources/CUSBModeSwitch/CUSBModeSwitch.c`, the comment above
+> `thrustmaster_configure_wheel()`, and its use of `USBInterfaceOpenSeize`
+> and `WritePipe` throughout.
+
+**C8. The same project shows what a T-series wheel wants before it will
+behave.** `T300RSProtocol.swift` carries a set of pre-initialisation packets
+"sent to endpoint 1" which "MUST be sent before the mode switch to prevent
+crashes":
+
+```
+42 01 00 00 00 00 00 00 00
+0a 04 90 03 00 00 00 00
+0a 04 00 0c 00 00 00 00
+0a 04 12 10 00 00 00 00
+0a 04 00 06 00 00 00 00
+```
+
+They go to the interrupt OUT endpoint, not through the HID layer, which is
+the same conclusion as C7 reached from the other direction. Their model table
+also lists the T150 as `0x0603`, the same two bytes the probes read here in
+the other order.
+
+This is the initialisation this project has never sent and could not send,
+because it has no route to the interrupt OUT pipe. Whether the T150 needs an
+equivalent is unknown; that it exists for a sibling wheel makes the question
+worth settling rather than assuming.
+
+> `Sources/ThrustmasterWheel/T300RSProtocol.swift`, `T300RSInit.setupPackets`.
+
+**C9. Reading a Thrustmaster wheel from macOS userspace is uncontroversial.**
+`lockieluke/Thrustmaster4Mac` opens a T300RS with `hidapi`, explicitly
+non-exclusively (`set_open_exclusive(false)`), reads pedal and wheel state,
+and forwards it to an Assetto Corsa Lua plugin over a websocket. No force
+feedback, no privilege, no capture.
+
+It is worth noting only for the contrast: input from these wheels is easy and
+needs nothing special, which is consistent with A1 and with this project's
+whole premise. It is output that is the problem.
+
+> `src/main.rs`.
+
+---
 
 ---
 

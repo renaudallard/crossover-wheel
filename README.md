@@ -11,10 +11,13 @@ extension approval.
 > unprivileged and every write is accepted, but the wheel is held rigid and
 > cannot be turned by hand: in boot mode, in firmware mode, and in the PS4
 > position where it takes nothing from this project at all. It calibrates
-> normally, so it is not broken; holding itself appears to be its resting
-> state. Whether that is because the writes never reach the firmware, or
-> because the wheel wants an initialisation nobody has captured, is not yet
-> separated. See [`docs/RESEARCH.md`](docs/RESEARCH.md) A4 to A9. Everything that can be
+> normally, so it is not broken. The leading explanation is now external: a
+> macOS driver for the sibling T300RS documents that Thrustmaster firmware
+> acknowledges the control SET_REPORT pipe and ignores it, and seizes the USB
+> interface to write on the interrupt OUT pipe instead. If that holds for the
+> T150, the unprivileged non-seizing path this design rests on does not
+> reach the wheel. See [`docs/RESEARCH.md`](docs/RESEARCH.md) A4 to A11 and
+> C7. Everything that can be
 > built and tested without a wheel has been: see
 > [what exists today](#what-exists-today).
 
