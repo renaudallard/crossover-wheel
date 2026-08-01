@@ -1,8 +1,12 @@
-# Phase 0: the three measurements
+# Phase 0: the measurements
 
-Nothing else in this repository is worth writing until these three questions
-are answered on real hardware. They take about twenty minutes with the wheel
-plugged into the Mac.
+Nothing else in this repository is worth writing until these questions are
+answered on real hardware. Half an hour with the wheel plugged into the Mac.
+
+**Do them in this order.** The first wheel these were run against sat locked
+rigid in boot mode, which made question 3 unanswerable: a wheel that cannot
+turn cannot show an autocenter spring. The mode switch is not an optional
+follow-up to the measurement, it is a precondition of it.
 
 Build the tools first. On the Mac:
 
@@ -31,7 +35,7 @@ that `probe_hid` actually reported.
 **Put the wheel's switch in the PS3 position before plugging it in.** The
 T150 has a physical selector and it decides which device macOS sees. In the
 PS3 position the wheel is `044f:b65d`, the shared boot identity, and the mode
-switch in question 3 takes it to `044f:b677` where everything in
+switch in question 2 takes it to `044f:b677` where everything in
 [PROTOCOL.md](PROTOCOL.md) applies. In the PS4 position it is `044f:b66d`
 instead, a DualShock 4 shaped device with a different descriptor and a
 different protocol, and nothing here applies to it: `probe_setreport` will
@@ -56,7 +60,7 @@ Three more things on macOS 26 will otherwise waste a run:
 The T-series enumerates at the shared boot product id `044F:B65D` and only
 reveals its real personality after a vendor control transfer flips it to
 `044F:B677`. If your wheel is already at `B677` when you plug it in, the
-control transfer is not needed at all and question 3 becomes irrelevant.
+control transfer is not needed at all and question 2 can be skipped.
 
 ```sh
 system_profiler SPUSBDataType | grep -A5 -i thrustmaster
@@ -78,19 +82,56 @@ for output while CrossOver keeps reading the joystick node. The `.bin`
 descriptor dumps written by `-o .` can be parsed offline on Linux with
 `hid-tools` and belong in the bug report if anything looks unexpected.
 
-## Question 2: does an unprivileged SetReport move the wheel?
+## Question 2: can the wheel be switched to firmware mode?
+
+Only needed if question 1 found the wheel at `B65D`, and then it is needed
+before anything else: until this succeeds the wheel is not the device
+PROTOCOL.md describes, and it may not even turn.
+
+The mode switch is a pair of vendor control transfers directed at interface
+0, which is the interface macOS's own HID driver owns, so it may well be
+refused. `probe_ep0` tries three escalating approaches and prints the
+`IOReturn` of every one. By default it performs only the read-only model
+query and does not switch anything.
+
+```sh
+./build/bin/probe_ep0
+sudo ./build/bin/probe_ep0
+sudo ./build/bin/probe_ep0 -s
+```
+
+Record which step first succeeded and under which user. That single fact
+decides whether the finished tool needs a password once per plug-in or never.
+
+Once a model query has succeeded, and only then, the switch itself:
+
+```sh
+sudo ./build/bin/probe_ep0 -w
+./build/bin/probe_hid
+```
+
+Record three things: which invocation first succeeded and as whom, whether
+`probe_hid` now reports `B677`, and **whether the wheel turns freely by hand
+afterwards**. The last one is what makes question 3 measurable at all. A
+wheel that reports `B677` and is still locked is a separate and more
+interesting failure, and worth reporting on its own.
+
+Be aware of what `-s` costs if it turns out to be the only thing that works.
+Seizing takes the device away from every other client, so the wheel would
+vanish from CrossOver for as long as the daemon holds it, which is not a
+degraded mode but a different design.
+
+## Question 3: does an unprivileged SetReport move the wheel?
 
 This is the one that decides the project. It only applies once the wheel is
 in firmware mode.
 
-**Check the wheel turns freely first.** One measured wheel sat locked rigid
-in boot mode and stayed that way through every write. That is not an answer:
-a wheel already held immovable cannot demonstrate an autocenter spring or a
-shorter lock to lock, so the thing this question watches for is invisible
-before question 3 has run. If the wheel will not turn by hand, go to question
-3, come back, and check again. If it still will not turn once it reports
-`B677`, say so, because that is a different and much more interesting
-failure.
+**Check the wheel turns freely by hand before starting.** One measured wheel
+sat locked rigid and stayed that way through every write, which reads like a
+negative result and is not one: a wheel already held immovable cannot
+demonstrate an autocenter spring or a shorter lock to lock, so there was
+nothing to see either way. If it will not turn, question 2 has not done its
+job yet and nothing below means anything.
 
 ```sh
 ./build/bin/probe_setreport
@@ -133,17 +174,18 @@ another:
 
 ### Also try it in boot mode
 
-`probe_setreport` defaults to the firmware product id, so if question 1 found
-the wheel at `B65D` the runs above matched nothing. Point it at the boot id
-and repeat:
+Worth five minutes, because a wheel that honours settings before the switch
+would make the whole endpoint 0 problem in question 2 go away. Point
+`probe_setreport` at the boot id, since it defaults to the firmware one:
 
 ```sh
 ./build/bin/probe_setreport -p 0xb65d
 ```
 
-This is worth five minutes even when the wheel is already at `B677`, because
-a wheel that honours settings in boot mode makes the whole endpoint 0 problem
-in question 3 go away.
+Be careful reading a null result here. This has already been run once, on a
+wheel that was locked rigid at the time, and every write returned success
+while nothing happened. That is not evidence the firmware ignored the bytes:
+there was no way to see whether it had.
 
 ### Also try it with CrossOver running
 
@@ -153,9 +195,9 @@ the device, and the design depends on CrossOver not doing that. A run that
 succeeds on an idle desktop and fails with a game running has found something
 important.
 
-## Question 2b: does the force feedback protocol work too?
+## Question 4: does the force feedback protocol work too?
 
-Only once question 2 has moved the wheel. The settings opcodes prove the
+Only once question 3 has moved the wheel. The settings opcodes prove the
 transport; this proves the part the daemon will actually spend its time on,
 and it costs one more run.
 
@@ -187,7 +229,7 @@ duration limit does not stop on its own. Stop it with:
 ```
 
 If the settings packets moved the wheel and this does nothing, retry it with
-the same framing flags that worked for question 2, then say so plainly: it
+the same framing flags that worked for question 3, then say so plainly: it
 means the transport is fine and the force feedback layout is wrong, which is
 a much better place to be than the alternative.
 
@@ -210,37 +252,6 @@ That is a one second period at half magnitude with type `0x4020`. Repeat with
 `21 40` and `25 40` in the third packet. Anything that oscillates is a
 waveform we can stop downgrading. Stop it the same way as above.
 
-## Question 3: does endpoint 0 work, and as whom?
-
-Only needed if question 1 found the wheel at `B65D`.
-
-The mode switch is a pair of vendor control transfers directed at interface
-0, which is the interface macOS's own HID driver owns, so it may well be
-refused. `probe_ep0` tries three escalating approaches and prints the
-`IOReturn` of every one. By default it performs only the read-only model
-query and does not switch anything.
-
-```sh
-./build/bin/probe_ep0
-sudo ./build/bin/probe_ep0
-sudo ./build/bin/probe_ep0 -s
-```
-
-Record which step first succeeded and under which user. That single fact
-decides whether the finished tool needs a password once per plug-in or never.
-
-Once a model query has succeeded, and only then, the switch itself:
-
-```sh
-sudo ./build/bin/probe_ep0 -w
-./build/bin/probe_hid
-```
-
-Be aware of what `-s` costs if it turns out to be the only thing that works.
-Seizing takes the device away from every other client, so the wheel would
-vanish from CrossOver for as long as the daemon holds it, which is not a
-degraded mode but a different design.
-
 ---
 
 ## What the answers decide
@@ -248,12 +259,14 @@ degraded mode but a different design.
 | Outcome | Consequence |
 | --- | --- |
 | Wheel already at `B677` | No control transfer, no root, anywhere. Best case. |
+| Wheel locked rigid and will not turn by hand | Question 3 cannot be answered yet. Do question 2 first. |
+| Still locked after it reports `B677` | Report it. Nothing in this project holds a wheel rigid, so something else does, and that has to be understood before the measurement means anything. |
 | Wheel at `B65D` but honours settings there | Almost as good: the mode switch stops being load bearing. |
 | SetReport moves the wheel unprivileged | The architecture works. Build it. |
 | It moves on an idle desktop but not with a game running | Something in the bottle is seizing the device. Find out what before writing anything. |
 | Settings work but the force feedback packets do nothing | The transport is fine and the packet layout is wrong. Recoverable, and much the better failure. |
 | A contiguous type code plays a waveform | Square or triangle stops being a downgrade. Record which code. |
 | SetReport succeeds but nothing moves | Try every framing above before giving up; if none work the HID path is closed and only raw interrupt OUT is left, which needs device capture and root. |
-| ep0 works unprivileged | One clean tool, no password. |
-| ep0 needs root | One `sudo` per plug-in. Note that sleep, wake or a replug drops the wheel back to boot mode, so this is a mid-race failure, not just an install-time annoyance. |
-| ep0 needs `-s` | Reconsider the design before writing more code. |
+| the switch works unprivileged | One clean tool, no password. |
+| the switch needs root | One `sudo` per plug-in. Note that sleep, wake or a replug drops the wheel back to boot mode, so this is a mid-race failure, not just an install-time annoyance. |
+| the switch needs `-s` | Reconsider the design before writing more code. |

@@ -318,8 +318,10 @@ Record the product id (`B65D` is boot mode, `B677` is firmware mode), how
 many HID nodes appear for the one wheel, each node's usage page and usage,
 each `MaxOutputReportSize`, and whether `ProtectedAccess` is present.
 
-**A2. Only if A1 said `B65D`,** the mode switch. Read only by default, so the
-first three are safe:
+**A2. If A1 said `B65D`, switch the wheel to firmware mode.** Do this before
+A3, not after: until it succeeds the wheel is not the device this project
+drives, and it may not even turn. Read only by default, so the first three
+are safe:
 
 ```sh
 ./build/bin/probe_ep0
