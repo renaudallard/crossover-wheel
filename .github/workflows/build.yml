@@ -9,7 +9,7 @@ jobs:
     name: portable headers and tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: build and test
         run: make strict
 
@@ -17,13 +17,13 @@ jobs:
     name: cross build the proxy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: install the cross compiler
         run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
       - name: build the proxy and its test
         run: make strict dll
       - name: upload the proxy
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: proxy-windows
           path: |
@@ -36,7 +36,7 @@ jobs:
     needs: dll
     runs-on: windows-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: proxy-windows
       # The proxy chain-loads the real implementation from a copy beside it.
@@ -54,7 +54,7 @@ jobs:
     name: probe tools
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: build everything
         run: make strict
       - name: confirm the probes run
@@ -68,7 +68,7 @@ jobs:
           ./build/bin/probe_setreport -h || test $? -eq 2
           ./build/bin/probe_ep0 -h || test $? -eq 2
       - name: upload the probe tools
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: probes-macos
           path: build/bin/probe_*
