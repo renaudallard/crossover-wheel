@@ -325,31 +325,48 @@ are safe:
 
 ```sh
 ./build/bin/probe_ep0
-sudo ./build/bin/probe_ep0
-sudo ./build/bin/probe_ep0 -s
+./build/bin/probe_ep0 -w
+./build/bin/probe_hid -o .
 ```
 
-In order: as your user, then as root to compare, then seizing the device as a
-last resort. Each prints the model and attachment bytes of whatever wheel it
-found, which is what identifies the model. Only once a query has succeeded,
-and only then, perform the switch and confirm it:
+The first only reads, and prints the model and attachment bytes of whatever
+it finds: `0x03` and `0x06` is a T150, anything else means passing that
+model's switch value with `-V`. This has already succeeded as an ordinary
+user with the device unopened, so if it fails on yours that is news; the
+escalations are `sudo ./build/bin/probe_ep0` and then `-s`, which seizes and
+would take the wheel away from CrossOver.
 
-```sh
-sudo ./build/bin/probe_ep0 -w
-./build/bin/probe_hid
-```
+`-w` has only ever been run under `sudo`. Try it as your user, as above: if
+it works the finished tool never needs a password, and if it does not it
+needs one per plug-in.
 
-If the model line does not say T150, pass that model's switch value with
-`-V`; the tool prints the bytes it read so you can look the value up. Record
-which of those first succeeded and as whom. That decides whether the
+**`kIOReturnNotResponding` from `-w` is the expected answer**, not a failure.
+The wheel detaches the instant it accepts the switch, so it is gone before it
+can reply, and it visibly re-runs its power-on sequence. Only `probe_hid`
+says whether it worked.
+
+The `-o .` dump matters: firmware mode reports `MaxOutputReportSize` 15 where
+the protocol document expects a 14-byte report with id `0x0A`, and 15 is
+exactly the length of the one packet that never fitted. That descriptor
+settles the framing, and nothing else can. That decides whether the
 finished tool needs a password once per plug-in or never. If only `-s` works,
 stop and reassess: seizing takes the wheel away from CrossOver.
 
-**A3. The measurement.** First check the wheel turns freely by hand. One
-measured wheel sat locked rigid in boot mode and stayed locked through every
-write, which is not an answer: a wheel already held immovable cannot show an
-autocenter spring or a shorter lock to lock, so there is nothing to watch
-for. If it will not turn, do A2 first and come back.
+**A3. The measurement.** Establish a baseline first, because the runs so far
+did not. With the wheel freshly plugged in and switched, and before sending a
+single byte, turn it by hand and note what you feel. Everything below is a
+comparison against that.
+
+A measured wheel sat rigid through every write, which looks like a negative
+result and is not one: that run set the autocenter to maximum and never
+turned it off, so a wheel obeying perfectly and a wheel ignoring everything
+both ended up immovable. On a wheel that is already rigid, the most
+informative single command is the one that releases the spring, because if it
+frees up the firmware has been obeying all along:
+
+```sh
+./build/bin/probe_setreport -A
+```
 
 Then autocenter, because its effect is unmistakable, the wheel starts pulling
 itself to centre:

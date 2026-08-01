@@ -3,6 +3,10 @@
 Nothing else in this repository is worth writing until these questions are
 answered on real hardware. Half an hour with the wheel plugged into the Mac.
 
+Most of them now have answers, and the one that decides the project does not.
+[What is already settled](#what-is-already-settled) says which is which, so
+nothing here has to be run twice.
+
 **Do them in this order.** The first wheel these were run against sat locked
 rigid in boot mode, which made question 3 unanswerable: a wheel that cannot
 turn cannot show an autocenter spring. The mode switch is not an optional
@@ -59,6 +63,27 @@ Three more things on macOS 26 will otherwise waste a run:
 - **No sandbox.** These tools are not sandboxed and must not become so:
   App Sandbox breaks IOKit HID access silently.
 
+## What is already settled
+
+Measured on a T150 on macOS 26, so these do not need redoing. Full detail in
+[RESEARCH.md](RESEARCH.md) A4 to A8.
+
+| | |
+| --- | --- |
+| The switch position decides the device | PS3 gives `044f:b65d`, PS4 gives `044f:b66d` and is out of scope |
+| The wheel identifies itself as a T150 | model `0x03`, attachment `0x06` |
+| The model query needs no privilege | succeeded as an ordinary user, device unopened, first attempt |
+| The mode switch lands | the wheel re-runs its boot sequence and comes back at `b677` |
+| Firmware mode is a joystick | usage `0x04`, `MaxOutputReportSize` **15**, where boot mode was usage `0x05` and 8 |
+| No node carries `ProtectedAccess` | so the restricted-device path in A2 does not apply |
+| CrossOver does not seize the wheel | writes still returned success with a game running |
+
+What is still open is the only thing that matters: **whether the wheel ever
+physically reacts.** Every write so far returned `kIOReturnSuccess` and the
+wheel has been rigid throughout, but the runs could not tell a wheel obeying
+a maximum autocenter from one ignoring every byte. That is what questions 3
+and 4 are for now.
+
 ---
 
 ## Question 1: is the wheel already in firmware mode?
@@ -95,49 +120,77 @@ before anything else: until this succeeds the wheel is not the device
 PROTOCOL.md describes, and it may not even turn.
 
 The mode switch is a pair of vendor control transfers directed at interface
-0, which is the interface macOS's own HID driver owns, so it may well be
-refused. `probe_ep0` tries three escalating approaches and prints the
-`IOReturn` of every one. By default it performs only the read-only model
-query and does not switch anything.
+0, the interface macOS's own HID driver owns. It was expected to be refused
+and it is not: the read-only model query has succeeded as an ordinary user,
+with the device unopened, on the first of the three approaches `probe_ep0`
+tries. Confirm that on your wheel, then switch it:
 
 ```sh
 ./build/bin/probe_ep0
-sudo ./build/bin/probe_ep0
-sudo ./build/bin/probe_ep0 -s
+./build/bin/probe_ep0 -w
+./build/bin/probe_hid -o .
 ```
 
-Record which step first succeeded and under which user. That single fact
-decides whether the finished tool needs a password once per plug-in or never.
+`probe_ep0` with no arguments only reads. It prints the model and attachment
+bytes of whatever it finds: `0x03` and `0x06` is a T150, and any other pair
+means passing that model's switch value with `-V`.
 
-Once a model query has succeeded, and only then, the switch itself:
+**`-w` has only ever been run under `sudo`.** Try it as your user first, as
+above. If it needs `sudo` the finished tool needs a password once per
+plug-in; if it does not, it never needs one. That is the whole reason to try.
 
-```sh
-sudo ./build/bin/probe_ep0 -w
-./build/bin/probe_hid
-```
+**`kIOReturnNotResponding` from the switch is the expected answer**, not a
+failure. The wheel detaches the instant it accepts the switch, so it is gone
+before the completion can come back. Only `probe_hid` can say whether it
+worked, and the wheel visibly re-runs its power-on sequence when it does.
 
-Record three things: which invocation first succeeded and as whom, whether
-`probe_hid` now reports `B677`, and **whether the wheel turns freely by hand
-afterwards**. The last one is what makes question 3 measurable at all. A
-wheel that reports `B677` and is still locked is a separate and more
-interesting failure, and worth reporting on its own.
+Record four things:
 
-Be aware of what `-s` costs if it turns out to be the only thing that works.
-Seizing takes the device away from every other client, so the wheel would
-vanish from CrossOver for as long as the daemon holds it, which is not a
-degraded mode but a different design.
+- which invocation first succeeded, and as whom,
+- whether `probe_hid` now reports `B677`,
+- **whether the wheel turns freely by hand afterwards**, which is what makes
+  question 3 measurable at all,
+- the descriptor `-o .` just dumped. Firmware mode reports
+  `MaxOutputReportSize` **15** where PROTOCOL.md expects a 14-byte report
+  with id `0x0A`, and 15 is exactly the length of `ff_commit`, the one packet
+  that never fitted. That dump settles which framing the wheel actually
+  declares, and nothing else can.
+
+If the read-only query ever does fail, `sudo ./build/bin/probe_ep0` and then
+`sudo ./build/bin/probe_ep0 -s` are the escalations. Be aware of what `-s`
+costs if it is the only thing that works: seizing takes the device away from
+every other client, so the wheel would vanish from CrossOver for as long as
+the daemon holds it, which is not a degraded mode but a different design.
 
 ## Question 3: does an unprivileged SetReport move the wheel?
 
 This is the one that decides the project. It only applies once the wheel is
 in firmware mode.
 
-**Check the wheel turns freely by hand before starting.** One measured wheel
-sat locked rigid and stayed that way through every write, which reads like a
-negative result and is not one: a wheel already held immovable cannot
-demonstrate an autocenter spring or a shorter lock to lock, so there was
-nothing to see either way. If it will not turn, question 2 has not done its
-job yet and nothing below means anything.
+**Establish the baseline first, because the last two runs did not.** Unplug
+the wheel, plug it back in, do question 2, and then, before sending a single
+byte, turn the wheel by hand and write down what you feel. Everything below
+is a comparison against that.
+
+This matters more than it sounds. A measured wheel sat rigid through every
+write, which reads like a negative result and is not one: the run set the
+autocenter spring to maximum and never turned it off, so a wheel obeying
+perfectly and a wheel ignoring everything both ended up immovable. Without a
+before, there is no after.
+
+If it will not turn even at `B677` with nothing sent, say so: that is a
+separate and more interesting failure than the one this question is looking
+for.
+
+Then the single most informative command, on a wheel you have just found to
+be rigid, is the one that releases the spring:
+
+```sh
+./build/bin/probe_setreport -A
+```
+
+If the wheel frees up, the firmware has been obeying all along and E1 is
+answered yes.
 
 ```sh
 ./build/bin/probe_setreport
@@ -275,6 +328,8 @@ waveform we can stop downgrading. Stop it the same way as above.
 | Outcome | Consequence |
 | --- | --- |
 | Wheel already at `B677` | No control transfer, no root, anywhere. Best case. |
+| `-A` frees a rigid wheel | E1 is answered yes. The firmware has been obeying all along and the architecture works. Build it. |
+| `-w` works without `sudo` | The finished tool never needs a password. Record it. |
 | Wheel locked rigid and will not turn by hand | Question 3 cannot be answered yet. Do question 2 first. |
 | Still locked after it reports `B677` | Report it. Nothing in this project holds a wheel rigid, so something else does, and that has to be understood before the measurement means anything. |
 | Wheel at `B65D` but honours settings there | Almost as good: the mode switch stops being load bearing. |

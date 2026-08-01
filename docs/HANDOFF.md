@@ -114,9 +114,11 @@ backend exists `t150d` logs its packets instead of sending them, and says so
 at startup.
 
 The probe tools compile clean on `macos-latest` with `-Werror` against the
-real CoreFoundation and IOKit headers, and their argument handling runs. They
-have **never been run against a wheel**, so while the API usage type-checks,
-nothing here is confirmed to work on hardware. That is what section 6 is for.
+real CoreFoundation and IOKit headers, and they have now been run against a
+real T150. What they found is in RESEARCH.md A4 to A8: the wheel identifies
+itself, the endpoint 0 mode switch works and needs no privilege to query, and
+every HID write returns success. What they have not yet shown is the wheel
+physically reacting to one, which is section 6.
 
 The protocol record was corrected against `scarburato/t150_driver` before any
 encoder was written. Three of PROTOCOL.md's force feedback values did not
@@ -147,11 +149,17 @@ Read its prerequisites first: on an Apple Silicon laptop the accessory needs
 approving before it appears at all, and `setReport` is gated on the console
 user, so none of this can be done over SSH.
 
-Two cheap additions to that run are worth more than they cost. Try the
-settings packets against the boot product id as well, because a wheel that
-obeys at `B65D` makes the whole endpoint 0 question moot. And repeat the run
-with a game going, because macOS 26 fails `setReport` for every client once
-anything seizes the device, and the design assumes CrossOver does not.
+**Some of it is now measured.** A T150 has been in front of the probes. The
+endpoint 0 model query succeeds unprivileged, the mode switch lands, the
+wheel reaches `b677`, no node carries `ProtectedAccess`, and writes still
+return success with a game running. RESEARCH.md A4 to A8 has the detail and
+PROBES.md says which steps no longer need repeating.
+
+The one that decides the project is still open, and for a subtler reason than
+a plain no: every write returned success while the wheel sat rigid, but the
+run left the autocenter at maximum throughout, so a wheel obeying perfectly
+and a wheel ignoring everything were indistinguishable. The procedure now
+establishes a baseline first and releases the spring between variants.
 
 Two traps:
 
