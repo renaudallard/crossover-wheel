@@ -158,10 +158,20 @@ work through the framings before concluding anything:
 
 ```sh
 ./build/bin/probe_setreport -i 0x0a
+./build/bin/probe_setreport -A
 ./build/bin/probe_setreport -P
+./build/bin/probe_setreport -A
 ./build/bin/probe_setreport -i 0x0a -P
+./build/bin/probe_setreport -A
 ./build/bin/probe_setreport -n 1
 ```
+
+**The `-A` between each one is not optional.** Every variant here is the
+autocenter action, which sets the spring to maximum and enables it. Without
+disabling it in between, a wheel that obeyed the first command is held rigid
+for the rest of the run, and a wheel that obeys nothing looks exactly the
+same. Turn the wheel by hand after each pair: the question is whether it
+changes, not whether it is stiff.
 
 The reason all four are worth trying: the wheel's own report descriptor
 declares a 14-byte output report with id `0x0A`, but the Linux driver ignores

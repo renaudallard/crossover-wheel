@@ -80,7 +80,52 @@ relies on was not visible even in principle.
 freely.** Whatever holds it rigid is doing so before any of this project's
 code reaches it, so a free wheel is a precondition of the measurement, not
 one of its possible outcomes. That makes C6's mode switch, and therefore
-`probe_ep0`, the next thing that has to work.
+`probe_ep0`, the next thing that has to work. It does: see A6.
+
+**A6. The mode switch works, and the model query needs no privilege.**
+Measured on the same wheel, in the PS3 position:
+
+- `probe_ep0` as an ordinary user (uid 501), device unopened, returned
+  `kIOReturnSuccess` with `49 00 21 00 00 00 06 03 ...`: attachment `0x06`,
+  model `0x03`. That is hid-thrustmaster's T150 row, so **the wheel
+  identifies itself as a T150** and **E5 is answered: vendor control
+  transfers on endpoint 0 are available to an unprivileged process on macOS
+  26**, with the device unopened, at step 1 of three.
+- `sudo probe_ep0 -w` reported `kIOReturnNotResponding`. That is the
+  expected answer rather than a failure: the wheel detaches the instant it
+  accepts the switch, so it is gone before the completion can be delivered.
+  It re-ran its power-on sequence and came back.
+- Afterwards `probe_setreport`, which defaults to `044f:b677`, matched a
+  node. **The wheel reaches firmware mode.**
+
+The switch was only ever run under `sudo`, so whether the write also works
+unprivileged is still unmeasured, and it is the difference between a tool
+that needs a password once per plug-in and one that never does.
+
+**A7. Firmware mode is not the descriptor PROTOCOL.md describes.** The
+`b677` node reports usage page `0x01` **usage `0x04`**, a joystick, where
+boot mode reported usage `0x05`, a gamepad. Its `MaxOutputReportSize` is
+**15**, not the 14 that C5 decodes from the firmware 3.5 capture.
+
+Fifteen is the length of `ff_commit`, which PROTOCOL.md flags as the one
+packet that does not fit a 14-byte report. So either the output report is 14
+bytes plus a report id, or it is 15 bytes of payload, and the two readings
+imply different framing. **The firmware mode descriptor has not been
+dumped**, and doing so is now the cheapest useful measurement left:
+`probe_hid -o .` while the wheel is at `b677`.
+
+**A8. In firmware mode every write still returns success and the wheel is
+still locked.** Autocenter on and off, rotation range at both extremes, with
+and without report id `0x0A`, padded and unpadded: all `kIOReturnSuccess`,
+and the wheel stayed rigid at centre throughout, unable to be turned by hand.
+
+That reads as a straight negative for E1, and it is not one yet, because of
+how the run was ordered. Every framing variant in that matrix is the
+*autocenter* action, which sets the spring to maximum and enables it, and
+nothing disabled it in between. A wheel obeying a maximum autocenter and a
+wheel ignoring every byte both present as immovable. The run therefore
+cannot distinguish the two, and the procedure that produced it has been
+changed.
 
 > Measured. Boot mode publishes an unnumbered 8-byte vendor output report
 > (usage `0x2621`) and a matching feature report, not the id `0x0A` 14-byte

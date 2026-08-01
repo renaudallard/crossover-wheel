@@ -368,13 +368,21 @@ concluding anything:
 
 ```sh
 ./build/bin/probe_setreport -i 0x0a
+./build/bin/probe_setreport -A
 ./build/bin/probe_setreport -P
+./build/bin/probe_setreport -A
 ./build/bin/probe_setreport -i 0x0a -P
+./build/bin/probe_setreport -A
 ./build/bin/probe_setreport -n 1
-./build/bin/probe_setreport -p 0xb65d
 ./build/bin/probe_setreport -r 270
 ./build/bin/probe_setreport -r 1080
 ```
+
+**The `-A` between each one is not optional.** Every variant here is the
+autocenter action, setting the spring to maximum and enabling it. Without
+disabling it in between, a wheel that obeyed the first command stays rigid
+for the whole run and looks identical to one that obeyed nothing. Turn the
+wheel by hand after each pair and watch for a *change*, not for stiffness.
 
 Those are, in order: the declared output report id, zero-padding to the
 declared size, both together, the other HID node if there is one, the boot

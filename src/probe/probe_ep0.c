@@ -298,10 +298,21 @@ main(int argc, char *argv[])
 		r = mode_switch(dev, switch_value);
 		printf("  DeviceRequestTO              %s\n",
 		    probe_ioreturn_str(r));
-		if (r == kIOReturnSuccess)
+		/*
+		 * kIOReturnNotResponding is the expected answer, not a
+		 * failure. The wheel detaches the moment it accepts the
+		 * switch, so it is gone before the completion can come back.
+		 * Only probe_hid can say whether it worked.
+		 */
+		if (r == kIOReturnSuccess || r == kIOReturnNotResponding)
 			printf("  the wheel should now detach and come back "
-			    "at 0x%04x, check with probe_hid\n",
-			    T150_PID_FIRMWARE);
+			    "at 0x%04x, check with probe_hid.\n"
+			    "  %s\n", T150_PID_FIRMWARE,
+			    r == kIOReturnNotResponding ?
+			    "not responding is expected here: it left before "
+			    "it could answer." :
+			    "it answered before leaving, which is unusual but "
+			    "fine.");
 		else
 			rc = 1;
 	}
