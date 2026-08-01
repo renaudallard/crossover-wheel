@@ -286,6 +286,12 @@ Both need the Mac. Sit at it: `IOHIDDeviceSetReport` is gated on being the
 console user and fails over SSH. On an Apple Silicon laptop, approve the
 wheel first under System Settings, Privacy and Security, Accessories.
 
+The command blocks carry no inline `# comments`, deliberately. macOS's zsh
+does not treat `#` as a comment when you paste a line interactively, so a
+trailing comment arrives as arguments, and every tool here rejects unexpected
+arguments by printing its usage and exiting without touching the device. A
+run can look like it happened and have done nothing at all.
+
 ### Test A: does the wheel obey at all
 
 The decisive one. About half an hour, wheel plugged in, everything as your
@@ -307,14 +313,24 @@ each `MaxOutputReportSize`, and whether `ProtectedAccess` is present.
 first three are safe:
 
 ```sh
-./build/bin/probe_ep0                  # as your user
-sudo ./build/bin/probe_ep0             # then as root, compare
-sudo ./build/bin/probe_ep0 -s          # last resort, seizes the device
-sudo ./build/bin/probe_ep0 -w          # only after a query succeeded
-./build/bin/probe_hid                  # should now say B677
+./build/bin/probe_ep0
+sudo ./build/bin/probe_ep0
+sudo ./build/bin/probe_ep0 -s
 ```
 
-Record which of those first succeeded and as whom. That decides whether the
+In order: as your user, then as root to compare, then seizing the device as a
+last resort. Each prints the model and attachment bytes of whatever wheel it
+found, which is what identifies the model. Only once a query has succeeded,
+and only then, perform the switch and confirm it:
+
+```sh
+sudo ./build/bin/probe_ep0 -w
+./build/bin/probe_hid
+```
+
+If the model line does not say T150, pass that model's switch value with
+`-V`; the tool prints the bytes it read so you can look the value up. Record
+which of those first succeeded and as whom. That decides whether the
 finished tool needs a password once per plug-in or never. If only `-s` works,
 stop and reassess: seizing takes the wheel away from CrossOver.
 
@@ -322,8 +338,8 @@ stop and reassess: seizing takes the wheel away from CrossOver.
 wheel starts pulling itself to centre:
 
 ```sh
-./build/bin/probe_setreport            # spring to full, then enable
-./build/bin/probe_setreport -A         # switch it off again
+./build/bin/probe_setreport
+./build/bin/probe_setreport -A
 ```
 
 **A success return is not the answer.** macOS can accept a report the
@@ -334,14 +350,25 @@ moved.
 concluding anything:
 
 ```sh
-./build/bin/probe_setreport -i 0x0a         # the declared output report id
-./build/bin/probe_setreport -P              # zero-padded to the declared size
+./build/bin/probe_setreport -i 0x0a
+./build/bin/probe_setreport -P
 ./build/bin/probe_setreport -i 0x0a -P
-./build/bin/probe_setreport -n 1            # the other node, if there is one
-./build/bin/probe_setreport -p 0xb65d       # and try it in boot mode
-./build/bin/probe_setreport -r 270          # a different opcode: short lock to lock
-./build/bin/probe_setreport -r 1080         # back to full
+./build/bin/probe_setreport -n 1
+./build/bin/probe_setreport -p 0xb65d
+./build/bin/probe_setreport -r 270
+./build/bin/probe_setreport -r 1080
 ```
+
+Those are, in order: the declared output report id, zero-padding to the
+declared size, both together, the other HID node if there is one, the boot
+mode product id, and then the rotation range instead of the spring, since a
+firmware that silently drops one opcode may accept another. `-r 270` should
+make lock to lock obviously short and `-r 1080` put it back.
+
+Watch for `no HID node matches`. `probe_setreport` defaults to the T150's
+firmware product id, so against any other wheel, or against one still in boot
+mode, every one of these does nothing until `-p` names the id `probe_hid`
+actually reported.
 
 **A5. If the wheel moved,** prove the force feedback protocol too. Four
 packets on one open handle, a constant force at half level, endless:

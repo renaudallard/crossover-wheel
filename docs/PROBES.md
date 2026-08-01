@@ -15,6 +15,17 @@ or take them from the `probes-macos` artifact of the `build` workflow.
 Run everything as your normal user first. Only add `sudo` where a step says
 to, and only after the unprivileged run has been recorded.
 
+The command blocks below carry no inline `# comments`, deliberately. macOS's
+zsh does not treat `#` as a comment when a line is pasted interactively, so a
+trailing comment arrives as arguments, and every tool here rejects unexpected
+arguments by printing its usage and exiting without touching the device. A
+whole session can look like it ran and have done nothing.
+
+Watch for `no HID node matches` too. `probe_setreport` defaults to the T150's
+firmware product id `044f:b677`, so against a wheel still in boot mode, or
+against a different model, every run does nothing until `-p` names the id
+that `probe_hid` actually reported.
+
 ## Before you start
 
 Three things on macOS 26 will otherwise waste a run:
@@ -64,7 +75,7 @@ This is the one that decides the project. It only applies once the wheel is
 in firmware mode.
 
 ```sh
-./build/bin/probe_setreport            # autocenter to full, then enable
+./build/bin/probe_setreport
 ```
 
 The autocenter spring is used rather than the rotation range because its
@@ -81,10 +92,10 @@ reacted. If every call returned `kIOReturnSuccess` and the wheel did nothing,
 work through the framings before concluding anything:
 
 ```sh
-./build/bin/probe_setreport -i 0x0a         # the declared output report id
-./build/bin/probe_setreport -P              # zero-padded to the declared size
+./build/bin/probe_setreport -i 0x0a
+./build/bin/probe_setreport -P
 ./build/bin/probe_setreport -i 0x0a -P
-./build/bin/probe_setreport -n 1            # the other HID node, if there is one
+./build/bin/probe_setreport -n 1
 ```
 
 The reason all four are worth trying: the wheel's own report descriptor
@@ -98,8 +109,8 @@ the spring, since a firmware that silently drops one opcode may accept
 another:
 
 ```sh
-./build/bin/probe_setreport -r 270          # very short lock to lock
-./build/bin/probe_setreport -r 1080         # back to full
+./build/bin/probe_setreport -r 270
+./build/bin/probe_setreport -r 1080
 ```
 
 ### Also try it in boot mode
@@ -136,7 +147,7 @@ which matters because nobody knows whether the wheel keeps an uploaded effect
 across a close. Slot 0, a constant force at half level, endless:
 
 ```sh
-./build/bin/probe_setreport -g 0x60         # moderate gain first
+./build/bin/probe_setreport -g 0x60
 ./build/bin/probe_setreport \
     -x "02 1c 00 00 00 00 00 00 00 46 54" \
     -x "03 0e 00 20" \
@@ -192,9 +203,9 @@ refused. `probe_ep0` tries three escalating approaches and prints the
 query and does not switch anything.
 
 ```sh
-./build/bin/probe_ep0                  # as your user
-sudo ./build/bin/probe_ep0             # then as root, compare
-sudo ./build/bin/probe_ep0 -s          # last resort, seizes the device
+./build/bin/probe_ep0
+sudo ./build/bin/probe_ep0
+sudo ./build/bin/probe_ep0 -s
 ```
 
 Record which step first succeeded and under which user. That single fact
@@ -204,7 +215,7 @@ Once a model query has succeeded, and only then, the switch itself:
 
 ```sh
 sudo ./build/bin/probe_ep0 -w
-./build/bin/probe_hid                  # the product id should now be B677
+./build/bin/probe_hid
 ```
 
 Be aware of what `-s` costs if it turns out to be the only thing that works.
