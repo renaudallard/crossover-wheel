@@ -75,8 +75,9 @@ in-bottle bus driver was considered and rejected.
 | `src/lib/proto.c` DLL to daemon protocol | written, round-trip tested on Linux |
 | `t150d` protocol, slots, downgrades, watchdog | written and tested on Linux |
 | `t150d` macOS HID backend | not started |
+| `t150-dinput8.dll` the in-bottle proxy | written, cross builds, never yet run |
 | build, CI, docs, man pages | working |
-| `t150-dinput8.dll`, `t150boot`, `t150ctl` | not started |
+| `t150boot`, `t150ctl` | not started |
 
 The encoders turn a normalized effect into the wheel's packets and are the
 only code that knows both DirectInput units and wheel units. They do no I/O,
@@ -89,6 +90,14 @@ cannot render, slides ramps, and runs the watchdog; the packets go to a log
 rather than to hardware. That is enough to drive the whole stack from a test
 without a Mac, which is what `socket_check` does, including holding a socket
 open and going quiet to prove the wheel gets released.
+
+The proxy is written and cross builds to an x86_64 PE with the right five
+exports and no import of `dinput8` to recurse into. **No line of it has ever
+executed.** There is no Wine on the development machine and no Mac here, so
+the checks that exist run in CI on Windows: they unit test the DirectInput
+conversion, then load the DLL with a copy of the system `dinput8` beside it
+and confirm both entry points chain-load. Whether a Wine bottle resolves the
+same way is the first thing M5 has to try.
 
 None of this says the wheel agrees with the bytes. That is
 [`docs/PROBES.md`](docs/PROBES.md), and it has not been answered.
@@ -125,6 +134,33 @@ Every packet it would have sent to the wheel is printed instead, in the same
 form `probe_setreport` prints, so the two can be compared directly. See
 [`t150d(8)`](man/t150d.8) for the endpoint file, the watchdog and the effect
 downgrades.
+
+## Installing the proxy into a bottle
+
+`make dll` cross builds it, and needs `gcc-mingw-w64-x86-64`. It has to go in
+the bottle's `system32` rather than beside a game, because SDL reaches
+DirectInput through `CoCreateInstance`, which the loader resolves to an
+absolute `system32` path and never to a game directory. Two files and one
+registry value:
+
+```sh
+CX_ROOT=/Applications/CrossOver.app/Contents/SharedSupport/CrossOver
+BOTTLE="$HOME/Library/Application Support/CrossOver/Bottles/<name>"
+
+# the real implementation, under the name the proxy chain-loads
+cp "$CX_ROOT"/lib*/wine/x86_64-windows/dinput8.dll \
+   "$BOTTLE/drive_c/windows/system32/dinput8_orig.dll"
+cp build/bin/t150-dinput8.dll \
+   "$BOTTLE/drive_c/windows/system32/dinput8.dll"
+
+"$CX_ROOT/bin/wine" --bottle "<name>" --cx-app reg.exe add \
+    'HKCU\Software\Wine\DllOverrides' /v dinput8 /t REG_SZ /d native,builtin /f
+```
+
+Set `T150_DEBUG=1` in the bottle to make the proxy say what it is doing, and
+`T150_ENDPOINT` to point it at the daemon's endpoint file if the default
+guess is wrong. Verify the chain-load with `WINEDEBUG=+loaddll`: the
+`dinput8_orig.dll` line must say `builtin`.
 
 Development happens on Linux; the Mac is only needed to run the probes.
 Because the probe sources cannot be compiled on Linux, CI builds them on

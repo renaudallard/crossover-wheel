@@ -1,0 +1,323 @@
+/*
+ * client.c - the proxy's end of the connection to the daemon.
+ *
+ * Finds the endpoint the daemon published, connects to loopback, and speaks
+ * the protocol. Also runs the keepalive, which is not optional: the daemon
+ * treats silence as a crashed game and releases the wheel, so a game holding
+ * one steady force and calling nothing would otherwise lose it after half a
+ * second.
+ *
+ * Copyright (c) 2026 Renaud Allard
+ * SPDX-License-Identifier: BSD-2-Clause
+ */
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "proxy.h"
+
+/* Comfortably inside T150_WATCHDOG_MS, with room for a scheduling hiccup. */
+#define KEEPALIVE_MS	150
+
+static CRITICAL_SECTION lock;
+static SOCKET sock = INVALID_SOCKET;
+static HANDLE keepalive_thread;
+static HANDLE keepalive_stop;
+static int started;
+static int online;
+
+void
+t150_log(const char *fmt, ...)
+{
+	static int checked, wanted;
+	char buf[512];
+	va_list ap;
+	int n;
+
+	if (!checked) {
+		checked = 1;
+		wanted = GetEnvironmentVariableA("T150_DEBUG", NULL, 0) > 0;
+	}
+	if (!wanted)
+		return;
+
+	n = snprintf(buf, sizeof(buf), "t150-dinput8: ");
+	va_start(ap, fmt);
+	(void)vsnprintf(buf + n, sizeof(buf) - (size_t)n, fmt, ap);
+	va_end(ap);
+	OutputDebugStringA(buf);
+	fprintf(stderr, "%s", buf);
+}
+
+/*
+ * Where the daemon publishes its port and token.
+ *
+ * T150_ENDPOINT wins, because an installer knows exactly where it put
+ * things. Failing that, guess the usual place: Wine maps the whole host
+ * filesystem at Z:, and the daemon writes under the macOS home directory.
+ */
+static int
+endpoint_path(char *out, size_t outlen)
+{
+	char user[256];
+
+	if (GetEnvironmentVariableA("T150_ENDPOINT", out, (DWORD)outlen) > 0)
+		return 0;
+	if (GetEnvironmentVariableA("USERNAME", user, sizeof(user)) == 0)
+		return -1;
+	if ((size_t)snprintf(out, outlen,
+	    "Z:\\Users\\%s\\Library\\Application Support\\t150ffb\\endpoint",
+	    user) >= outlen)
+		return -1;
+
+	return 0;
+}
+
+static int
+read_endpoint(unsigned short *port, char *token, size_t tokenlen)
+{
+	char path[MAX_PATH], line[64];
+	unsigned long p;
+	FILE *fp;
+
+	if (endpoint_path(path, sizeof(path)) != 0)
+		return -1;
+	if ((fp = fopen(path, "r")) == NULL) {
+		t150_log("no endpoint at %s, staying out of the way\n", path);
+		return -1;
+	}
+
+	if (fgets(line, sizeof(line), fp) == NULL ||
+	    (p = strtoul(line, NULL, 10)) == 0 || p > 0xffff ||
+	    fgets(token, (int)tokenlen, fp) == NULL) {
+		(void)fclose(fp);
+		return -1;
+	}
+	(void)fclose(fp);
+
+	token[strcspn(token, "\r\n")] = '\0';
+	if (strlen(token) != T150_TOKEN_LEN)
+		return -1;
+	*port = (unsigned short)p;
+
+	return 0;
+}
+
+/* Send a whole frame and read the single reply it earns. Lock held. */
+static int
+call_locked(uint8_t op, const void *payload, size_t len)
+{
+	uint8_t buf[T150_PROTO_HDR_LEN + T150_PROTO_MAX_PAYLOAD];
+	struct t150_proto_hdr hdr;
+	size_t n, off;
+	int r;
+
+	if (sock == INVALID_SOCKET || len > T150_PROTO_MAX_PAYLOAD)
+		return -1;
+
+	hdr.magic = T150_PROTO_MAGIC;
+	hdr.version = T150_PROTO_VERSION;
+	hdr.op = op;
+	hdr.length = (uint16_t)len;
+
+	if ((n = t150_proto_pack_hdr(buf, sizeof(buf), &hdr)) == 0)
+		return -1;
+	if (len > 0)
+		memcpy(buf + n, payload, len);
+	n += len;
+
+	for (off = 0; off < n; off += (size_t)r) {
+		r = send(sock, (const char *)buf + off, (int)(n - off), 0);
+		if (r <= 0)
+			return -1;
+	}
+
+	for (off = 0; off < T150_PROTO_HDR_LEN; off += (size_t)r) {
+		r = recv(sock, (char *)buf + off,
+		    (int)(T150_PROTO_HDR_LEN - off), 0);
+		if (r <= 0)
+			return -1;
+	}
+	if (t150_proto_unpack_hdr(buf, T150_PROTO_HDR_LEN, &hdr) != 0)
+		return -1;
+
+	for (off = 0; off < hdr.length; off += (size_t)r) {
+		r = recv(sock, (char *)buf + off, (int)(hdr.length - off), 0);
+		if (r <= 0)
+			return -1;
+	}
+
+	if (hdr.op != T150_OP_OK) {
+		t150_log("daemon refused op %u with error %u\n", op,
+		    hdr.length >= 2 ? buf[0] : 0);
+		return -1;
+	}
+
+	return 0;
+}
+
+static void
+drop_locked(void)
+{
+	if (sock != INVALID_SOCKET) {
+		(void)closesocket(sock);
+		sock = INVALID_SOCKET;
+	}
+	online = 0;
+}
+
+int
+t150_client_call(uint8_t op, const void *payload, size_t len)
+{
+	int r;
+
+	EnterCriticalSection(&lock);
+	r = call_locked(op, payload, len);
+	if (r != 0)
+		drop_locked();
+	LeaveCriticalSection(&lock);
+
+	return r;
+}
+
+static DWORD WINAPI
+keepalive_main(LPVOID arg)
+{
+	(void)arg;
+
+	for (;;) {
+		if (WaitForSingleObject(keepalive_stop, KEEPALIVE_MS) ==
+		    WAIT_OBJECT_0)
+			return 0;
+
+		EnterCriticalSection(&lock);
+		if (sock != INVALID_SOCKET &&
+		    call_locked(T150_OP_KEEPALIVE, NULL, 0) != 0)
+			drop_locked();
+		LeaveCriticalSection(&lock);
+	}
+}
+
+/*
+ * Connect, say hello, and start the keepalive. Called the first time a game
+ * asks about a device rather than from DllMain, where creating a thread is
+ * not allowed.
+ */
+int
+t150_client_start(void)
+{
+	char token[T150_TOKEN_LEN + 1];
+	struct sockaddr_in sa;
+	unsigned short port;
+	WSADATA wsa;
+	int ok = 0;
+
+	EnterCriticalSection(&lock);
+
+	if (online) {
+		LeaveCriticalSection(&lock);
+		return 0;
+	}
+	if (!started) {
+		if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+			LeaveCriticalSection(&lock);
+			return -1;
+		}
+		started = 1;
+	}
+
+	if (read_endpoint(&port, token, sizeof(token)) != 0)
+		goto out;
+	if ((sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == INVALID_SOCKET)
+		goto out;
+
+	memset(&sa, 0, sizeof(sa));
+	sa.sin_family = AF_INET;
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	sa.sin_port = htons(port);
+
+	if (connect(sock, (struct sockaddr *)&sa, sizeof(sa)) != 0) {
+		t150_log("cannot reach the daemon on port %u\n", port);
+		goto out;
+	}
+	if (call_locked(T150_OP_HELLO, token, T150_TOKEN_LEN) != 0) {
+		t150_log("the daemon would not take our token\n");
+		goto out;
+	}
+
+	if (keepalive_stop == NULL)
+		keepalive_stop = CreateEventW(NULL, TRUE, FALSE, NULL);
+	if (keepalive_thread == NULL && keepalive_stop != NULL)
+		keepalive_thread = CreateThread(NULL, 0, keepalive_main, NULL,
+		    0, NULL);
+
+	online = 1;
+	ok = 1;
+	t150_log("connected to the daemon on port %u\n", port);
+
+out:
+	if (!ok)
+		drop_locked();
+	LeaveCriticalSection(&lock);
+
+	return ok ? 0 : -1;
+}
+
+void
+t150_client_stop(void)
+{
+	HANDLE th;
+
+	EnterCriticalSection(&lock);
+	if (sock != INVALID_SOCKET)
+		(void)call_locked(T150_OP_BYE, NULL, 0);
+	drop_locked();
+	th = keepalive_thread;
+	keepalive_thread = NULL;
+	LeaveCriticalSection(&lock);
+
+	/*
+	 * Outside the lock, because the keepalive takes it. Not called from
+	 * DllMain either: waiting on a thread there deadlocks against the
+	 * loader.
+	 */
+	if (th != NULL) {
+		if (keepalive_stop != NULL)
+			(void)SetEvent(keepalive_stop);
+		(void)WaitForSingleObject(th, 1000);
+		(void)CloseHandle(th);
+	}
+}
+
+int
+t150_client_online(void)
+{
+	int r;
+
+	EnterCriticalSection(&lock);
+	r = online;
+	LeaveCriticalSection(&lock);
+
+	return r;
+}
+
+/* Called from DllMain, so it does nothing that can block or load anything. */
+void	t150_client_init_lock(void);
+void	t150_client_free_lock(void);
+
+void
+t150_client_init_lock(void)
+{
+	InitializeCriticalSection(&lock);
+}
+
+void
+t150_client_free_lock(void)
+{
+	DeleteCriticalSection(&lock);
+}

@@ -33,7 +33,19 @@ The macOS daemon. Owns the wheel, encodes effects, writes output reports.
 The protocol, the slot table, the downgrades and the watchdog work; the
 backend that would reach a wheel does not exist yet, so it logs instead.
 .It Nm t150-dinput8.dll
-The in-bottle proxy. Not yet implemented.
+The in-bottle proxy. Written and cross built, never yet run. It is installed
+as
+.Pa dinput8.dll
+in the bottle's
+.Pa system32
+and chain-loads CrossOver's builtin from
+.Pa dinput8_orig.dll
+beside it. It must go there rather than beside a game, because SDL reaches
+DirectInput through
+.Fn CoCreateInstance ,
+which resolves to an absolute
+.Pa system32
+path.
 .It Nm t150boot
 One-shot boot to firmware mode switch. Not yet implemented.
 .It Nm t150ctl
@@ -57,10 +69,10 @@ a reset on a graceful unacquire. A crashed game would therefore leave the
 last commanded force latched on the wheel. The daemon treats silence as a
 fault and stops every effect after half a second without traffic.
 .Sh STATUS
-The probe tools, the shared headers, the wire encoders, the wire protocol and
-the daemon's logic exist. The macOS HID backend, the proxy and the command
-line tools do not. The project is gated on one measurement, whether an
-unprivileged
+The probe tools, the shared headers, the wire encoders, the wire protocol,
+the daemon's logic and the proxy exist. The macOS HID backend and the command
+line tools do not, and the proxy has never been executed. The project is
+gated on one measurement, whether an unprivileged
 .Fn IOHIDDeviceSetReport
 physically moves the wheel, described in
 .Pa docs/PROBES.md .

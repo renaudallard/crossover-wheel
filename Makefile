@@ -45,12 +45,34 @@ DAEMON_BIN	 = $(BIN)/t150d
 TEST_NAMES = header_check encode_check proto_check daemon_check socket_check
 TEST_BINS  = $(addprefix $(BIN)/,$(TEST_NAMES))
 
-.PHONY: all probes daemon test check strict clean help
+# The in-bottle proxy. A PE, so it is cross compiled, and only when the
+# cross compiler is here: it is not needed to build or test anything else.
+#
+# x86_64 is the only sensible target. CrossOver 26 bottles are x86_64 under
+# Rosetta, and CrossOver 27's ARM64 bottles are ARM64EC, which still loads an
+# x86_64 PE. 32-bit bottles are gone in 27, so i386 is never worth building.
+DLL_CC	  ?= x86_64-w64-mingw32-gcc
+HAVE_DLL_CC := $(shell command -v $(DLL_CC) >/dev/null 2>&1 && echo yes)
+DLL_BIN	   = $(BIN)/t150-dinput8.dll
+DLL_CHECK_BIN = $(BIN)/dll_check.exe
+DLL_SRCS   = src/dll/main.c src/dll/device.c src/dll/effect.c \
+	     src/dll/client.c src/lib/proto.c
+DLL_CPPFLAGS = -Iinclude -Isrc/dll
+DLL_CFLAGS   = -O2 -std=c11 $(WARNINGS)
+DLL_LIBS     = -ldxguid -luuid -lole32 -lws2_32
+
+.PHONY: all probes daemon dll test check strict clean help
+
+ifeq ($(HAVE_DLL_CC),yes)
+DLL_TARGET = dll
+else
+DLL_TARGET =
+endif
 
 ifeq ($(UNAME_S),Darwin)
-all: probes daemon test
+all: probes daemon $(DLL_TARGET) test
 else
-all: daemon test
+all: daemon $(DLL_TARGET) test
 	@echo
 	@echo "Note: the probe tools are macOS only and were not built here."
 	@echo "      Everything portable was built and tested."
@@ -61,11 +83,29 @@ help:
 	@echo "  all      build what this platform can build, then run tests"
 	@echo "  probes   build the three Phase 0 probe tools (macOS only)"
 	@echo "  daemon   build t150d"
+	@echo "  dll      cross build the in-bottle proxy (needs mingw-w64)"
 	@echo "  test     build and run the portable tests"
 	@echo "  strict   same as all, but warnings are errors (used by CI)"
 	@echo "  clean    remove the build directory"
 
 daemon: $(DAEMON_BIN)
+
+dll: $(DLL_BIN) $(DLL_CHECK_BIN)
+
+$(DLL_BIN): $(DLL_SRCS) src/dll/proxy.h src/dll/dinput8.def | $(BIN)
+ifneq ($(HAVE_DLL_CC),yes)
+	@echo "dll: $(DLL_CC) not found, install gcc-mingw-w64-x86-64" >&2
+	@false
+endif
+	$(DLL_CC) $(DLL_CPPFLAGS) $(DLL_CFLAGS) -shared -o $@ $(DLL_SRCS) \
+	    src/dll/dinput8.def -static-libgcc $(DLL_LIBS)
+
+# The proxy's own test, which links the sources it checks and loads the DLL
+# it was built alongside. Only runnable on Windows, so CI runs it there.
+$(DLL_CHECK_BIN): tests/dll_check.c $(DLL_SRCS) src/dll/proxy.h | $(BIN)
+	$(DLL_CC) $(DLL_CPPFLAGS) $(DLL_CFLAGS) -o $@ tests/dll_check.c \
+	    src/dll/device.c src/dll/effect.c src/dll/client.c \
+	    src/lib/proto.c -static-libgcc $(DLL_LIBS)
 
 probes: $(PROBE_BINS)
 ifneq ($(UNAME_S),Darwin)
@@ -109,7 +149,8 @@ test: $(TEST_BINS)
 check: test
 
 strict:
-	@$(MAKE) --no-print-directory CFLAGS="$(CFLAGS) -Werror" all
+	@$(MAKE) --no-print-directory CFLAGS="$(CFLAGS) -Werror" \
+	    DLL_CFLAGS="$(DLL_CFLAGS) -Werror" all
 
 clean:
 	rm -rf $(BUILD)

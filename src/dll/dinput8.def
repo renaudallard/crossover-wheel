@@ -1,0 +1,10 @@
+; The proxy is installed as dinput8.dll and must export what the real one
+; exports. DirectInput8Create is the door most games use; DllGetClassObject
+; is the one SDL uses, through CoCreateInstance.
+LIBRARY dinput8.dll
+EXPORTS
+	DirectInput8Create
+	DllCanUnloadNow
+	DllGetClassObject
+	DllRegisterServer
+	DllUnregisterServer

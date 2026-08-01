@@ -13,6 +13,43 @@ jobs:
       - name: build and test
         run: make strict
 
+  dll:
+    name: cross build the proxy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install the cross compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+      - name: build the proxy and its test
+        run: make strict dll
+      - name: upload the proxy
+        uses: actions/upload-artifact@v4
+        with:
+          name: proxy-windows
+          path: |
+            build/bin/t150-dinput8.dll
+            build/bin/dll_check.exe
+          if-no-files-found: error
+
+  windows:
+    name: run the proxy on Windows
+    needs: dll
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: proxy-windows
+      # The proxy chain-loads the real implementation from a copy beside it.
+      # On Windows that copy is the system dinput8; in a bottle it is
+      # CrossOver's builtin. Loading it here is the only place the chain-load
+      # runs against a real loader before the Mac.
+      - name: put the real dinput8 where the proxy looks for it
+        shell: pwsh
+        run: Copy-Item $env:SystemRoot\System32\dinput8.dll .\dinput8_orig.dll
+      - name: check the proxy
+        shell: pwsh
+        run: .\dll_check.exe .\t150-dinput8.dll
+
   macos:
     name: probe tools
     runs-on: macos-latest

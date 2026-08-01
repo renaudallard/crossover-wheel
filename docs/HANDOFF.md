@@ -104,11 +104,14 @@ Implemented and working:
 - `src/t150d/` : M2, the daemon. Socket, session, slot table, downgrades,
   ramp slicing and the watchdog. Driven by `tests/daemon_check.c` in
   simulated time and by `tests/socket_check.c` over a real socket.
+- `src/dll/` : M4, the proxy. Cross builds to an x86_64 PE with the right
+  exports and no import of `dinput8` to recurse into. **Never executed.**
+  See section 7's M4 for what is and is not checked.
 - `Makefile`, CI, `README.md`, man pages, docs.
 
-Not started: the daemon's macOS HID backend, `t150-dinput8.dll`, `t150boot`,
-`t150ctl`. Until the backend exists `t150d` logs its packets instead of
-sending them, and says so at startup.
+Not started: the daemon's macOS HID backend, `t150boot`, `t150ctl`. Until the
+backend exists `t150d` logs its packets instead of sending them, and says so
+at startup.
 
 The probe tools compile clean on `macos-latest` with `-Werror` against the
 real CoreFoundation and IOKit headers, and their argument handling runs. They
@@ -123,9 +126,15 @@ that, discard them.
 
 ## 6. The gate
 
-**Do not write the daemon or the DLL until this is answered.** One
-measurement decides whether the whole design is viable: does an unprivileged,
-non-seizing `IOHIDDeviceSetReport` physically move the wheel?
+One measurement decides whether the whole design is viable: does an
+unprivileged, non-seizing `IOHIDDeviceSetReport` physically move the wheel?
+
+This originally said not to write the daemon or the DLL until it was
+answered. Both were written anyway, deliberately, because everything in them
+is testable without a wheel and the encoders turned out to be what the gate
+itself needs to send a real effect by hand. Nothing below that touches
+hardware should be built on top of them until this is settled, and if the
+answer is no, all of it is wasted rather than merely early.
 
 It is genuinely uncertain, not merely unconfirmed. The T150's Linux driver
 bypasses the HID layer entirely and writes raw on the interrupt OUT pipe,
@@ -204,48 +213,33 @@ every plug-in, because sleep, wake and replug all drop the wheel back.
 and `t150ctl autocenter 0` releases the spring, with no password prompt,
 while CrossOver still reads the wheel.
 
-**M4. Proxy DLL.** Build with mingw-w64, which is in Debian's apt and runs
-natively on arm64. Target x86_64 PE.
+**M4. Proxy DLL. Written, not yet run.** `src/dll/`, cross built with
+mingw-w64 to an x86_64 PE. `make dll` builds it and its test.
 
-The **first** thing to settle, before any effect code, is where the DLL goes
-and how it reaches the builtin implementation without the loader handing it
-back itself.
+It wraps `IDirectInput8`, `IDirectInputDevice8` and `IDirectInputEffect`, and
+only for the one device whose product id is the wheel's: everything else is
+handed to the builtin unwrapped, so nothing else in the bottle pays for this
+DLL existing. `GetCapabilities` gains the force feedback flags, `EnumDevices`
+under `DIEDFL_FORCEFEEDBACK` enumerates a second time to smuggle the wheel in
+when Wine left it out, and `CreateEffect` returns an effect that talks to the
+daemon. `DIPROP_FFGAIN`, `DIPROP_AUTOCENTER`, `SendForceFeedbackCommand` and
+`Unacquire` all reach the daemon. With no daemon answering, nothing is
+wrapped and the proxy is transparent.
 
-It goes in the bottle's `drive_c/windows/system32`, with `dinput8` set to
-`native,builtin`, and it exports **both** `DirectInput8Create` and
-`DllGetClassObject`. That second export is what puts in-bottle SDL games in
-scope: SDL never calls `DirectInput8Create`, it does
-`CoCreateInstance(CLSID_DirectInput8)`, and Wine resolves that through an
-absolute `system32` path, so a game-directory proxy is never entered by an
-SDL title at all. Placement is the whole decision.
+Two things it does that are easy to get wrong. It exports `DllGetClassObject`
+as well as `DirectInput8Create`, because SDL only ever uses the COM door; that
+is also why it installs into `system32` rather than a game directory. And a
+one-axis DirectInput effect is normalized to due east, because DirectInput
+carries the side in the sign of the magnitude and the encoder would otherwise
+project a northward direction onto no force at all.
 
-For the chain-load, copy CrossOver's real builtin out of the application
-bundle, not the fake-DLL stub a prefix keeps in `system32` (RESEARCH.md E8),
-and load it under another name. Wine 11 resolves a builtin-signed PE by its
-export name and searches its own directories rather than the prefix, so a
-renamed copy still reaches the genuine builtin and cannot re-enter us. That
-is derived from the loader sources, not field tested, so verify with
-`WINEDEBUG=+loaddll` that the chain-loaded module logs as `builtin`. Two
-fallbacks if it does not: strip the 32-byte builtin signature from the copy
-so it loads as an ordinary native PE, which is safe because `dinput8` is a
-self-contained PE (B5); or fall back to a game-directory proxy that
-full-path-loads `system32`, which is field proven but gives up SDL.
-
-Then wrap `GetCapabilities`, enumeration under `DIEDFL_FORCEFEEDBACK`,
-`EnumEffects`, `CreateEffect`,
-`IDirectInputEffect::SetParameters`/`Start`/`Stop`, `SetProperty` for
-`DIPROP_FFGAIN` and `DIPROP_AUTOCENTER`, and `SendForceFeedbackCommand`. With
-no daemon answering, the proxy must be a transparent no-op.
-
-Note that this milestone can no longer be tested "under stock Wine on
-Debian": Wine is not in this machine's apt sources at all. Two replacements,
-both better than the original plan. A `windows-latest` CI job builds the DLL
-and exercises the translation against Microsoft's own `dinput8.dll`, which is
-a real compile and a real run. The loader question is Wine-specific and gets
-prototyped directly in a bottle on the Mac.
-*Done when:* a DirectInput 8 test exe reports `DIDC_FORCEFEEDBACK`, creates
-and starts a constant force and a spring, the fake daemon from M2 logs the
-right normalized effects, and an SDL test program reaches the same path.
+**What is checked, and what is not.** There is no Wine here and no Mac, so
+`tests/dll_check.c` runs on Windows in CI: it unit tests the DIEFFECT
+conversion, then loads the DLL with a copy of the system `dinput8` beside it
+and confirms both entry points chain-load. That is a real loader and a real
+COM call, but it is not Wine's loader, and a CI runner has no wheel, so the
+force feedback path itself has never run. Treat the chain-load in a bottle as
+unverified until M5 tries it.
 
 **M5. First force feedback in a real game.** An installer that finds the
 bottle under `~/Library/Application Support/CrossOver/Bottles`, honouring the

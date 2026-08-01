@@ -106,6 +106,7 @@ include/t150/     the contracts, portable, compiled and tested on Linux
   encode.h          normalized effects to wheel packets
 src/lib/          the portable half: encoders and the protocol codec
 src/t150d/        the daemon: session logic, backends, the socket loop
+src/dll/          the in-bottle proxy, cross built to an x86_64 PE
 src/probe/        the Phase 0 measurement tools, macOS only
 tests/            what CI can run without a Mac or a wheel
 docs/             HANDOFF.md, RESEARCH.md, PROBES.md, PROTOCOL.md, this file
@@ -119,11 +120,15 @@ by sleeping, and it keeps the part that has to be right small enough to read.
 ## Status
 
 Implemented: the three probe tools, the shared headers, the encoders, the
-protocol codec, the daemon's logic, the build and CI.
+protocol codec, the daemon's logic, the proxy, the build and CI.
 
-Not implemented: the daemon's macOS HID backend, `t150-dinput8.dll`,
-`t150boot`, `t150ctl`. Until the backend exists the daemon writes its packets
-to a log, which is enough to drive the whole stack from a test without a Mac.
+Not implemented: the daemon's macOS HID backend, `t150boot`, `t150ctl`. Until
+the backend exists the daemon writes its packets to a log, which is enough to
+drive the whole stack from a test without a Mac.
+
+The proxy has never been executed. It cross builds and CI loads it on
+Windows, but there is no Wine on the development machine, so whether a bottle
+resolves its chain-load is unverified.
 
 The build order is Phase 0 first (see [PROBES.md](PROBES.md)), because a
 single measurement decides whether any of the rest is worth writing: whether
