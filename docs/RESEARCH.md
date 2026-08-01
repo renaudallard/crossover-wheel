@@ -142,12 +142,31 @@ port on the machine directly rather than a hub.
 
 A wheel that has not completed its calibration sweep has not learned its end
 stops, and nothing in this project's protocol is expected to work on one.
-**Until the wheel calibrates and turns freely with nothing attached to it,
-E1 cannot be answered, and the probes are measuring the wrong thing.** That
-is a hardware state, not a protocol result, and it is the first thing to
-clear.
 
-> Thrustmaster T150 help centre, sections 1.1, 2.1 and 2.2.
+**And it is locked in the PS4 position too.** That is the observation that
+settles it. In the PS4 position the wheel is a self-contained console device:
+it takes no mode switch, no driver, no initialisation and nothing at all from
+this project, and it was still rigid. Nothing software-side reaches a wheel
+in that state, so nothing software-side can be holding it.
+
+**E1 is therefore not answerable on this wheel, and none of the three runs
+measured what they were pointed at.** Every write returning
+`kIOReturnSuccess` while the wheel never moves is consistent with a firmware
+that ignores HID output, and equally consistent with a wheel that is not in a
+condition to move for reasons that have nothing to do with the bytes. Those
+two cannot be told apart until the wheel calibrates and turns freely with
+nothing attached to it, so **the gate is blocked on hardware, not on
+protocol.**
+
+Nothing in the project should be changed on the strength of these runs. The
+transport facts they established stand on their own, because they do not
+depend on the motor: USB communication is healthy, the descriptors read, the
+endpoint 0 path works unprivileged, `setReport` is accepted, no node is
+protected and CrossOver does not seize. What is missing is a wheel that can
+demonstrate a reaction.
+
+> Thrustmaster T150 help centre, sections 1.1, 2.1 and 2.2, plus the PS4
+> position observation.
 
 > Measured. Boot mode publishes an unnumbered 8-byte vendor output report
 > (usage `0x2621`) and a matching feature report, not the id `0x0A` 14-byte

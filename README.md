@@ -5,13 +5,16 @@ Force feedback for the **Thrustmaster T150** in games running under
 DriverKit system extension, no SIP change, no AMFI change, no system
 extension approval.
 
-> **Status: nothing here drives a wheel yet.** The measurement the whole
-> design rests on has never been made, and until it is, the daemon logs its
-> packets instead of sending them. It is described in
-> [`docs/PROBES.md`](docs/PROBES.md), it needs a Mac and a wheel and about
-> half an hour, and if it fails most of this project is wasted rather than
-> merely early. Everything that can be built and tested without a wheel has
-> been: see [what exists today](#what-exists-today).
+> **Status: nothing here drives a wheel yet, and the measurement that would
+> decide it is currently blocked on hardware.** A T150 has been in front of
+> the probes three times. USB communication is healthy, the mode switch works
+> unprivileged and every write is accepted, but the wheel is held rigid and
+> cannot be turned by hand: in boot mode, in firmware mode, and in the PS4
+> position where it takes nothing from this project at all. A wheel that
+> cannot move cannot demonstrate a reaction, so the gate stays open. See
+> [`docs/RESEARCH.md`](docs/RESEARCH.md) A4 to A9. Everything that can be
+> built and tested without a wheel has been: see
+> [what exists today](#what-exists-today).
 
 **Picking this up?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first. It is
 written for someone starting with no context: what is decided, what is

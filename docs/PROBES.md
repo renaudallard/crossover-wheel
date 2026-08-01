@@ -98,9 +98,15 @@ Measured on a T150 on macOS 26, so these do not need redoing. Full detail in
 
 What is still open is the only thing that matters: **whether the wheel ever
 physically reacts.** Every write so far returned `kIOReturnSuccess` and the
-wheel has been rigid throughout, but the runs could not tell a wheel obeying
-a maximum autocenter from one ignoring every byte. That is what questions 3
-and 4 are for now.
+wheel has been rigid throughout, in boot mode, in firmware mode, and in the
+PS4 position where it takes nothing from this project at all.
+
+That last one is why questions 3 and 4 cannot currently be answered on this
+wheel. A PS4-position wheel is a self-contained console device, so nothing
+software-side reaches it and nothing software-side can be holding it. Clear
+the calibration problem above first. Until the wheel sweeps on power-up and
+turns freely with nothing attached, these questions are being asked of a
+wheel that cannot answer them either way.
 
 ---
 
