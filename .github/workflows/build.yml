@@ -67,9 +67,13 @@ jobs:
           ./build/bin/probe_hid
           ./build/bin/probe_setreport -h || test $? -eq 2
           ./build/bin/probe_ep0 -h || test $? -eq 2
-      - name: upload the probe tools
+      - name: upload the macOS binaries
         uses: actions/upload-artifact@v7
         with:
-          name: probes-macos
-          path: build/bin/probe_*
+          name: macos
+          path: |
+            build/bin/probe_hid
+            build/bin/probe_setreport
+            build/bin/probe_ep0
+            build/bin/t150d
           if-no-files-found: error
