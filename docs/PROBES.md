@@ -97,6 +97,13 @@ physically reacts.** Every write so far returned `kIOReturnSuccess` and the
 wheel has been rigid throughout, in boot mode, in firmware mode, and in the
 PS4 position where it takes nothing from this project at all.
 
+**The next measurement is not on the Mac.** The wheel behaves the same on a
+stock Linux machine, which is expected rather than alarming: the kernel does
+the mode switch and has no T150 force feedback driver. Installing
+`scarburato/t150_driver` there says whether any software can free this wheel,
+and `usbmon` alongside it captures what a working driver actually sends. See
+RESEARCH.md A11.
+
 That last one is why questions 3 and 4 cannot currently be answered on this
 wheel. A PS4-position wheel is a self-contained console device, so nothing
 software-side reaches it and nothing software-side can be holding it. Clear

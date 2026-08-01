@@ -202,6 +202,43 @@ failures.
 > standard motor control references. The mains-out test is reasoning from the
 > T150's two supply rails rather than a documented procedure.
 
+**A11. The wheel behaves identically on Linux, which is the expected result
+and not a new fault.** Measured: a stock Linux machine holds the wheel just
+as rigidly as macOS does.
+
+That is what stock Linux should do. The kernel ships `hid-thrustmaster`,
+which performs the mode switch and nothing else, and `hid-tmff`, which is an
+older generic driver that does not speak this protocol. **There is no
+in-tree T150 force feedback driver at all**; `scarburato/t150_driver` is out
+of tree and has to be installed deliberately. So a stock Linux box reaches
+exactly the state this project reaches on macOS: wheel switched to `b677`,
+nothing driving it, wheel holding itself.
+
+Two OSes agreeing therefore says the behaviour is not macOS-specific, and
+says nothing yet about whether the wheel is faulty.
+
+**This makes the decisive experiment cheap, and it needs no Mac.** Install
+`scarburato/t150_driver` on that same Linux machine, which is a DKMS module
+with an `install.sh`, and watch the wheel.
+
+- **It releases** — the wheel and the protocol are both fine, the T150 simply
+  requires an initialisation this project has never sent, and hypothesis 2
+  above is the answer.
+- **It stays rigid** — a driver written for this exact wheel cannot free it
+  either, and the problem is the wheel or its firmware revision.
+
+And whichever way it goes, the same setup yields something this project has
+wanted from the beginning. `usbmon` on that machine captures the exact bytes
+a working driver puts on the wire: the initialisation packet whose bytes are
+left null in the published source, whether transfers go to the interrupt OUT
+pipe or endpoint 0, the real framing behind the 14 against 15 byte question,
+and enough traffic to check every encoder in `src/lib/encode.c` against
+ground truth rather than against a reading of someone's source.
+
+> `drivers/hid/Makefile` builds `hid-tmff.o` and `hid-thrustmaster.o` and no
+> T150 force feedback driver; `scarburato/t150_driver` ships `install.sh`
+> and DKMS.
+
 Nothing in the project should be changed until that is known. The transport
 facts stand on their own either way, because none of them depend on the
 motor: the descriptors read, the endpoint 0 path works unprivileged,
