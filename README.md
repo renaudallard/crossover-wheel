@@ -121,15 +121,26 @@ with two experiments, both needing the Mac, and **they are independent of
 each other**: the second is worth running even if the first fails, and if the
 first succeeds the second is the next thing in the way regardless.
 
-**1. Answer the gate**, step by step under
-[testing it today](#testing-it-today). Does an
-unprivileged, non-seizing `IOHIDDeviceSetReport` physically move the wheel?
-Half an hour, and nothing downstream is worth building until it is answered.
-While you are there it also settles three things the encoders currently guess
-at: whether a constant force tops out at `0x40` or `0x7f`, whether the
+**1. Send the same bytes down both pipes**, step by step under
+[testing it today](#testing-it-today). `sudo probe_intr -A` writes on the
+interrupt OUT pipe; `probe_setreport -A` writes through the HID layer. One
+command each, and between them they decide the shape of the whole project:
+
+- **Interrupt OUT frees the wheel, HID does not.** The protocol is right and
+  the transport was the problem. Settings become buildable immediately, and
+  the game-driven half needs redesigning, because holding that pipe means
+  owning the device and CrossOver cannot read a wheel the daemon owns.
+- **Both free it.** The original architecture stands and everything below is
+  as planned.
+- **Neither frees it.** The transport is not the problem and the packet
+  layout is, which is where `docs/PROTOCOL.md` gets rechecked against a
+  capture rather than against a reading of someone's source.
+
+While you are there, three things the encoders currently guess at also
+settle: whether a constant force tops out at `0x40` or `0x7f`, whether the
 contiguous type codes `0x4020` and `0x4021` are the square and triangle the
 Linux driver never implemented, and whether the wheel obeys settings in boot
-mode, which would remove the endpoint 0 problem entirely.
+mode.
 
 **2. Try the proxy in a bottle**, step by step under
 [testing it today](#testing-it-today). The DLL has never run under Wine, and
@@ -137,18 +148,27 @@ finding out whether it loads and whether a game's effects reach the daemon
 needs no working force feedback at all, which is why it does not wait for the
 gate.
 
-Then, and only if the gate said yes:
+Then, depending on which way step 1 went:
 
-**3. The macOS HID backend.** The one missing piece of the daemon: device
-matching, a non-seizing open, output writes and hot plug, behind the backend
-interface `backend_fake.c` already implements. `src/probe/common.c` is
-already the non-seizing enumeration it needs and should be moved rather than
-rewritten.
+**3. `t150ctl`, and `t150boot`.** Rotation range, gain and autocenter from
+the command line. `probe_intr` is already the working core of it: capture,
+write, hand the wheel back, and the wheel keeps the setting. That path needs
+root but no SIP or AMFI change, and it leaves CrossOver's wheel alone
+afterwards. `t150boot` is the mode switch, which is already known to need no
+privilege at all; ship it as a LaunchAgent matching the boot product id,
+because sleep, wake and replug all drop the wheel back.
 
-**4. `t150ctl` and `t150boot`.** Rotation range, gain and autocenter from the
-command line; and the boot to firmware mode switch, if the gate found the
-wheel needs one. Ship the switch as a LaunchAgent matching the boot product
-id, because sleep, wake and replug all drop the wheel back.
+**This is buildable whichever way step 1 goes**, as long as one of the two
+pipes works, which makes it the safest thing to do next.
+
+**4. The daemon's backend, whose shape step 1 decides.** If the HID path
+works it is a non-seizing open and output writes behind the interface
+`backend_fake.c` already implements, and `src/probe/common.c` is the
+enumeration it needs, moved rather than rewritten. If only the interrupt OUT
+path works, there is a real design problem to solve first: the daemon cannot
+hold that pipe and let CrossOver read the wheel, so game-driven force
+feedback needs a different answer, and `docs/HANDOFF.md` section 8 is where
+the alternatives are.
 
 **5. Robustness, then a real game.** Reconnect on both ends, hot plug, and
 the watchdog under real crash conditions. Measure the latency and jitter of
@@ -332,7 +352,7 @@ many HID nodes appear for the one wheel, each node's usage page and usage,
 each `MaxOutputReportSize`, and whether `ProtectedAccess` is present.
 
 **A2. If A1 said `B65D`, switch the wheel to firmware mode.** Do this before
-A3, not after: until it succeeds the wheel is not the device this project
+anything else, not after: until it succeeds the wheel is not the device this project
 drives, and it may not even turn. Read only by default, so the first three
 are safe:
 
@@ -365,8 +385,27 @@ settles the framing, and nothing else can. That decides whether the
 finished tool needs a password once per plug-in or never. If only `-s` works,
 stop and reassess: seizing takes the wheel away from CrossOver.
 
-**A3. The measurement.** Establish a baseline first, because the runs so far
-did not. With the wheel freshly plugged in and switched, and before sending a
+**A3. Write on the pipe the wheel listens to.** This needs root, because it
+captures the wheel from macOS, writes, and hands it straight back:
+
+```sh
+sudo ./build/bin/probe_intr -A
+```
+
+That releases the autocenter, which is the most informative thing to send a
+wheel being held rigid. **If the wheel becomes turnable, three questions are
+answered at once**: the wheel is healthy, the bytes in `docs/PROTOCOL.md` are
+right, and the pipe was the whole problem. On the evidence in
+[`docs/RESEARCH.md`](docs/RESEARCH.md) C7 this is more likely to move the
+wheel than A4 is, which is why it comes first.
+
+It can configure a wheel but cannot drive effects during a game: holding that
+pipe means owning the device, and CrossOver cannot read a wheel this tool
+owns.
+
+**A4. The same bytes through the HID layer**, which is what the project
+actually needs to work and so far never has. Establish a baseline first,
+because the runs so far did not. With the wheel freshly plugged in and switched, and before sending a
 single byte, turn it by hand and note what you feel. Everything below is a
 comparison against that.
 
@@ -393,7 +432,7 @@ itself to centre:
 firmware then discards. What settles this is whether the wheel physically
 moved.
 
-**A4. If it returned success and nothing moved,** work the framings before
+**A5. If it returned success and nothing moved,** work the framings before
 concluding anything:
 
 ```sh
@@ -425,7 +464,7 @@ firmware product id, so against any other wheel, or against one still in boot
 mode, every one of these does nothing until `-p` names the id `probe_hid`
 actually reported.
 
-**A5. If the wheel moved,** prove the force feedback protocol too. Four
+**A6. If the wheel moved,** prove the force feedback protocol too. Four
 packets on one open handle, a constant force at half level, endless:
 
 ```sh
@@ -443,8 +482,8 @@ packets on one open handle, a constant force at half level, endless:
 ./build/bin/probe_setreport -x "41 00 00 01"
 ```
 
-**A6. Three cheap answers while you are set up.** Compare `03 0e 00 40`
-against `03 0e 00 7f` in A5: if they feel the same, a constant really does
+**A7. Three cheap answers while you are set up.** Compare `03 0e 00 40`
+against `03 0e 00 7f` in A6: if they feel the same, a constant really does
 stop at `0x40`. Try `20 40` and `21 40` in place of `00 40` in the third
 packet, which would mean square and triangle exist after all. And repeat A3
 once with a game running in a bottle, because macOS 26 fails `setReport` for

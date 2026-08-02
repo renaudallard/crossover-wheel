@@ -8,7 +8,7 @@ Most of them now have answers, and the one that decides the project does not.
 nothing here has to be run twice.
 
 **Do them in this order.** The first wheel these were run against sat locked
-rigid in boot mode, which made question 3 unanswerable: a wheel that cannot
+rigid in boot mode, which made question 4 unanswerable: a wheel that cannot
 turn cannot show an autocenter spring. The mode switch is not an optional
 follow-up to the measurement, it is a precondition of it.
 
@@ -80,36 +80,42 @@ Three more things on macOS 26 will otherwise waste a run:
 ## What is already settled
 
 Measured on a T150 on macOS 26, so these do not need redoing. Full detail in
-[RESEARCH.md](RESEARCH.md) A4 to A8.
+[RESEARCH.md](RESEARCH.md) A4 to A11.
 
 | | |
 | --- | --- |
 | The switch position decides the device | PS3 gives `044f:b65d`, PS4 gives `044f:b66d` and is out of scope |
 | The wheel identifies itself as a T150 | model `0x03`, attachment `0x06` |
-| The model query needs no privilege | succeeded as an ordinary user, device unopened, first attempt |
+| Endpoint 0 needs no privilege at all | both the model query and the mode switch itself succeeded as an ordinary user |
 | The mode switch lands | the wheel re-runs its boot sequence and comes back at `b677` |
 | Firmware mode is a joystick | usage `0x04`, `MaxOutputReportSize` **15**, where boot mode was usage `0x05` and 8 |
 | No node carries `ProtectedAccess` | so the restricted-device path in A2 does not apply |
 | CrossOver does not seize the wheel | writes still returned success with a game running |
+| The wheel is not broken | it performs its startup calibration sweep whenever it has mains power |
+| It rests rigid in every mode | including the PS4 position, where nothing from this project reaches it |
+| `IOHIDDeviceSetReport` has never changed anything | every framing, both product ids, autocenter and range, all accepted, no reaction |
 
-What is still open is the only thing that matters: **whether the wheel ever
-physically reacts.** Every write so far returned `kIOReturnSuccess` and the
-wheel has been rigid throughout, in boot mode, in firmware mode, and in the
-PS4 position where it takes nothing from this project at all.
+**The leading explanation is now external.** A shipping macOS driver for the
+sibling T300RS states that Thrustmaster firmware acknowledges the control
+SET_REPORT pipe and ignores it, and writes on the interrupt OUT pipe instead.
+That predicts every result above. See RESEARCH.md C7, and run question 3
+before drawing any conclusion from question 4.
 
-**The next measurement is not on the Mac.** The wheel behaves the same on a
-stock Linux machine, which is expected rather than alarming: the kernel does
-the mode switch and has no T150 force feedback driver. Installing
-`scarburato/t150_driver` there says whether any software can free this wheel,
-and `usbmon` alongside it captures what a working driver actually sends. See
-RESEARCH.md A11.
+## The order to run these in
 
-That last one is why questions 3 and 4 cannot currently be answered on this
-wheel. A PS4-position wheel is a self-contained console device, so nothing
-software-side reaches it and nothing software-side can be holding it. Clear
-the calibration problem above first. Until the wheel sweeps on power-up and
-turns freely with nothing attached, these questions are being asked of a
-wheel that cannot answer them either way.
+1. **Question 1**, what macOS publishes. Always.
+2. **Question 2**, the mode switch, if question 1 found `B65D`. It is a
+   precondition, not a follow-up.
+3. **Question 3**, the interrupt OUT write. This is now the most
+   informative single command in the set, and on the evidence above it is
+   more likely to move the wheel than question 4 is.
+4. **Question 4**, the HID path, which is what the project actually needs to
+   work and so far never has.
+5. **Question 5**, the force feedback packets, once anything has moved.
+
+Questions 3 and 4 send the same bytes down different pipes. That is the
+whole comparison: if 3 frees the wheel and 4 does not, the transport is the
+problem and the protocol is fine.
 
 ---
 
@@ -176,7 +182,7 @@ Record four things:
 - which invocation first succeeded, and as whom,
 - whether `probe_hid` now reports `B677`,
 - **whether the wheel turns freely by hand afterwards**, which is what makes
-  question 3 measurable at all,
+  questions 3 and 4 measurable at all,
 - the descriptor `-o .` just dumped. Firmware mode reports
   `MaxOutputReportSize` **15** where PROTOCOL.md expects a 14-byte report
   with id `0x0A`, and 15 is exactly the length of `ff_commit`, the one packet
@@ -189,7 +195,48 @@ costs if it is the only thing that works: seizing takes the device away from
 every other client, so the wheel would vanish from CrossOver for as long as
 the daemon holds it, which is not a degraded mode but a different design.
 
-## Question 3: does an unprivileged SetReport move the wheel?
+## Question 3: does the wheel listen on the interrupt OUT pipe?
+
+**Run this before concluding anything from question 4.** RESEARCH.md C7 says
+Thrustmaster firmware acknowledges the control SET_REPORT pipe and ignores
+it, which is exactly what question 4 keeps measuring, and that the pipe it
+listens to is interrupt OUT. `probe_intr` writes there.
+
+Reaching that pipe means capturing the wheel from macOS, so this one **needs
+root**, unlike everything else here. It captures, writes, and hands the wheel
+straight back.
+
+```sh
+sudo ./build/bin/probe_intr -A
+```
+
+With no action it releases the autocenter, which is the single most
+informative thing to send a wheel that is being held rigid. **If the wheel
+becomes turnable, three questions are answered at once**: the wheel is
+healthy, the bytes in PROTOCOL.md are right, and the pipe was the whole
+problem. If it does not, the layout is wrong rather than the transport, which
+is a different and more tractable failure.
+
+Then the settings, which are what a working `t150ctl` would send:
+
+```sh
+sudo ./build/bin/probe_intr -r 270
+sudo ./build/bin/probe_intr -r 1080
+sudo ./build/bin/probe_intr -g 5000
+sudo ./build/bin/probe_intr -a 10000
+sudo ./build/bin/probe_intr -A
+```
+
+Its packets come from `src/lib/encode.c`, the same encoders the daemon uses,
+so whatever this proves about the wheel it proves about them too.
+
+If it is killed between the capture and the release, the wheel stays gone
+from macOS until it is unplugged and replugged. That is the cost of this
+route, and it is why it can configure a wheel but cannot drive effects during
+a game: holding the pipe means owning the device, and CrossOver cannot read a
+wheel this tool owns.
+
+## Question 4: does an unprivileged SetReport move the wheel?
 
 This is the one that decides the project. It only applies once the wheel is
 in firmware mode.
@@ -291,50 +338,9 @@ the device, and the design depends on CrossOver not doing that. A run that
 succeeds on an idle desktop and fails with a game running has found something
 important.
 
-## Question 3b: does the wheel listen on the interrupt OUT pipe?
+## Question 5: does the force feedback protocol work too?
 
-**Run this before concluding anything from question 3.** RESEARCH.md C7 says
-Thrustmaster firmware acknowledges the control SET_REPORT pipe and ignores
-it, which is exactly what question 3 keeps measuring, and that the pipe it
-listens to is interrupt OUT. `probe_intr` writes there.
-
-Reaching that pipe means capturing the wheel from macOS, so this one **needs
-root**, unlike everything else here. It captures, writes, and hands the wheel
-straight back.
-
-```sh
-sudo ./build/bin/probe_intr -A
-```
-
-With no action it releases the autocenter, which is the single most
-informative thing to send a wheel that is being held rigid. **If the wheel
-becomes turnable, three questions are answered at once**: the wheel is
-healthy, the bytes in PROTOCOL.md are right, and the pipe was the whole
-problem. If it does not, the layout is wrong rather than the transport, which
-is a different and more tractable failure.
-
-Then the settings, which are what a working `t150ctl` would send:
-
-```sh
-sudo ./build/bin/probe_intr -r 270
-sudo ./build/bin/probe_intr -r 1080
-sudo ./build/bin/probe_intr -g 5000
-sudo ./build/bin/probe_intr -a 10000
-sudo ./build/bin/probe_intr -A
-```
-
-Its packets come from `src/lib/encode.c`, the same encoders the daemon uses,
-so whatever this proves about the wheel it proves about them too.
-
-If it is killed between the capture and the release, the wheel stays gone
-from macOS until it is unplugged and replugged. That is the cost of this
-route, and it is why it can configure a wheel but cannot drive effects during
-a game: holding the pipe means owning the device, and CrossOver cannot read a
-wheel this tool owns.
-
-## Question 4: does the force feedback protocol work too?
-
-Only once question 3 has moved the wheel. The settings opcodes prove the
+Only once something has moved the wheel. The settings opcodes prove the
 transport; this proves the part the daemon will actually spend its time on,
 and it costs one more run.
 
@@ -366,7 +372,7 @@ duration limit does not stop on its own. Stop it with:
 ```
 
 If the settings packets moved the wheel and this does nothing, retry it with
-the same framing flags that worked for question 3, then say so plainly: it
+the same framing flags that worked for question 4, then say so plainly: it
 means the transport is fine and the force feedback layout is wrong, which is
 a much better place to be than the alternative.
 
@@ -400,7 +406,7 @@ waveform we can stop downgrading. Stop it the same way as above.
 | `probe_intr -A` frees it but `probe_setreport -A` does not | C7 confirmed on this wheel. Settings are reachable and `t150ctl` can be built; driving effects during a game is not, because it needs the pipe held. |
 | Neither frees it | The transport is not the problem and the packet layout is. Better than the alternative, and where PROTOCOL.md gets rechecked. |
 | `-w` works without `sudo` | The finished tool never needs a password. Record it. |
-| Wheel locked rigid and will not turn by hand | Question 3 cannot be answered yet. Do question 2 first. |
+| Wheel locked rigid and will not turn by hand | Do question 2, then question 3. Question 3 is the one most likely to free it. |
 | Still locked after it reports `B677` | Report it. Nothing in this project holds a wheel rigid, so something else does, and that has to be understood before the measurement means anything. |
 | Wheel at `B65D` but honours settings there | Almost as good: the mode switch stops being load bearing. |
 | SetReport moves the wheel unprivileged | The architecture works. Build it. |

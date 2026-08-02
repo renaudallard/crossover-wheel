@@ -95,7 +95,9 @@ RESEARCH.md.
 
 Implemented and working:
 
-- `src/probe/` : three macOS measurement tools, see section 6.
+- `src/probe/` : four macOS measurement tools, see section 6. `probe_intr`
+  is the newest and writes on the interrupt OUT pipe rather than through the
+  HID layer; it needs root because that means capturing the wheel.
 - `include/t150/` : wire constants, normalized effect model, wire protocol.
   Portable, compiled and self-tested on Linux.
 - `src/lib/encode.c` : M1, the wire encoders. Pure functions, golden-vector
@@ -155,11 +157,19 @@ wheel reaches `b677`, no node carries `ProtectedAccess`, and writes still
 return success with a game running. RESEARCH.md A4 to A8 has the detail and
 PROBES.md says which steps no longer need repeating.
 
-The one that decides the project is still open, and for a subtler reason than
-a plain no: every write returned success while the wheel sat rigid, but the
-run left the autocenter at maximum throughout, so a wheel obeying perfectly
-and a wheel ignoring everything were indistinguishable. The procedure now
-establishes a baseline first and releases the spring between variants.
+The one that decides the project is still open, and the question has
+sharpened. Three runs sent every framing through `IOHIDDeviceSetReport`; all
+were accepted and none changed anything, on a wheel that calibrates normally
+and is therefore not broken. RESEARCH.md C7 supplies the likely reason: a
+shipping macOS driver for the sibling T300RS states that Thrustmaster
+firmware acknowledges the control SET_REPORT pipe and ignores it, and writes
+on the interrupt OUT pipe instead.
+
+`probe_intr` now writes on that pipe, by capturing the wheel and handing it
+back, and running it against `probe_setreport` is the comparison that decides
+the shape of the project. If only the interrupt OUT path works then settings
+are reachable and effects during a game are not, because holding that pipe
+means owning the device. See section 8, which anticipated a version of this.
 
 Two traps:
 
