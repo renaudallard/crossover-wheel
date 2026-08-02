@@ -42,6 +42,12 @@ _Static_assert(T150_FF_TYPE_SPRING == 0x4040, "spring type code");
 _Static_assert(T150_FF_TYPE_DAMPER == 0x4041, "damper type code");
 _Static_assert(T150_FF_OP_CONTROL == 0x41, "effect control opcode");
 
+/* Measured on hardware, not transcribed, so worth pinning down. */
+_Static_assert(T150_EP_INTR_OUT == 0x01, "interrupt OUT endpoint");
+_Static_assert(T150_EP_INTR_IN == 0x82, "interrupt IN endpoint");
+_Static_assert(T150_FF_COMMIT_LEN <= T150_EP_INTR_OUT_MAX,
+    "the longest packet must fit one interrupt transfer");
+
 /*
  * Square and triangle read like periodics the wheel ought to render, and
  * were once recorded as native here. The protocol has no type code for

@@ -39,17 +39,22 @@ macOS userspace, and with what privilege, is what `probe_ep0` measures.
 
 ## USB endpoints in firmware mode
 
-| Direction | Address |
-| --- | --- |
-| Interrupt IN | `0x81` |
-| Interrupt OUT | `0x02` or `0x01`, see below |
+| Direction | Address | Max packet |
+| --- | --- | --- |
+| Interrupt IN | `0x82` | 16 |
+| Interrupt OUT | `0x01` | 32 |
 
-**Unresolved.** `t150_driver`'s `hid-t150.c` discovers the OUT endpoint at
-runtime rather than hardcoding it, while the same repository's
-`traffic/old_caps/t150_test.py` writes to `0x01`. macoswheels recorded
-`0x02`. This only matters if the HID `SetReport` path turns out to be closed
-and raw pipe access is the fallback, so it is left open until `probe_ep0`
-says whether raw access is reachable at all.
+**Measured**, by `probe_intr` enumerating the pipes on interface 0. The wheel
+has exactly these two.
+
+This settles the disagreement recorded here before. `t150_driver` discovers
+the OUT endpoint at runtime, its own `traffic/old_caps/t150_test.py` writes
+to `0x01`, and macoswheels recorded `0x02`: it is **`0x01`**. The IN address
+was written down here as `0x81` on nothing better than assumption, and is
+**`0x82`**.
+
+The 32-byte maximum matters for the force feedback packets: `ff_commit` is
+15 bytes, so everything in this document fits in one transfer.
 
 ## HID report descriptor
 

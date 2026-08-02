@@ -49,18 +49,18 @@
 #define T150_SWITCH_VALUE	0x0006u
 
 /*
- * USB endpoints in firmware mode.
+ * USB endpoints in firmware mode. Measured on hardware by probe_intr, which
+ * enumerates the pipes on interface 0 and prints them: the wheel has exactly
+ * two, and the OUT one takes 32 bytes.
  *
- * NOTE: two sources disagree on the interrupt OUT address. t150_driver's
- * hid-t150.c discovers it at runtime rather than hardcoding it, while its
- * own traffic/old_caps/t150_test.py writes to 0x01. macoswheels recorded
- * 0x02. This only matters if the HID SetReport path fails and we fall back
- * to raw pipe access, so it is left unresolved until probe_ep0 says whether
- * raw access is even reachable.
+ * This settles an old disagreement. t150_driver discovers the OUT endpoint
+ * at runtime, its own traffic/old_caps/t150_test.py writes to 0x01, and
+ * macoswheels recorded 0x02. It is 0x01. The IN address was recorded here as
+ * 0x81 on no better authority than assumption, and is 0x82.
  */
-#define T150_EP_INTR_IN		0x81u
-#define T150_EP_INTR_OUT_A	0x02u
-#define T150_EP_INTR_OUT_B	0x01u
+#define T150_EP_INTR_IN		0x82u
+#define T150_EP_INTR_OUT	0x01u
+#define T150_EP_INTR_OUT_MAX	32u
 
 /*
  * HID output report declared by the wheel's own report descriptor.

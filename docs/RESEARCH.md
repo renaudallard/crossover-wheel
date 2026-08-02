@@ -246,6 +246,28 @@ ground truth rather than against a reading of someone's source.
 > T150 force feedback driver; `scarburato/t150_driver` ships `install.sh`
 > and DKMS.
 
+**A12. The interrupt OUT route works mechanically, first time.** `probe_intr`
+was run on the wheel and every step of it succeeded: capturing the device
+from the HID driver, opening interface 0, finding the pipes, writing, and
+handing the wheel back. Autocenter on and off, both rotation extremes and
+gain all went out on the pipe and were accepted.
+
+That answers the mechanical question and settles two protocol values that
+were guesses:
+
+| | Recorded before | Measured |
+| --- | --- | --- |
+| Interrupt OUT | `0x02` or `0x01`, unresolved | **`0x01`**, 32-byte packets |
+| Interrupt IN | `0x81` | **`0x82`**, 16-byte packets |
+
+The wheel has exactly two pipes on interface 0. The 32-byte maximum means
+every packet in PROTOCOL.md fits one transfer, `ff_commit` included at 15.
+
+What this run does **not** record is whether the wheel physically reacted,
+which is still the only thing E1 needs. Capture, write and release all
+returning success says the bytes reached the firmware's doorstep; it does not
+say the firmware acted on them.
+
 Nothing in the project should be changed until that is known. The transport
 facts stand on their own either way, because none of them depend on the
 motor: the descriptors read, the endpoint 0 path works unprivileged,
