@@ -4,7 +4,8 @@
 .Sh NAME
 .Nm probe_hid ,
 .Nm probe_setreport ,
-.Nm probe_ep0
+.Nm probe_ep0 ,
+.Nm probe_intr
 .Nd measure what macOS userspace can do to a Thrustmaster T150
 .Sh SYNOPSIS
 .Nm probe_hid
@@ -30,8 +31,19 @@
 .Op Fl s
 .Op Fl w
 .Op Fl V Ar value
+.Nm probe_intr
+.Op Fl v Ar vid
+.Op Fl p Ar pid
+.Op Fl N Ar pad
+.Oo
+.Fl a Ar force |
+.Fl A |
+.Fl r Ar degrees |
+.Fl g Ar gain |
+.Fl x Ar bytes ...
+.Oc
 .Sh DESCRIPTION
-These three tools answer the questions the
+These four tools answer the questions the
 .Xr crossover-wheel 7
 design depends on. They are measurement instruments, not part of the
 finished software, and they are macOS only.
@@ -116,12 +128,48 @@ Switch value to use with
 .Fl w .
 The default is 0x0006, the T150 row.
 .El
+.Ss probe_intr
+.Nm probe_intr
+writes on the interrupt OUT pipe instead of through the HID layer, which is
+the pipe Thrustmaster firmware is reported to actually listen to. Reaching it
+means capturing the wheel away from macOS, so this tool
+.Em needs root ,
+unlike every other tool here. It captures, writes and hands the wheel back on
+every exit path.
+.Pp
+With no action it disables the autocenter, which is the most informative
+thing to send a wheel that is being held rigid: if the wheel becomes turnable
+the firmware was listening all along and only the pipe was wrong. Its packets
+are built by the shared encoders in
+.Pa src/lib/encode.c ,
+so a run exercises those too.
+.Bl -tag -width Ds
+.It Fl N Ar pad
+Zero-pad every packet to this length.
+.It Fl a Ar force
+Autocenter to
+.Ar force ,
+0 to 10000, and enable it.
+.It Fl A
+Disable the autocenter.
+.It Fl r Ar degrees
+Set the rotation range.
+.It Fl g Ar gain
+Set the gain, 0 to 10000.
+.It Fl x Ar bytes
+Raw hex payload, repeatable.
+.El
+.Pp
+If it is killed between the capture and the release the wheel stays gone from
+macOS until it is replugged. This is why the route can configure a wheel but
+cannot drive effects during a game: holding the pipe means owning the device.
 .Sh EXIT STATUS
 .Nm probe_hid
 exits 0 whenever enumeration succeeded, including when nothing matched.
-.Nm probe_setreport
-and
+.Nm probe_setreport ,
 .Nm probe_ep0
+and
+.Nm probe_intr
 exit 0 only when every operation they attempted succeeded, 1 on a device or
 transfer failure, and 2 on a usage error.
 .Pp
@@ -150,6 +198,11 @@ Find out whether endpoint 0 needs root:
 .Pp
 .Dl $ probe_ep0
 .Dl $ sudo probe_ep0
+.Pp
+Release a wheel that is being held rigid, on the pipe the firmware listens
+to:
+.Pp
+.Dl $ sudo probe_intr -A
 .Sh SEE ALSO
 .Xr crossover-wheel 7
 .Pp

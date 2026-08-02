@@ -291,6 +291,47 @@ the device, and the design depends on CrossOver not doing that. A run that
 succeeds on an idle desktop and fails with a game running has found something
 important.
 
+## Question 3b: does the wheel listen on the interrupt OUT pipe?
+
+**Run this before concluding anything from question 3.** RESEARCH.md C7 says
+Thrustmaster firmware acknowledges the control SET_REPORT pipe and ignores
+it, which is exactly what question 3 keeps measuring, and that the pipe it
+listens to is interrupt OUT. `probe_intr` writes there.
+
+Reaching that pipe means capturing the wheel from macOS, so this one **needs
+root**, unlike everything else here. It captures, writes, and hands the wheel
+straight back.
+
+```sh
+sudo ./build/bin/probe_intr -A
+```
+
+With no action it releases the autocenter, which is the single most
+informative thing to send a wheel that is being held rigid. **If the wheel
+becomes turnable, three questions are answered at once**: the wheel is
+healthy, the bytes in PROTOCOL.md are right, and the pipe was the whole
+problem. If it does not, the layout is wrong rather than the transport, which
+is a different and more tractable failure.
+
+Then the settings, which are what a working `t150ctl` would send:
+
+```sh
+sudo ./build/bin/probe_intr -r 270
+sudo ./build/bin/probe_intr -r 1080
+sudo ./build/bin/probe_intr -g 5000
+sudo ./build/bin/probe_intr -a 10000
+sudo ./build/bin/probe_intr -A
+```
+
+Its packets come from `src/lib/encode.c`, the same encoders the daemon uses,
+so whatever this proves about the wheel it proves about them too.
+
+If it is killed between the capture and the release, the wheel stays gone
+from macOS until it is unplugged and replugged. That is the cost of this
+route, and it is why it can configure a wheel but cannot drive effects during
+a game: holding the pipe means owning the device, and CrossOver cannot read a
+wheel this tool owns.
+
 ## Question 4: does the force feedback protocol work too?
 
 Only once question 3 has moved the wheel. The settings opcodes prove the
@@ -356,6 +397,8 @@ waveform we can stop downgrading. Stop it the same way as above.
 | --- | --- |
 | Wheel already at `B677` | No control transfer, no root, anywhere. Best case. |
 | `-A` frees a rigid wheel | E1 is answered yes. The firmware has been obeying all along and the architecture works. Build it. |
+| `probe_intr -A` frees it but `probe_setreport -A` does not | C7 confirmed on this wheel. Settings are reachable and `t150ctl` can be built; driving effects during a game is not, because it needs the pipe held. |
+| Neither frees it | The transport is not the problem and the packet layout is. Better than the alternative, and where PROTOCOL.md gets rechecked. |
 | `-w` works without `sudo` | The finished tool never needs a password. Record it. |
 | Wheel locked rigid and will not turn by hand | Question 3 cannot be answered yet. Do question 2 first. |
 | Still locked after it reports `B677` | Report it. Nothing in this project holds a wheel rigid, so something else does, and that has to be understood before the measurement means anything. |

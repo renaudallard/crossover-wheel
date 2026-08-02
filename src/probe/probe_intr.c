@@ -1,0 +1,503 @@
+/*
+ * probe_intr - write to the wheel on the pipe it actually listens to.
+ *
+ * probe_setreport asks whether IOHIDDeviceSetReport moves the wheel. On a
+ * T150 the answer so far is that every write is accepted and nothing ever
+ * happens, which RESEARCH.md C7 explains: Thrustmaster firmware acknowledges
+ * the control SET_REPORT pipe and ignores it, and the pipe it listens to is
+ * interrupt OUT.
+ *
+ * Reaching that pipe from userspace means taking the device away from the
+ * HID driver, which is what this does: capture, write, release. That is the
+ * price, and it is why this cannot be how the daemon drives effects during a
+ * game. It is fine for settings, which the wheel keeps after the device goes
+ * back, and it is the experiment that says whether the bytes in
+ * docs/PROTOCOL.md are right.
+ *
+ * NEEDS ROOT. Device capture is privileged, unlike everything else here.
+ *
+ * The wheel is handed back on every exit path, including failures. If this
+ * is killed between the capture and the release, unplug and replug the wheel
+ * to get it back.
+ *
+ * Copyright (c) 2026 Renaud Allard
+ * SPDX-License-Identifier: BSD-2-Clause
+ */
+
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/IOCFPlugIn.h>
+#include <IOKit/IOKitLib.h>
+#include <IOKit/usb/IOUSBLib.h>
+#include <IOKit/usb/USBSpec.h>
+
+#include <err.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+
+#include "common.h"
+#include "t150/encode.h"
+#include "t150/t150.h"
+
+#define MAX_PAYLOAD	64
+#define MAX_PACKETS	4
+
+/* The device disappears and comes back around a capture. */
+#define SETTLE_MS	500
+#define WAIT_TRIES	300
+#define WAIT_STEP_MS	10
+
+static void
+nap(long ms)
+{
+	struct timespec ts;
+
+	ts.tv_sec = ms / 1000;
+	ts.tv_nsec = (ms % 1000) * 1000000L;
+	(void)nanosleep(&ts, NULL);
+}
+
+struct packet {
+	uint8_t	bytes[MAX_PAYLOAD];
+	size_t	len;
+};
+
+enum action {
+	ACT_NONE = 0,
+	ACT_AUTOCENTER,
+	ACT_AUTOCENTER_OFF,
+	ACT_RANGE,
+	ACT_GAIN,
+	ACT_RAW
+};
+
+static io_service_t
+find_device(long vid, long pid)
+{
+	CFMutableDictionaryRef match;
+	io_iterator_t iter = IO_OBJECT_NULL;
+	io_service_t svc;
+	SInt32 v = (SInt32)vid, p = (SInt32)pid;
+	CFNumberRef n;
+
+	if ((match = IOServiceMatching(kIOUSBDeviceClassName)) == NULL)
+		return IO_OBJECT_NULL;
+
+	if ((n = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &v))) {
+		CFDictionarySetValue(match, CFSTR(kUSBVendorID), n);
+		CFRelease(n);
+	}
+	if ((n = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &p))) {
+		CFDictionarySetValue(match, CFSTR(kUSBProductID), n);
+		CFRelease(n);
+	}
+
+	if (IOServiceGetMatchingServices(kIOMainPortDefault, match, &iter) !=
+	    KERN_SUCCESS)
+		return IO_OBJECT_NULL;
+
+	svc = IOIteratorNext(iter);
+	IOObjectRelease(iter);
+
+	return svc;
+}
+
+/* Wait for the wheel to come back after a re-enumeration. */
+static io_service_t
+wait_for_device(long vid, long pid)
+{
+	io_service_t svc;
+	int i;
+
+	nap(SETTLE_MS);
+	for (i = 0; i < WAIT_TRIES; i++) {
+		if ((svc = find_device(vid, pid)) != IO_OBJECT_NULL)
+			return svc;
+		nap(WAIT_STEP_MS);
+	}
+
+	return IO_OBJECT_NULL;
+}
+
+static IOUSBDeviceInterface500 **
+open_device(io_service_t svc)
+{
+	IOUSBDeviceInterface500 **dev = NULL;
+	IOCFPlugInInterface **plug = NULL;
+	SInt32 score = 0;
+
+	if (IOCreatePlugInInterfaceForService(svc, kIOUSBDeviceUserClientTypeID,
+	    kIOCFPlugInInterfaceID, &plug, &score) != KERN_SUCCESS || plug == NULL)
+		return NULL;
+
+	if ((*plug)->QueryInterface(plug,
+	    CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID500), (LPVOID *)&dev) != S_OK)
+		dev = NULL;
+	IODestroyPlugInInterface(plug);
+
+	return dev;
+}
+
+/*
+ * Take the device away from the HID driver. Everything after this must be
+ * undone by release_device(), or the wheel stays gone until it is replugged.
+ */
+static int
+capture_device(long vid, long pid)
+{
+	IOUSBDeviceInterface500 **dev;
+	io_service_t svc;
+	IOReturn r;
+
+	if ((svc = find_device(vid, pid)) == IO_OBJECT_NULL) {
+		warnx("no USB device matches %04lx:%04lx", vid, pid);
+		return -1;
+	}
+	dev = open_device(svc);
+	IOObjectRelease(svc);
+	if (dev == NULL) {
+		warnx("cannot get a device interface");
+		return -1;
+	}
+
+	r = (*dev)->USBDeviceOpenSeize(dev);
+	if (r != kIOReturnSuccess)
+		r = (*dev)->USBDeviceOpen(dev);
+	printf("USBDeviceOpen                  %s\n", probe_ioreturn_str(r));
+	if (r != kIOReturnSuccess) {
+		(*dev)->Release(dev);
+		return -1;
+	}
+
+	r = (*dev)->USBDeviceReEnumerate(dev, kUSBReEnumerateCaptureDeviceMask);
+	printf("capture                        %s\n", probe_ioreturn_str(r));
+	(*dev)->USBDeviceClose(dev);
+	(*dev)->Release(dev);
+
+	return r == kIOReturnSuccess ? 0 : -1;
+}
+
+static void
+release_device(long vid, long pid)
+{
+	IOUSBDeviceInterface500 **dev;
+	io_service_t svc;
+	IOReturn r;
+
+	if ((svc = find_device(vid, pid)) == IO_OBJECT_NULL) {
+		warnx("cannot find the wheel to hand it back, replug it");
+		return;
+	}
+	if ((dev = open_device(svc)) == NULL) {
+		IOObjectRelease(svc);
+		warnx("cannot hand the wheel back, replug it");
+		return;
+	}
+	IOObjectRelease(svc);
+
+	if ((*dev)->USBDeviceOpen(dev) == kIOReturnSuccess) {
+		r = (*dev)->USBDeviceReEnumerate(dev,
+		    kUSBReEnumerateReleaseDeviceMask);
+		printf("release                        %s\n",
+		    probe_ioreturn_str(r));
+		(*dev)->USBDeviceClose(dev);
+	}
+	(*dev)->Release(dev);
+}
+
+static IOUSBInterfaceInterface500 **
+open_interface(IOUSBDeviceInterface500 **dev)
+{
+	IOUSBFindInterfaceRequest req;
+	IOUSBInterfaceInterface500 **iface = NULL;
+	IOCFPlugInInterface **plug = NULL;
+	io_iterator_t iter = IO_OBJECT_NULL;
+	io_service_t svc;
+	SInt32 score = 0;
+
+	req.bInterfaceClass = kIOUSBFindInterfaceDontCare;
+	req.bInterfaceSubClass = kIOUSBFindInterfaceDontCare;
+	req.bInterfaceProtocol = kIOUSBFindInterfaceDontCare;
+	req.bAlternateSetting = kIOUSBFindInterfaceDontCare;
+
+	if ((*dev)->CreateInterfaceIterator(dev, &req, &iter) != KERN_SUCCESS)
+		return NULL;
+	svc = IOIteratorNext(iter);
+	IOObjectRelease(iter);
+	if (svc == IO_OBJECT_NULL)
+		return NULL;
+
+	if (IOCreatePlugInInterfaceForService(svc,
+	    kIOUSBInterfaceUserClientTypeID, kIOCFPlugInInterfaceID, &plug,
+	    &score) != KERN_SUCCESS || plug == NULL) {
+		IOObjectRelease(svc);
+		return NULL;
+	}
+	IOObjectRelease(svc);
+
+	if ((*plug)->QueryInterface(plug,
+	    CFUUIDGetUUIDBytes(kIOUSBInterfaceInterfaceID500),
+	    (LPVOID *)&iface) != S_OK)
+		iface = NULL;
+	IODestroyPlugInInterface(plug);
+
+	return iface;
+}
+
+/* The first interrupt OUT pipe, which is where the wheel listens. */
+static int
+find_out_pipe(IOUSBInterfaceInterface500 **iface, UInt8 *pipe, UInt8 *addr)
+{
+	UInt8 n = 0, i;
+
+	if ((*iface)->GetNumEndpoints(iface, &n) != kIOReturnSuccess)
+		return -1;
+
+	for (i = 1; i <= n; i++) {
+		UInt8 dir = 0, num = 0, tt = 0, interval = 0;
+		UInt16 maxsize = 0;
+
+		if ((*iface)->GetPipeProperties(iface, i, &dir, &num, &tt,
+		    &maxsize, &interval) != kIOReturnSuccess)
+			continue;
+
+		printf("  pipe %u: %s, type %u, endpoint 0x%02x, max %u\n", i,
+		    dir == kUSBOut ? "out" : dir == kUSBIn ? "in" : "?", tt,
+		    (unsigned)(num | (dir == kUSBIn ? 0x80 : 0)), maxsize);
+
+		if (dir == kUSBOut && tt == kUSBInterrupt && *pipe == 0) {
+			*pipe = i;
+			*addr = num;
+		}
+	}
+
+	return *pipe != 0 ? 0 : -1;
+}
+
+static void
+usage(void)
+{
+	fprintf(stderr,
+	    "usage: probe_intr [-v vid] [-p pid] [-N pad]\n"
+	    "                  [-a force | -A | -r degrees | -g gain |\n"
+	    "                   -x \"hex bytes\"]\n"
+	    "\n"
+	    "  Writes on the interrupt OUT pipe rather than through the HID\n"
+	    "  layer, which means capturing the wheel from macOS and handing\n"
+	    "  it back afterwards. Needs root.\n"
+	    "\n"
+	    "  -v vid       vendor id (default 0x%04x)\n"
+	    "  -p pid       product id (default 0x%04x)\n"
+	    "  -N pad       zero-pad every packet to this length\n"
+	    "\n"
+	    "  -a force     autocenter to force (0..10000) and enable it\n"
+	    "  -A           disable autocenter, the one that frees a held wheel\n"
+	    "  -r degrees   set rotation range (%u..%u)\n"
+	    "  -g gain      set gain (0..10000)\n"
+	    "  -x \"40 04 ..\"  send these raw bytes, repeatable up to %d times\n",
+	    T150_VID, T150_PID_FIRMWARE, T150_RANGE_MIN, T150_RANGE_MAX,
+	    MAX_PACKETS);
+	exit(2);
+}
+
+int
+main(int argc, char *argv[])
+{
+	struct packet pkt[MAX_PACKETS];
+	IOUSBDeviceInterface500 **dev = NULL;
+	IOUSBInterfaceInterface500 **iface = NULL;
+	io_service_t svc;
+	unsigned long arg = 10000, padto = 0;
+	long vid = T150_VID, pid = T150_PID_FIRMWARE;
+	enum action act = ACT_NONE;
+	size_t npkt = 0, i;
+	UInt8 pipe = 0, addr = 0;
+	int ch, rc = 1, raw_len;
+
+	memset(pkt, 0, sizeof(pkt));
+
+	while ((ch = getopt(argc, argv, "v:p:N:a:Ar:g:x:")) != -1) {
+		unsigned long parsed;
+
+		switch (ch) {
+		case 'v':
+			if (probe_parse_uint(optarg, 0xffff, &parsed) != 0)
+				usage();
+			vid = (long)parsed;
+			break;
+		case 'p':
+			if (probe_parse_uint(optarg, 0xffff, &parsed) != 0)
+				usage();
+			pid = (long)parsed;
+			break;
+		case 'N':
+			if (probe_parse_uint(optarg, MAX_PAYLOAD, &padto) != 0)
+				usage();
+			break;
+		case 'a':
+			if (act != ACT_NONE ||
+			    probe_parse_uint(optarg, T150_DI_MAX, &arg) != 0)
+				usage();
+			act = ACT_AUTOCENTER;
+			break;
+		case 'A':
+			if (act != ACT_NONE)
+				usage();
+			act = ACT_AUTOCENTER_OFF;
+			break;
+		case 'r':
+			if (act != ACT_NONE ||
+			    probe_parse_uint(optarg, T150_RANGE_MAX, &arg) != 0)
+				usage();
+			act = ACT_RANGE;
+			break;
+		case 'g':
+			if (act != ACT_NONE ||
+			    probe_parse_uint(optarg, T150_DI_MAX, &arg) != 0)
+				usage();
+			act = ACT_GAIN;
+			break;
+		case 'x':
+			if (act != ACT_NONE && act != ACT_RAW)
+				usage();
+			if (npkt >= MAX_PACKETS)
+				errx(2, "at most %d -x packets", MAX_PACKETS);
+			if ((raw_len = probe_parse_hex(optarg, pkt[npkt].bytes,
+			    sizeof(pkt[npkt].bytes))) <= 0)
+				usage();
+			pkt[npkt].len = (size_t)raw_len;
+			npkt++;
+			act = ACT_RAW;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (optind != argc)
+		usage();
+
+	if (act == ACT_NONE) {
+		act = ACT_AUTOCENTER_OFF;
+		printf("no action given, so releasing the autocenter\n");
+	}
+
+	/*
+	 * The bytes come from the shared encoders, so whatever this proves
+	 * about the wheel it proves about src/lib/encode.c as well.
+	 */
+	switch (act) {
+	case ACT_AUTOCENTER:
+		pkt[0].len = t150_enc_autocenter_force(pkt[0].bytes,
+		    sizeof(pkt[0].bytes), (uint32_t)arg);
+		pkt[1].len = t150_enc_autocenter_enable(pkt[1].bytes,
+		    sizeof(pkt[1].bytes), 1);
+		npkt = 2;
+		break;
+	case ACT_AUTOCENTER_OFF:
+		pkt[0].len = t150_enc_autocenter_enable(pkt[0].bytes,
+		    sizeof(pkt[0].bytes), 0);
+		npkt = 1;
+		break;
+	case ACT_RANGE:
+		pkt[0].len = t150_enc_range(pkt[0].bytes, sizeof(pkt[0].bytes),
+		    (unsigned int)arg);
+		npkt = 1;
+		break;
+	case ACT_GAIN:
+		pkt[0].len = t150_enc_gain(pkt[0].bytes, sizeof(pkt[0].bytes),
+		    (uint32_t)arg);
+		npkt = 1;
+		break;
+	case ACT_RAW:
+		break;
+	case ACT_NONE:
+		usage();
+	}
+
+	if (geteuid() != 0)
+		warnx("not running as root: capturing the device will fail");
+
+	printf("capturing %04lx:%04lx from the HID driver\n", vid, pid);
+	if (capture_device(vid, pid) != 0) {
+		warnx("capture failed, the wheel was not taken and nothing was "
+		    "written");
+		return 1;
+	}
+
+	/* From here on every exit goes through release. */
+	if ((svc = wait_for_device(vid, pid)) == IO_OBJECT_NULL) {
+		warnx("the wheel did not come back after the capture");
+		goto out;
+	}
+	dev = open_device(svc);
+	IOObjectRelease(svc);
+	if (dev == NULL) {
+		warnx("cannot reopen the captured wheel");
+		goto out;
+	}
+	if ((*dev)->USBDeviceOpen(dev) != kIOReturnSuccess) {
+		warnx("cannot open the captured wheel");
+		goto out;
+	}
+	(void)(*dev)->SetConfiguration(dev, 1);
+
+	if ((iface = open_interface(dev)) == NULL) {
+		warnx("cannot get interface 0");
+		goto out;
+	}
+	printf("USBInterfaceOpen               %s\n",
+	    probe_ioreturn_str((*iface)->USBInterfaceOpen(iface)));
+
+	if (find_out_pipe(iface, &pipe, &addr) != 0) {
+		warnx("no interrupt OUT pipe on this interface");
+		goto out;
+	}
+	printf("\nwriting on pipe %u, endpoint 0x%02x\n", pipe, addr);
+
+	rc = 0;
+	for (i = 0; i < npkt; i++) {
+		size_t len = pkt[i].len;
+		IOReturn r;
+
+		if (len == 0) {
+			warnx("packet %zu is empty, the encoder refused it",
+			    i);
+			rc = 1;
+			break;
+		}
+		if (padto > len)
+			len = padto;
+
+		printf("  send %2zu byte(s):", len);
+		probe_hexdump(stdout, pkt[i].bytes, len);
+		r = (*iface)->WritePipe(iface, pipe, pkt[i].bytes,
+		    (UInt32)len);
+		printf("  WritePipe                    %s\n",
+		    probe_ioreturn_str(r));
+		if (r != kIOReturnSuccess) {
+			rc = 1;
+			break;
+		}
+	}
+
+out:
+	if (iface != NULL) {
+		(void)(*iface)->USBInterfaceClose(iface);
+		(*iface)->Release(iface);
+	}
+	if (dev != NULL) {
+		(*dev)->USBDeviceClose(dev);
+		(*dev)->Release(dev);
+	}
+	printf("\nhanding the wheel back to macOS\n");
+	release_device(vid, pid);
+
+	if (rc == 0)
+		printf("\nEvery write was accepted on the pipe the firmware\n"
+		    "listens to. What settles this is whether the wheel\n"
+		    "reacted: with -A, whether it became turnable.\n");
+
+	return rc;
+}

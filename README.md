@@ -81,6 +81,7 @@ in-bottle bus driver was considered and rejected.
 | Component | State |
 | --- | --- |
 | `probe_hid`, `probe_setreport`, `probe_ep0` | working, macOS only |
+| `probe_intr`, the interrupt OUT writer | written, macOS only, needs root, not yet run |
 | `include/t150/*.h` shared contracts | written, compiled and tested on Linux |
 | `src/lib/encode.c` wire encoders | written, golden-vector tested on Linux |
 | `src/lib/proto.c` DLL to daemon protocol | written, round-trip tested on Linux |

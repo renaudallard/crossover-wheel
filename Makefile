@@ -29,7 +29,7 @@ OBJ	= $(BUILD)/obj
 LIBOBJ	= $(OBJ)/lib
 DAEMONOBJ = $(OBJ)/t150d
 
-PROBE_NAMES  = probe_hid probe_setreport probe_ep0
+PROBE_NAMES  = probe_hid probe_setreport probe_ep0 probe_intr
 PROBE_BINS   = $(addprefix $(BIN)/,$(PROBE_NAMES))
 PROBE_COMMON = $(OBJ)/common.o
 
@@ -125,7 +125,9 @@ $(LIBOBJ)/%.o: src/lib/%.c | $(LIBOBJ)
 $(DAEMONOBJ)/%.o: src/t150d/%.c | $(DAEMONOBJ)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
-$(BIN)/probe_%: $(OBJ)/probe_%.o $(PROBE_COMMON) | $(BIN)
+# probe_intr builds its packets with the shared encoders, so the probes link
+# the portable library too.
+$(BIN)/probe_%: $(OBJ)/probe_%.o $(PROBE_COMMON) $(LIB_OBJS) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(FRAMEWORKS)
 
 $(DAEMON_BIN): $(DAEMONOBJ)/main.o $(DAEMON_LIB_OBJS) $(LIB_OBJS) | $(BIN)
