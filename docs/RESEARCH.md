@@ -468,6 +468,48 @@ treated as the leading hypothesis rather than as one of several.
 > `thrustmaster_configure_wheel()`, and its use of `USBInterfaceOpenSeize`
 > and `WritePipe` throughout.
 
+**And it does deliver force feedback**, which is worth stating plainly
+because it proves the motor is drivable from macOS userspace at all. It does
+so by two paths, and the difference between them is the whole question for
+this project:
+
+- **`thrustmaster_configure_wheel()`**, the path its CrossOver mode uses.
+  Captures the device with `USBDeviceOpenSeize` and
+  `USBDeviceReEnumerate(kUSBReEnumerateCaptureDeviceMask)`, writes a handful
+  of 64-byte packets to the interrupt OUT pipe, then releases and
+  re-enumerates so the HID driver reclaims the wheel. Its README calls this
+  "configures the wheel then leaves it for Wine". Needs root, needs no SIP or
+  AMFI change, and coexists with CrossOver because it does not stay.
+- **`thrustmaster_usb_start()` and the `thrustmaster_ff_*` family**, marked
+  "Direct USB I/O (replaces HID driver entirely)". Captures the device and
+  keeps it, reading input on interrupt IN and writing effects on interrupt
+  OUT. This is where spring, damper, constant, sine, play and stop live. It
+  is continuous, game or telemetry driven, and the wheel belongs to it alone
+  for the duration.
+
+So force feedback on macOS is demonstrated, and the price is stated: the
+second path owns the device. Its native and ETS2 modes additionally need SIP
+and AMFI disabled, but only because they publish a virtual HID device, which
+this project does not do (D2).
+
+**What that means here, split honestly in two:**
+
+- **The settings half of this project is unblocked.** Rotation range, gain
+  and autocenter are exactly what `thrustmaster_configure_wheel()` sets, by
+  briefly capturing the wheel and letting it go. `t150ctl` can be built that
+  way, needs root but no SIP or AMFI change, and leaves CrossOver's wheel
+  alone afterwards because the settings persist in the wheel's own firmware.
+  It also predicts something testable: sending `40 04 00 00` down that pipe
+  should release the autocenter and free the rigid wheel, which would
+  simultaneously prove the wheel healthy, the encoders correct and the pipe
+  the culprit.
+- **The game-driven half is not.** Continuous per-effect writes need the
+  interrupt OUT pipe held open, and holding it means capturing the device,
+  and capturing it takes the wheel away from CrossOver. That is the exact
+  trade B6 and D5 were written to avoid, and no amount of care avoids it: the
+  wheel cannot be owned by the daemon and read by the bottle at the same
+  time.
+
 **C8. The same project shows what a T-series wheel wants before it will
 behave.** `T300RSProtocol.swift` carries a set of pre-initialisation packets
 "sent to endpoint 1" which "MUST be sent before the mode switch to prevent
