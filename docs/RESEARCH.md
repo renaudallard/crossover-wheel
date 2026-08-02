@@ -268,6 +268,38 @@ which is still the only thing E1 needs. Capture, write and release all
 returning success says the bytes reached the firmware's doorstep; it does not
 say the firmware acted on them.
 
+**A13. The wheel stays blocked, and that now outranks every protocol
+question.** Reported after the interrupt OUT route was available: the wheel
+remains immovable.
+
+Put the whole record together and it does not describe a protocol problem:
+
+- It calibrates, sweeping under its own power, so the belt and gear train
+  are not jammed and the motor drives.
+- It is blocked in boot mode, in firmware mode, and in the PS4 position where
+  nothing from this project reaches it.
+- It is blocked on a stock Linux machine as well as on macOS.
+- Writes through the HID layer and writes on the interrupt OUT pipe, the one
+  the Linux driver uses, both leave it blocked.
+
+A wheel that drives itself through a full sweep and then cannot be turned by
+hand is not being held by anything a host has said to it, because in the PS4
+position no host has said anything at all. **Nothing further can be learned
+about the protocol from this wheel in this state**, and no result obtained
+from it should be treated as evidence about E1 in either direction.
+
+**The one test never yet run separates the two remaining explanations.**
+Pull the mains lead and leave USB connected: the motor rail comes from mains
+and the logic rail from USB, so with mains out the motor cannot hold
+anything. If the wheel becomes turnable, the hold is being produced
+electrically and the hardware is sound. If it stays immovable with no motor
+power, the cause is mechanical and nothing in software will ever address it.
+
+After that, the reference test is the wheel on a Windows machine with
+Thrustmaster's own driver, or on Linux with `scarburato/t150_driver`
+installed. Those are the only setups known to drive this model, and if the
+wheel stays blocked under one of them the answer is the wheel.
+
 Nothing in the project should be changed until that is known. The transport
 facts stand on their own either way, because none of them depend on the
 motor: the descriptors read, the endpoint 0 path works unprivileged,
