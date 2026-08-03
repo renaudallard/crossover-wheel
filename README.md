@@ -473,12 +473,19 @@ firmware product id, so against any other wheel, or against one still in boot
 mode, every one of these does nothing until `-p` names the id `probe_hid`
 actually reported.
 
-**A6. If the wheel moved,** prove the force feedback protocol too. Four
-packets on one open handle, a constant force at half level, endless:
+**A6. Prove the force feedback protocol**, on `probe_intr` and not on
+`probe_setreport`. The HID path already accepts everything and acts on
+nothing, so an effect sent that way answers nothing new. Everything below
+goes out on one capture, because handing the wheel back re-enumerates it and
+an uploaded effect will not survive that. The first packet clears the
+autocenter, which otherwise fights the effect at whatever force the previous
+command left; the second sets the gain, because nothing has established what
+the wheel powers up with. Then a constant force at half level, endless:
 
 ```sh
-./build/bin/probe_setreport -g 0x60
-./build/bin/probe_setreport \
+sudo ./build/bin/probe_intr \
+    -x "40 03 00 00" \
+    -x "43 60" \
     -x "02 1c 00 00 00 00 00 00 00 46 54" \
     -x "03 0e 00 20" \
     -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
@@ -488,12 +495,12 @@ packets on one open handle, a constant force at half level, endless:
 **Hold the wheel or keep a hand on the plug**, then stop it:
 
 ```sh
-./build/bin/probe_setreport -x "41 00 00 01"
+sudo ./build/bin/probe_intr -x "41 00 00 01"
 ```
 
 **A7. Three cheap answers while you are set up.** Compare `03 0e 00 40`
 against `03 0e 00 7f` in A6: if they feel the same, a constant really does
-stop at `0x40`. Try `20 40` and `21 40` in place of `00 40` in the third
+stop at `0x40`. Try `20 40` and `21 40` in place of `00 40` in the commit
 packet, which would mean square and triangle exist after all. And repeat A3
 once with a game running in a bottle, because macOS 26 fails `setReport` for
 every client the moment anything seizes the device.

@@ -368,19 +368,33 @@ Only once something has moved the wheel. The settings opcodes prove the
 transport; this proves the part the daemon will actually spend its time on,
 and it costs one more run.
 
+**On `probe_intr`, not `probe_setreport`.** The HID path is the one already
+known to accept everything and act on nothing, so an effect sent that way
+tests nothing that has not already been answered. Every packet below goes on
+the interrupt OUT pipe, which is the pipe the wheel was shown to obey.
+
 An effect uploads as three packets that correlate through slot keys, then a
-fourth starts it. `-x` is repeatable so all four land on one open handle,
-which matters because nobody knows whether the wheel keeps an uploaded effect
-across a close. Slot 0, a constant force at half level, endless:
+fourth starts it. `-x` is repeatable and every packet goes out on one
+capture, which is required here rather than merely convenient: handing the
+wheel back re-enumerates it, and an uploaded effect will not survive that.
+
+**Clear the autocenter first, in the same run.** At full force it fights
+anything the effect does, and it is where the previous command left it. Slot
+0, a constant force at half level, endless:
 
 ```sh
-./build/bin/probe_setreport -g 0x60
-./build/bin/probe_setreport \
+sudo ./build/bin/probe_intr \
+    -x "40 03 00 00" \
+    -x "43 60" \
     -x "02 1c 00 00 00 00 00 00 00 46 54" \
     -x "03 0e 00 20" \
     -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
     -x "41 00 41 01"
 ```
+
+The `43 60` is the gain. Without it the effect may render at whatever gain
+the wheel powers up with, and nothing has established what that is, so a
+silent wheel would be ambiguous.
 
 The level byte is `0x20` because a constant appears to top out at `0x40`, not
 at `0x7f`: the driver divides a full scale value by `0x1ff`, which lands on
@@ -392,13 +406,15 @@ raise it.
 duration limit does not stop on its own. Stop it with:
 
 ```sh
-./build/bin/probe_setreport -x "41 00 00 01"
+sudo ./build/bin/probe_intr -x "41 00 00 01"
 ```
 
-If the settings packets moved the wheel and this does nothing, retry it with
-the same framing flags that worked for question 4, then say so plainly: it
-means the transport is fine and the force feedback layout is wrong, which is
-a much better place to be than the alternative.
+If the settings packets moved the wheel and this does nothing, say so
+plainly: it means the transport is fine and the force feedback layout is
+wrong, which is a much better place to be than the alternative. The next
+step from there is a `usbmon` capture on the Linux machine while
+`scarburato/t150_driver` drives the wheel, which shows the real bytes rather
+than anyone's reading of the source.
 
 ### While you are here: the two missing waveforms
 
@@ -408,7 +424,9 @@ and `0x4025` may be waveforms the Linux driver never implemented. Upload a
 periodic and vary only the commit type code:
 
 ```sh
-./build/bin/probe_setreport \
+sudo ./build/bin/probe_intr \
+    -x "40 03 00 00" \
+    -x "43 60" \
     -x "02 1c 00 00 00 00 00 00 00 46 54" \
     -x "04 0e 00 40 00 00 e8 03" \
     -x "01 00 20 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
