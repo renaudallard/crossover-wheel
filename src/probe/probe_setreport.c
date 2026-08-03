@@ -47,7 +47,12 @@
 
 #define MAX_PAYLOAD	64
 /* Four is what a force feedback upload needs: first, update, commit, play. */
-#define MAX_PACKETS	4
+/*
+ * A force feedback upload is three packets plus a start, and the
+ * documented sequence clears the autocenter and sets the gain first, so
+ * six. Four was enough only while nobody had tried one.
+ */
+#define MAX_PACKETS	8
 
 struct packet {
 	uint8_t	bytes[MAX_PAYLOAD];
