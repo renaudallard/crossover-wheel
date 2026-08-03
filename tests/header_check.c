@@ -31,7 +31,8 @@ _Static_assert(T150_OUT_REPORT_LEN == 14, "declared output report length");
 _Static_assert(T150_PROTO_HDR_LEN == 8, "wire header length");
 
 /* Force feedback packet shapes and type codes. */
-_Static_assert(T150_FF_FIRST_LEN == 11, "ff_first length");
+_Static_assert(T150_FF_FIRST_LEN == 9, "ff_first length, constant/periodic");
+_Static_assert(T150_FF_FIRST_LEN_CONDITION == 11, "ff_first length, condition");
 _Static_assert(T150_FF_COMMIT_LEN == 15, "ff_commit length");
 _Static_assert(T150_FF_UPDATE_LEN_CONDITION == 11, "ff_update condition length");
 _Static_assert(T150_FF_TYPE_CONSTANT == 0x4000, "constant type code");

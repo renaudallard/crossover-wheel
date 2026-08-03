@@ -610,55 +610,68 @@ sudo probe_intr -N 32 -H 15 -x "42 04" -x "40 03 00 00" -x "43 60" \
 > `hid-t150/hid-t150.c` `t150_init()`, and `hid-t150/input.c`
 > `t150_input_open()` and `t150_input_close()`.
 
-**A27. The driver repository ships packet captures, and they settle four
-things.** `traffic/old_caps/*.pcapng`, readable with `tshark -r f -Y
-usb.capdata -T fields -e usb.capdata`. Provenance is not recorded, so treat
-them as "a working session" rather than as any particular driver.
+**A27. The driver repository ships packet captures, including from
+Thrustmaster's own Windows driver, and they settle five things.** Readable
+with `tshark -r f -Y usb.capdata -T fields -e usb.capdata`. The vendor ones
+are `traffic/ffb/windows/*.pcapng`, which are **not in the working tree**: they
+were deleted in commit `7c1f80e` and have to be recovered from git history.
 
 **`42 04` is on the wire**, which confirms A26 independently of the source.
-`test5.pcapng` opens a session like this, in order:
+Thrustmaster's own constant-force capture opens like this:
 
 ```
-00 00 / 00 02 / 00 00 / 00 01 / 00 00 / 20 00
 42 04                                  <- open the input
-40 04 01 00                            <- autocenter enable
-40 03 0c 00                            <- autocenter force 12
-0a 04 12 10 00 ... (15 bytes)
-0a 04 00 0c 00 ... (15 bytes)
-0a 04 90 03 00 ... (15 bytes)
-42 05
+40 04 00 00                            <- autocenter enable = 0
+40 03 0d 00                            <- autocenter force 13
+43 80                                  <- gain, full scale
 ```
 
-Two details beyond the open. The enable is sent **before** the force, where
-this project sends force then enable. And the `0a 04` packets are padded to 15
-bytes, where `probe_intr -I` sends them at 8.
+Note it clears the enable flag and sets a low force, where this project sends
+force then enable. And `43 80` is full gain, which is A28's evidence too.
 
-**The control packet is exactly as documented.** `force_feedback.pcapng` ends
-an upload with `41 00 41 01` and `41 01 41 01`, playing slots 0 and 1. That is
-`[0x41, slot, 0x41, 0x01]`, confirmed on the wire.
-
-**`ff_commit` at 15 bytes and a periodic `ff_update` at 8 are confirmed too.**
-
-**But `ff_first` is 9 bytes, not 11, and no capture anywhere contains the
-`46 54` trailer.** Every `ff_first` in every capture is nine bytes:
+**The complete vendor upload**, and it is the sequence this project sends
+except for one packet:
 
 ```
-02 1c 00 55 01 79 71 05 00      class 02, slot 0, attack 0x0155/0x79,
-                                fade 0x0571/0x00
-02 38 00 0c 0a 00 c0 01 18      class 02, slot 1
+42 04
+02 1c 00 e8 03 02 e8 03 01                     <- ff_first, NINE bytes
+03 0e 00 3e                                    <- ff_update constant, 4 bytes
+01 00 00 40 c4 09 00 00 00 0e 00 1c 00 00 00   <- ff_commit, 15 bytes
+   ... slots 1 to 5 the same ...
+41 00 41 01                                    <- play slot 0
+41 01 41 01
 ```
 
-The layout matches PROTOCOL.md field for field and then simply stops, where
-this project sends `46 54` after it. Those two bytes exist only in
-`struct ff_first`, which is 11 bytes packed and which the current driver does
-send in full, so both forms may work. **Nothing has ever tested the 9-byte
-form on this wheel**, and it sits at the head of every effect upload that has
-failed, which makes it the cheapest remaining variable after the open command.
+So `ff_update` at 4 bytes for a constant, `ff_commit` at 15 and the control
+packet `[0x41, slot, 0x41, 0x01]` are all confirmed exactly as documented.
 
-The observed upload order is also not quite the documented one: `ff_first`,
-`ff_commit`, `ff_first` again, `ff_update`, `ff_commit` again, then play. That
-reads as create-then-modify rather than a different protocol, and the
-three-packet order this project sends is what the driver does.
+**`ff_first` is nine bytes for a constant or a periodic, and this project has
+been sending eleven.** The vendor ends it at `fade_level`. The two extra bytes
+this project appends, `46 54`, sit at the head of every effect upload it has
+ever tried. Together with the missing `42 04` that is two concrete reasons
+force feedback has never worked.
+
+**The trailer belongs to conditions only, and is not one constant pair.**
+Spring uploads end `46 54`, damper uploads end `64 64`:
+
+```
+05 1c 00 00 00 00 00 00 00 46 54     spring ff_first
+05 1c 00 00 00 00 00 00 00 64 64     damper ff_first
+```
+
+`0x54` and `0x64` are exactly the spring and damper saturation maxima this
+project already records, so the trailer reads as a saturation hint keyed to
+the effect type rather than the magic numbers the Linux driver hardcodes. That
+driver sends `46 54` for both, which is why PROTOCOL.md called them
+"unexplained".
+
+**One earlier reading of this was wrong and is withdrawn.** An earlier version
+of this entry cited `traffic/sine0_linux.json` as evidence that no capture
+contains `46 54`. That capture is nine bytes because it predates the fields:
+it was added on a side branch forked the day before `f2`/`f3` were introduced,
+and `git show fa59bba:t150/forcefeedback.h` shows `struct ff_first` ending at
+`fade_level`. It says nothing about the vendor. The vendor captures above do,
+and they happen to agree for class `0x02`.
 
 **A21. The wheel puts all thirteen buttons on the wire. Whatever loses them
 is above the USB layer.** A18 is answered, and against the wheel.

@@ -194,7 +194,7 @@ test_upload_and_play(void)
 	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
 	    T150_ERR_NONE);
 	expect_log("a constant uploads as three packets",
-	    "write 11: 02 1c 00 00 00 00 00 00 00 46 54\n"
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
 	    "write 4: 03 0e 00 40\n"
 	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
 
@@ -249,7 +249,7 @@ test_gain_folding(void)
 	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
 	    T150_ERR_NONE);
 	expect_log("per-effect gain is folded into the magnitude",
-	    "write 11: 02 1c 00 00 00 00 00 00 00 46 54\n"
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
 	    "write 4: 03 0e 00 20\n"
 	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
 }
@@ -275,7 +275,7 @@ test_downgrade(void)
 	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
 	    T150_ERR_NONE);
 	expect_log("square is sent as a sine",
-	    "write 11: 02 38 00 00 00 00 00 00 00 46 54\n"
+	    "write 9: 02 38 00 00 00 00 00 00 00\n"
 	    "write 8: 04 2a 00 7f 00 00 14 00\n"
 	    "write 15: 01 01 22 40 d0 07 00 00 00 2a 00 38 00 00 00\n");
 }
@@ -307,7 +307,7 @@ test_ramp(void)
 	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
 	    T150_ERR_NONE);
 	expect_log("a ramp uploads as a constant at its start value",
-	    "write 11: 02 54 00 00 00 00 00 00 00 46 54\n"
+	    "write 9: 02 54 00 00 00 00 00 00 00\n"
 	    "write 4: 03 46 00 00\n"
 	    "write 15: 01 02 00 40 e8 03 00 00 00 46 00 54 00 00 00\n");
 

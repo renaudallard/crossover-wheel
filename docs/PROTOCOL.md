@@ -243,18 +243,41 @@ every multi-byte field is little-endian.
 Each effect uploads as three packets, sent on the interrupt OUT endpoint in
 this order. `slot` below is the driver's `effect->id`.
 
-**1. `ff_first`, 11 bytes.** Envelope and the first slot key.
+**1. `ff_first`, 9 bytes, or 11 for a condition.** Envelope and the first slot
+key.
 
 ```
-f0  pk_id0  f1  attack_length:u16  attack_level  fade_length:u16  fade_level  f2  f3
+f0  pk_id0  f1  attack_length:u16  attack_level  fade_length:u16  fade_level
+                                                          [ f2  f3 ]  <- condition only
 ```
 
 `f0` is the effect class, not a fixed opcode: `0x02` for constant and for
-periodic, `0x05` for spring and damper. `f1` is 0, `f2` is `0x46` and `f3` is
-`0x54`, all three unexplained by the driver. `pk_id0 = slot * 0x1C + 0x1C`.
-Lengths are milliseconds. The driver's own comment marks the two level fields
-as wrong, and it fills `fade_length` from the attack length, which is a bug in
-that driver and must not be copied.
+periodic, `0x05` for spring and damper. `f1` is 0.
+`pk_id0 = slot * 0x1C + 0x1C`. Lengths are milliseconds.
+
+**A constant or a periodic ends at `fade_level`.** Measured in Thrustmaster's
+own driver: `02 1c 00 e8 03 02 e8 03 01`, nine bytes and no trailer. This
+document previously said eleven for every class, on the strength of the Linux
+driver's struct, and that put two spurious bytes at the head of every effect
+upload this project sent.
+
+**A condition carries a two-byte trailer, and it is not one constant pair.**
+Spring uploads end `46 54`, damper uploads end `64 64`. `0x54` and `0x64` are
+exactly the spring and damper saturation maxima in the table below, so the
+trailer reads as a saturation hint keyed to the effect type. The Linux driver
+hardcodes `46 54` for both, which is why this document once called the values
+"unexplained".
+
+The driver's own comment marks the two level fields as wrong, and it fills
+`fade_length` from the attack length, which is a bug in that driver and must
+not be copied. It also leaves the envelope fields uninitialised for
+conditions, so its condition `ff_first` puts stack bytes on the wire; the
+vendor sends zeros there.
+
+> `traffic/ffb/windows/constant0.pcapng` and `windows/spring0.pcapng` for the
+> vendor, `traffic/ffb/damper0.pcapng` for the damper trailer. None are in the
+> working tree: they were deleted in commit `7c1f80e` and have to be recovered
+> from git history. RESEARCH.md A27.
 
 **2. `ff_update`, 4, 8 or 11 bytes.** The effect-class parameters.
 

@@ -124,8 +124,14 @@ test_constant(void)
 	ef.direction = 9000;
 	ef.u.constant.magnitude = 10000;
 
+	/*
+	 * Nine bytes and no trailer. Thrustmaster's own driver ends a
+	 * constant's ff_first at fade_level, and only a condition carries the
+	 * two extra bytes. Sending them here put two bytes the wheel was not
+	 * expecting at the head of every upload this project ever tried.
+	 */
 	CHECK("constant first", b, t150_enc_ff_first(b, sizeof(b), &ef),
-	    0x02, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46, 0x54);
+	    0x02, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 	CHECK("constant update", b, t150_enc_ff_update(b, sizeof(b), &ef),
 	    0x03, 0x0e, 0x00, 0x40);
 	CHECK("constant commit", b, t150_enc_ff_commit(b, sizeof(b), &ef),
@@ -181,7 +187,7 @@ test_periodic(void)
 	ef.envelope.fade_time = 250000;
 	ef.envelope.fade_level = 2500;
 	CHECK("sine first with envelope", b, t150_enc_ff_first(b, sizeof(b), &ef),
-	    0x02, 0x38, 0x00, 0x64, 0x00, 0x80, 0xfa, 0x00, 0x40, 0x46, 0x54);
+	    0x02, 0x38, 0x00, 0x64, 0x00, 0x80, 0xfa, 0x00, 0x40);
 
 	ef.kind = T150_EFFECT_SAWTOOTH_UP;
 	CHECK("sawtooth up commit", b, t150_enc_ff_commit(b, sizeof(b), &ef),
@@ -209,6 +215,7 @@ test_condition(void)
 	ef.u.condition.pos_saturation = 10000;
 	ef.u.condition.neg_saturation = 10000;
 
+	/* A condition does carry the trailer, and a spring's is 46 54. */
 	CHECK("spring first", b, t150_enc_ff_first(b, sizeof(b), &ef),
 	    0x05, 0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46, 0x54);
 	/* A spring saturates at 0x54, a damper at 0x64. */

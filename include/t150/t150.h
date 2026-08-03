@@ -104,7 +104,15 @@
  * Source: scarburato/t150_driver hid-t150/forcefeedback.{c,h}. See
  * docs/PROTOCOL.md for the field-by-field layouts.
  */
-#define T150_FF_FIRST_LEN	11u
+/*
+ * ff_first is 9 bytes for a constant or a periodic and 11 for a condition,
+ * the extra two being a trailer that only conditions carry. Measured in
+ * Thrustmaster's own Windows driver: traffic/ffb/windows/constant0.pcapng
+ * sends "02 1c 00 e8 03 02 e8 03 01" and stops, while its spring capture
+ * sends "05 1c 00 00 00 00 00 00 00 46 54".
+ */
+#define T150_FF_FIRST_LEN		9u
+#define T150_FF_FIRST_LEN_CONDITION	11u
 #define T150_FF_COMMIT_LEN	15u
 #define T150_FF_CONTROL_LEN	4u
 
@@ -113,9 +121,19 @@
 #define T150_FF_FIRST_PERIODIC	0x02u
 #define T150_FF_FIRST_CONDITION	0x05u
 
-/* ff_first trailing constants, unexplained by the driver. */
-#define T150_FF_FIRST_F2	0x46u
-#define T150_FF_FIRST_F3	0x54u
+/*
+ * The condition trailer, and it is not one constant pair. Spring uploads end
+ * 0x46 0x54, damper uploads end 0x64 0x64, and 0x54 and 0x64 are exactly the
+ * spring and damper saturation maxima below. So the trailer looks like a
+ * saturation hint keyed to the effect type rather than the magic numbers the
+ * driver hardcodes, which sends 0x46 0x54 for both.
+ *
+ * Measured: traffic/ffb/windows/spring0.pcapng and traffic/ffb/damper0.pcapng.
+ */
+#define T150_FF_FIRST_F2_SPRING	0x46u
+#define T150_FF_FIRST_F3_SPRING	0x54u
+#define T150_FF_FIRST_F2_DAMPER	0x64u
+#define T150_FF_FIRST_F3_DAMPER	0x64u
 
 /* ff_update byte 0, a different class encoding from ff_first. */
 #define T150_FF_UPDATE_CONSTANT		0x03u

@@ -405,7 +405,7 @@ constant force at half level, endless:
 ./build/bin/probe_setreport \
     -x "40 03 00 00" \
     -x "43 60" \
-    -x "02 1c 00 00 00 00 00 00 00 46 54" \
+    -x "02 1c 00 00 00 00 00 00 00" \
     -x "03 0e 00 20" \
     -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
     -x "41 00 41 01"
@@ -423,7 +423,7 @@ moving itself:
 sudo ./build/bin/probe_intr -N 32 -H 15 \
     -x "40 03 00 00" \
     -x "43 60" \
-    -x "02 1c 00 00 00 00 00 00 00 46 54" \
+    -x "02 1c 00 00 00 00 00 00 00" \
     -x "03 0e 00 20" \
     -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
     -x "41 00 41 01"
@@ -457,15 +457,39 @@ sudo ./build/bin/probe_intr -N 32 -H 15 \
     -x "42 04" \
     -x "40 03 00 00" \
     -x "43 60" \
-    -x "02 1c 00 00 00 00 00 00 00 46 54" \
+    -x "02 1c 00 00 00 00 00 00 00" \
     -x "03 0e 00 20" \
     -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
     -x "41 00 41 01"
 ```
 
-**And once more with the nine-byte `ff_first`.** No capture of a working
-session contains the `46 54` trailer; every one of them stops at nine bytes.
-Drop those two bytes and change nothing else:
+**Two corrections are folded into both blocks above.** `42 04` opens the
+wheel's input, which no run before ever sent, and `ff_first` is nine bytes
+rather than eleven: Thrustmaster's own driver ends it at `fade_level`, and
+only a condition carries the two extra `46 54` bytes. RESEARCH.md A26 and A27.
+
+The `43 60` is the gain. Without it the effect may render at whatever gain
+the wheel powers up with, and nothing has established what that is, so a
+silent wheel would be ambiguous.
+
+The level byte is `0x20` because a constant appears to top out at `0x40`, not
+at `0x7f`: the driver divides a full scale value by `0x1ff`, which lands on
+64. A periodic magnitude reaches `0x7f`. If `0x40` and `0x7f` feel the same,
+the ceiling is real and `T150_FF_LEVEL_MAX` is right; if `0x7f` is stronger,
+raise it.
+
+**Hold the wheel or keep a hand on the plug.** A constant force with no
+duration limit does not stop on its own. The `-H` form releases the wheel by
+itself; stop the HID one with:
+
+```sh
+./build/bin/probe_setreport -x "41 00 00 01"
+```
+
+**Then with the wheel's input actually open**, which is the one thing never
+tried and now the leading suspect. The firmware tracks whether an application
+has the input open, which is why the autocenter is "always active while no
+input are open", and nothing on macOS opens it. `42 04` does:
 
 ```sh
 sudo ./build/bin/probe_intr -N 32 -H 15 \
@@ -478,16 +502,22 @@ sudo ./build/bin/probe_intr -N 32 -H 15 \
     -x "41 00 41 01"
 ```
 
-Between the open command and this, that is two variables and four runs. See
-RESEARCH.md A26 and A27.
-
 `-H` is not optional here: the open only lasts as long as the session does.
 RESEARCH.md A26.
 
-If everything above is silent, the layout is finally the suspect, and the
-answer is a `usbmon` capture on the Linux machine while
-`scarburato/t150_driver` drives the wheel. That shows the real bytes rather
-than anyone's reading of the source, including the open packet's.
+If everything above is silent, the remaining unknowns are in the effect
+payloads rather than the packet shapes, since A27 confirmed every shape
+against Thrustmaster's own driver. The vendor captures are the place to
+look, recovered from the driver repository's git history:
+
+```sh
+git clone https://github.com/scarburato/t150_driver.git
+cd t150_driver
+git show $(git log --all --format=%h --diff-filter=A \
+    -- traffic/ffb/windows/constant0.pcapng | head -1):traffic/ffb/windows/constant0.pcapng \
+    > windows_constant0.pcapng
+tshark -r windows_constant0.pcapng -Y usb.capdata -T fields -e usb.capdata
+```
 
 ### While you are here: the two missing waveforms
 
@@ -501,7 +531,7 @@ vary only the commit type code:
 ./build/bin/probe_setreport \
     -x "40 03 00 00" \
     -x "43 60" \
-    -x "02 1c 00 00 00 00 00 00 00 46 54" \
+    -x "02 1c 00 00 00 00 00 00 00" \
     -x "04 0e 00 40 00 00 e8 03" \
     -x "01 00 20 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
     -x "41 00 41 01"

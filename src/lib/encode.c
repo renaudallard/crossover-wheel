@@ -241,11 +241,26 @@ t150_enc_ff_first(uint8_t *buf, size_t buflen, const struct t150_effect *ef)
 {
 	uint32_t attack_level = 0, fade_level = 0;
 	uint16_t attack_ms = 0, fade_ms = 0;
-	uint8_t cls;
+	size_t len = T150_FF_FIRST_LEN;
+	uint8_t cls, f2 = 0, f3 = 0;
 
-	if (buflen < T150_FF_FIRST_LEN || ef->slot >= T150_SLOT_MAX)
+	if (ef->slot >= T150_SLOT_MAX)
 		return 0;
 	if (first_class(ef->kind, &cls) != 0)
+		return 0;
+
+	/* Only a condition carries the trailer, and only it needs 11 bytes. */
+	if (cls == T150_FF_FIRST_CONDITION) {
+		len = T150_FF_FIRST_LEN_CONDITION;
+		if (ef->kind == T150_EFFECT_DAMPER) {
+			f2 = T150_FF_FIRST_F2_DAMPER;
+			f3 = T150_FF_FIRST_F3_DAMPER;
+		} else {
+			f2 = T150_FF_FIRST_F2_SPRING;
+			f3 = T150_FF_FIRST_F3_SPRING;
+		}
+	}
+	if (buflen < len)
 		return 0;
 
 	/*
@@ -274,10 +289,12 @@ t150_enc_ff_first(uint8_t *buf, size_t buflen, const struct t150_effect *ef)
 	buf[5] = (uint8_t)attack_level;
 	put_le16(buf + 6, fade_ms);
 	buf[8] = (uint8_t)fade_level;
-	buf[9] = T150_FF_FIRST_F2;
-	buf[10] = T150_FF_FIRST_F3;
+	if (len == T150_FF_FIRST_LEN_CONDITION) {
+		buf[9] = f2;
+		buf[10] = f3;
+	}
 
-	return T150_FF_FIRST_LEN;
+	return len;
 }
 
 size_t

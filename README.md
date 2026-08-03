@@ -525,7 +525,7 @@ what the wheel powers up with:
 ./build/bin/probe_setreport \
     -x "40 03 00 00" \
     -x "43 60" \
-    -x "02 1c 00 00 00 00 00 00 00 46 54" \
+    -x "02 1c 00 00 00 00 00 00 00" \
     -x "03 0e 00 20" \
     -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
     -x "41 00 41 01"
@@ -549,27 +549,18 @@ sudo ./build/bin/probe_intr -N 32 -H 15 \
     -x "42 04" \
     -x "40 03 00 00" \
     -x "43 60" \
-    -x "02 1c 00 00 00 00 00 00 00 46 54" \
-    -x "03 0e 00 20" \
-    -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
-    -x "41 00 41 01"
-```
-
-**`42 04` first opens the wheel's input**, which is the leading suspect and
-which no run before this ever sent. Then once more with the nine-byte
-`ff_first`, because no capture of a working session carries the `46 54`
-trailer:
-
-```sh
-sudo ./build/bin/probe_intr -N 32 -H 15 \
-    -x "42 04" \
-    -x "40 03 00 00" \
-    -x "43 60" \
     -x "02 1c 00 00 00 00 00 00 00" \
     -x "03 0e 00 20" \
     -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
     -x "41 00 41 01"
 ```
+
+**Two corrections are already folded into that.** `42 04` opens the wheel's
+input, which no run before this ever sent, and `ff_first` is nine bytes rather
+than the eleven this project used to send: Thrustmaster's own driver ends it
+at `fade_level` and only a condition carries the two extra bytes. Between them
+those are the two concrete reasons force feedback has never worked. See
+[`docs/RESEARCH.md`](docs/RESEARCH.md) A26 and A27.
 
 Each prints the wheel's own reports for those fifteen seconds and then hands
 the wheel back on its own. `nothing ever changed` at the end means the effect did
