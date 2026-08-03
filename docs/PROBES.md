@@ -3,14 +3,18 @@
 Nothing else in this repository is worth writing until these questions are
 answered on real hardware. Half an hour with the wheel plugged into the Mac.
 
-Most of them now have answers, and the one that decides the project does not.
+**The question that decides the project is answered yes.** The wheel obeys
+settings sent through `IOHIDDeviceSetReport`, unprivileged and without taking
+the device from CrossOver. What is left open is force feedback, question 5,
+which works on neither pipe.
 [What is already settled](#what-is-already-settled) says which is which, so
 nothing here has to be run twice.
 
-**Do them in this order.** The first wheel these were run against sat locked
-rigid in boot mode, which made question 4 unanswerable: a wheel that cannot
-turn cannot show an autocenter spring. The mode switch is not an optional
-follow-up to the measurement, it is a precondition of it.
+**Do them in this order.** The wheel rests holding a full autocenter, which
+makes it feel locked and made question 4 unanswerable for six sessions: a
+wheel that cannot turn cannot show a spring being applied. Release it with
+`-a 0` before judging anything, and never with `-A`, which does nothing. The
+mode switch is likewise a precondition rather than a follow-up.
 
 Build the tools first. On the Mac:
 
@@ -58,12 +62,11 @@ a strip or extension, and a USB port on the machine rather than a hub. A
 wheel that has not swept has not learned its end stops and nothing below
 means anything on one.
 
-**A wheel that sweeps and is then rigid is a different matter, and is what
-has been measured here.** It means the motor, the sensor and the firmware all
-work. See RESEARCH.md A9 before spending time on it: the wheel appears to
-hold itself by default in every mode, including one where nothing has been
-sent to it, so being unable to turn it is not by itself evidence about
-anything this project sends.
+**A wheel that sweeps and is then rigid is normal and is not a fault.** The
+autocenter is active whenever no application has the wheel's input open, so a
+T150 sitting on a macOS desktop holds itself by design. `probe_setreport -a 0`
+releases it. Do that before judging anything else, and do not use `-A`, which
+is a different flag and does nothing here. RESEARCH.md A15 and A19.
 
 Three more things on macOS 26 will otherwise waste a run:
 
@@ -80,7 +83,7 @@ Three more things on macOS 26 will otherwise waste a run:
 ## What is already settled
 
 Measured on a T150 on macOS 26, so these do not need redoing. Full detail in
-[RESEARCH.md](RESEARCH.md) A4 to A11.
+[RESEARCH.md](RESEARCH.md) A4 to A11 and A15 to A21.
 
 | | |
 | --- | --- |
@@ -92,30 +95,37 @@ Measured on a T150 on macOS 26, so these do not need redoing. Full detail in
 | No node carries `ProtectedAccess` | so the restricted-device path in A2 does not apply |
 | CrossOver does not seize the wheel | writes still returned success with a game running |
 | The wheel is not broken | it performs its startup calibration sweep whenever it has mains power |
-| It rests rigid in every mode | including the PS4 position, where nothing from this project reaches it |
-| `IOHIDDeviceSetReport` has never changed anything | every framing, both product ids, autocenter and range, all accepted, no reaction |
+| It rests rigid until told otherwise | the autocenter is active whenever no application has the wheel's input open, which on macOS is always |
+| **`IOHIDDeviceSetReport` moves the wheel** | unprivileged, no capture, `40 03 64 00` holds it and `40 03 00 00` frees it |
+| **The interrupt OUT pipe moves it too** | the same bytes through `probe_intr`, so both transports reach the firmware |
+| The wheel puts all thirteen buttons on the wire | `probe_intr -R`, and the change mask matches the report descriptor field for field |
+| Force feedback does not work on either pipe | autocenter cleared, gain set, constant and periodic, every write accepted, no movement |
 
-**The leading explanation is now external.** A shipping macOS driver for the
-sibling T300RS states that Thrustmaster firmware acknowledges the control
-SET_REPORT pipe and ignores it, and writes on the interrupt OUT pipe instead.
-That predicts every result above. See RESEARCH.md C7, and run question 3
-before drawing any conclusion from question 4.
+**What made this look hopeless for six sessions** was `-A`. The autocenter
+enable flag decides only whether the effect survives an application opening
+the wheel's input; the effect is active whenever nothing has it open. So `-A`
+was always a no-op and every "the firmware ignores us" conclusion drawn from
+it was wrong, on both pipes. Only the force, `40 03`, releases the wheel.
+
+RESEARCH.md C7 predicted that the HID path could not work. It is **measured
+false for this wheel**, and A19 is the measurement.
 
 ## The order to run these in
 
 1. **Question 1**, what macOS publishes. Always.
 2. **Question 2**, the mode switch, if question 1 found `B65D`. It is a
    precondition, not a follow-up.
-3. **Question 3**, the interrupt OUT write. This is now the most
-   informative single command in the set, and on the evidence above it is
-   more likely to move the wheel than question 4 is.
-4. **Question 4**, the HID path, which is what the project actually needs to
-   work and so far never has.
-5. **Question 5**, the force feedback packets, once anything has moved.
+3. **Question 4**, the HID path, which is what the project actually needs and
+   which is now known to work. It needs no root, so it comes first.
+4. **Question 3**, the interrupt OUT write, as the cross-check. It answers
+   the same question with the device captured.
+5. **Question 5**, the force feedback packets. This is the one that still
+   fails, and the only open question about the wheel itself.
+6. **Question 6**, the buttons, if you are chasing why CrossOver sees none.
 
-Questions 3 and 4 send the same bytes down different pipes. That is the
-whole comparison: if 3 frees the wheel and 4 does not, the transport is the
-problem and the protocol is fine.
+Questions 3 and 4 send the same bytes down different pipes, and both work.
+Keeping both is what makes question 5's failure interpretable: an effect that
+moves nothing on either pipe is a layout problem, not a transport one.
 
 ---
 
@@ -364,23 +374,44 @@ important.
 
 ## Question 5: does the force feedback protocol work too?
 
-Only once something has moved the wheel. The settings opcodes prove the
-transport; this proves the part the daemon will actually spend its time on,
-and it costs one more run.
+The settings opcodes prove the transport, on both pipes, and A19 settled
+that. This is the part the daemon will actually spend its time on, and it is
+the one thing that still does not work.
 
-**On `probe_intr`, not `probe_setreport`.** The HID path is the one already
-known to accept everything and act on nothing, so an effect sent that way
-tests nothing that has not already been answered. Every packet below goes on
-the interrupt OUT pipe, which is the pipe the wheel was shown to obey.
+**Where this stands.** The sequence below has been run on the interrupt OUT
+pipe with the autocenter cleared and the gain set, for a constant force and
+for a periodic. Every write was accepted and the wheel did not move. So run
+it on the **HID path**, which no effect upload has ever used and which is now
+known to reach the firmware.
 
 An effect uploads as three packets that correlate through slot keys, then a
-fourth starts it. `-x` is repeatable and every packet goes out on one
-capture, which is required here rather than merely convenient: handing the
-wheel back re-enumerates it, and an uploaded effect will not survive that.
+fourth starts it. `-x` is repeatable and every packet goes out on one open
+handle, which matters because nobody knows whether the wheel keeps an
+uploaded effect across a close.
 
 **Clear the autocenter first, in the same run.** At full force it fights
 anything the effect does, and it is where the previous command left it. Slot
 0, a constant force at half level, endless:
+
+```sh
+./build/bin/probe_setreport \
+    -x "40 03 00 00" \
+    -x "43 60" \
+    -x "02 1c 00 00 00 00 00 00 00 46 54" \
+    -x "03 0e 00 20" \
+    -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
+    -x "41 00 41 01"
+```
+
+**Then again with the wheel's input held open**, by starting a game in a
+bottle or leaving CrossOver's controller panel showing the wheel. The Linux
+driver's comment says the autocenter is active "while no input are open", so
+the firmware distinguishes an opened input from a closed one. If effects need
+one, `probe_intr` can never demonstrate an effect at all, because a captured
+device has nothing open.
+
+The interrupt OUT form, for reference. It is the one already run and already
+silent, and it needs one capture because the release re-enumerates the wheel:
 
 ```sh
 sudo ./build/bin/probe_intr \
@@ -406,25 +437,26 @@ raise it.
 duration limit does not stop on its own. Stop it with:
 
 ```sh
-sudo ./build/bin/probe_intr -x "41 00 00 01"
+./build/bin/probe_setreport -x "41 00 00 01"
 ```
 
-If the settings packets moved the wheel and this does nothing, say so
-plainly: it means the transport is fine and the force feedback layout is
-wrong, which is a much better place to be than the alternative. The next
-step from there is a `usbmon` capture on the Linux machine while
-`scarburato/t150_driver` drives the wheel, which shows the real bytes rather
-than anyone's reading of the source.
+The settings packets move the wheel on both pipes, so if this still does
+nothing the transport is fine and the force feedback layout is wrong, which
+is a much better place to be than the alternative. The next step from there
+is a `usbmon` capture on the Linux machine while `scarburato/t150_driver`
+drives the wheel, which shows the real bytes rather than anyone's reading of
+the source.
 
 ### While you are here: the two missing waveforms
 
-The protocol has type codes for sine, sawtooth up and sawtooth down but none
-for square or triangle, and the codes are contiguous. So `0x4020`, `0x4021`
-and `0x4025` may be waveforms the Linux driver never implemented. Upload a
-periodic and vary only the commit type code:
+Only worth doing once something oscillates at all. The protocol has type
+codes for sine, sawtooth up and sawtooth down but none for square or
+triangle, and the codes are contiguous. So `0x4020`, `0x4021` and `0x4025`
+may be waveforms the Linux driver never implemented. Upload a periodic and
+vary only the commit type code:
 
 ```sh
-sudo ./build/bin/probe_intr \
+./build/bin/probe_setreport \
     -x "40 03 00 00" \
     -x "43 60" \
     -x "02 1c 00 00 00 00 00 00 00 46 54" \
@@ -434,8 +466,9 @@ sudo ./build/bin/probe_intr \
 ```
 
 That is a one second period at half magnitude with type `0x4020`. Repeat with
-`21 40` and `25 40` in the commit packet, the one starting `01 00`. Anything that oscillates is a
-waveform we can stop downgrading. Stop it the same way as above.
+`21 40` and `25 40` in the commit packet, the one starting `01 00`. Anything
+that oscillates is a waveform we can stop downgrading. Stop it the same way
+as above.
 
 ---
 
@@ -483,21 +516,18 @@ about.
 
 ## What the answers decide
 
-| Outcome | Consequence |
-| --- | --- |
-| Wheel already at `B677` | No control transfer, no root, anywhere. Best case. |
-| `-a 0` frees a rigid wheel | E1 is answered yes. The firmware has been obeying all along and the architecture works. Build it. |
-| `probe_intr -a 0` frees it but `probe_setreport -a 0` does not | C7 confirmed on this wheel. Settings are reachable and `t150ctl` can be built; driving effects during a game is not, because it needs the pipe held. |
-| Neither frees it | The transport is not the problem and the packet layout is. Better than the alternative, and where PROTOCOL.md gets rechecked. |
-| `-w` works without `sudo` | The finished tool never needs a password. Record it. |
-| Wheel locked rigid and will not turn by hand | Do question 2, then question 3. Question 3 is the one most likely to free it. |
-| Still locked after it reports `B677` | Report it. Nothing in this project holds a wheel rigid, so something else does, and that has to be understood before the measurement means anything. |
-| Wheel at `B65D` but honours settings there | Almost as good: the mode switch stops being load bearing. |
-| SetReport moves the wheel unprivileged | The architecture works. Build it. |
-| It moves on an idle desktop but not with a game running | Something in the bottle is seizing the device. Find out what before writing anything. |
-| Settings work but the force feedback packets do nothing | The transport is fine and the packet layout is wrong. Recoverable, and much the better failure. |
-| A contiguous type code plays a waveform | Square or triangle stops being a downgrade. Record which code. |
-| SetReport succeeds but nothing moves | Try every framing above before giving up; if none work the HID path is closed and only raw interrupt OUT is left, which needs device capture and root. |
-| the switch works unprivileged | One clean tool, no password. |
-| the switch needs root | One `sudo` per plug-in. Note that sleep, wake or a replug drops the wheel back to boot mode, so this is a mid-race failure, not just an install-time annoyance. |
-| the switch needs `-s` | Reconsider the design before writing more code. |
+Struck through where the wheel has already answered.
+
+| Outcome | Consequence | |
+| --- | --- | --- |
+| Wheel already at `B677` | No control transfer, no root, anywhere. | not seen, it boots at `B65D` |
+| `probe_setreport -a 0` frees a rigid wheel | **E1 is answered yes.** The architecture works unprivileged and CrossOver keeps the wheel. Build it. | **measured** |
+| `probe_intr -a 0` frees it as well | Both transports reach the firmware, so the interrupt OUT route is a fallback rather than the plan. | **measured** |
+| Neither frees it | The transport is not the problem and the packet layout is. | did not happen |
+| `-w` works without `sudo` | The finished tool never needs a password. | **measured** |
+| It moves on an idle desktop but not with a game running | Something in the bottle is seizing the device. Find out what before writing anything. | still untested |
+| Settings work but the force feedback packets do nothing | The transport is fine and the packet layout is wrong. Recoverable, and much the better failure. | **measured, on both pipes** |
+| A contiguous type code plays a waveform | Square or triangle stops being a downgrade. Record which code. | nothing played at all yet |
+| Buttons change on the IN pipe but CrossOver sees none | An input path problem above USB, in macOS HID, SDL or winebus. Not a force feedback problem. | **measured** |
+| the switch needs root | One `sudo` per plug-in, and sleep, wake or a replug drops the wheel back to boot mode, so it is a mid-race failure too. | not needed |
+| the switch needs `-s` | Reconsider the design before writing more code. | not needed |

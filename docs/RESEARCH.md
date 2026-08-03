@@ -152,14 +152,19 @@ one of the first things it does after probing, which only makes sense if the
 wheel powers up with it on. A T150 holding full autocenter is genuinely hard
 to move.
 
-**C7 supplies a third, and it is now the leading one:** macOS's
-`IOHIDDeviceSetReport` reaches the wheel over the control pipe, and
-Thrustmaster firmware acknowledges that pipe and ignores it. An independent
-macOS driver for the sibling T300RS says exactly this and seizes the USB
-interface to write on the interrupt OUT pipe instead. Read C7 before
-spending any more time on framings; it predicts every result seen here.
+**C7 supplied a third and it was wrong.** It held that macOS's
+`IOHIDDeviceSetReport` reaches the wheel over the control pipe and that
+Thrustmaster firmware acknowledges that pipe and ignores it, on the authority
+of an independent macOS driver for the sibling T300RS. A19 measured the
+opposite on a T150: an unprivileged `IOHIDDeviceSetReport` changes the
+autocenter and the wheel obeys.
 
-The two earlier hypotheses, which C7 largely subsumes:
+**The real answer to this section is A15.** Every attempt that concluded the
+wheel ignored us sent `0x04`, the autocenter enable flag, which does nothing
+on macOS because the effect is active whenever no application has the input
+open. Nothing was ever wrong with either pipe.
+
+The two earlier hypotheses, both also retired by A15 and A19:
 
 1. **HID output never reaches the firmware.** The writes are accepted by
    macOS and discarded, so nothing can change the wheel's resting state. This
@@ -172,13 +177,15 @@ The two earlier hypotheses, which C7 largely subsumes:
    firmware gates settings behind that, every write so far would be accepted
    and ignored regardless of framing.
 
-Both predict precisely what was measured, which is why neither can be
-concluded. What separates them is a wheel that unlocks under a driver known
-to work: on Windows with Thrustmaster's own driver, or on Linux with
-`hid_thrustmaster` and `t150_driver`. If it frees up there, the wheel and the
-protocol are both fine and the fault is in the macOS HID path. If it stays
-rigid there too, the wheel's resting behaviour is simply this and the
-autocenter theory is wrong.
+Both predicted precisely what was measured, which is why neither could be
+concluded at the time. Both are now settled and both were wrong: the wheel
+frees under `40 03 00 00` on either pipe, so HID output does reach the
+firmware and nothing has to be sent first.
+
+The hypothesis that survives from this section is a narrower version of the
+second one, and it applies to force feedback rather than to settings. The
+autocenter is active "while no input are open", so the firmware does know
+whether an input is open, and A20 records what that might mean for effects.
 
 **A10. Two facts bound how rigid the wheel can actually be.**
 
@@ -333,11 +340,16 @@ was right: it was holding a maximum autocenter that the command we kept
 sending was never going to lift.
 
 **A16. Force feedback has not been demonstrated, and has not yet been tested
-properly.** The effect upload sequences were sent through `probe_setreport`,
-which is the HID path, and the wheel did not move. That is not evidence about
-the protocol: the same path has never delivered a setting either, `ff_commit`
-is 15 bytes against a declared 14-byte report, and the pipe now known to work
-was not used.
+properly.** Superseded by A20, which tested it properly and got the same
+answer. Kept for the reasoning, one part of which did not survive: the HID
+path was thought at the time never to have delivered a setting, and A19 later
+showed it delivers them fine. The `ff_commit` length objection stands as a
+question, since it is 15 bytes against a declared 14-byte report.
+
+The effect upload sequences were sent through `probe_setreport`, the HID
+path, and the wheel did not move. That was not evidence about the protocol at
+the time, because the pipe then believed to be the only working one was not
+used.
 
 The test that would mean something is the whole sequence in **one**
 `probe_intr` capture, because the release re-enumerates the device and an
@@ -387,6 +399,88 @@ next.
 Note this is a firmware mode observation. Boot mode declares a completely
 different report, buttons first and no report id, and that is the layout
 every earlier session saw.
+
+**A19. `IOHIDDeviceSetReport` moves the wheel. C7 is false for the T150, and
+the architecture the project was designed around is the right one.**
+
+Measured, unprivileged, unnumbered report id, 4-byte payload, no capture:
+
+| Command | Payload | Observed |
+| --- | --- | --- |
+| `probe_setreport -a 0` | `40 03 00 00` | free to turn |
+| `probe_setreport` | `40 03 64 00` | **hard to turn** |
+| `probe_setreport -a 0` | `40 03 00 00` | **free to turn** |
+
+Free, then held, then free, with all three transitions driven through the HID
+layer and no `probe_intr` between them. The wheel had been left free by the
+preceding interrupt OUT run, so the stiffening is attributable to the HID
+write and to nothing else.
+
+This is the single most valuable result the project has. It means the daemon
+can drive settings with a non-seizing `IOHIDDeviceSetReport` while CrossOver
+keeps the wheel, so there is no ownership conflict for settings, `t150ctl`
+needs no root, and the interrupt OUT route is a fallback rather than the
+plan. The design problem recorded here and in the README is withdrawn.
+
+It also says the six sessions of "the firmware ignores the HID layer" were
+an artefact of `-A`. Both pipes work. Neither was ever the problem.
+
+**A20. Force feedback does not work on either pipe, so the effect layout is
+wrong rather than the transport.** Measured with the autocenter cleared and
+the gain set in the same capture, all six packets on interrupt OUT, for a
+constant force and for a periodic:
+
+```
+40 03 00 00 / 43 60 / 02 1c 00 .. 46 54 / 03 0e 00 20 /
+01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00 / 41 00 41 01
+```
+
+Every write accepted, the wheel did not move. Repeated with a periodic and
+type `0x4020`: the same. With A19 establishing that both transports reach the
+firmware, this is now a statement about `docs/PROTOCOL.md`, not about macOS.
+
+Two things are worth trying before treating the layout as wrong. The upload
+has never been sent through the HID path, which A19 has now shown to work and
+which leaves macOS owning the device. And the driver's own comment says the
+autocenter is active "while no input are open", so the firmware distinguishes
+an opened input from a closed one, and a captured device has nothing open at
+all. If effects only render for an opened input, `probe_intr` cannot ever
+demonstrate one and `probe_setreport` is the only tool that can.
+
+Failing both, the answer is a `usbmon` capture on the Linux machine with
+`scarburato/t150_driver` driving the wheel, which shows the real bytes rather
+than anyone's reading of the source.
+
+**A21. The wheel puts all thirteen buttons on the wire. Whatever loses them
+is above the USB layer.** A18 is answered, and against the wheel.
+
+`probe_intr -R` read the interrupt IN pipe with the device captured. The mask
+of bits that ever moved lines up with the report descriptor field for field,
+which is also the strongest evidence available that the tool is right:
+
+| Bytes | Field | Mask | |
+| --- | --- | --- | --- |
+| 0 | report id `0x07` | `00` | constant, as declared |
+| 1-2 | X, 16-bit | `ff ff` | steering |
+| 3-4 | Y, 10-bit | `ff 03` | pedal, to its logical maximum |
+| 5-6 | Rz, 10-bit | `ff 03` | pedal |
+| 7-8 | slider, 10-bit | `00 00` | no third pedal on a stock T150 |
+| 9-10 | padding | `00 00` | constant, as declared |
+| 11 | buttons 1-8 | `ff` | all eight |
+| 12 | buttons 9-13 | `1c` | plus its three padding bits at zero |
+| 13 | padding | `00` | constant, as declared |
+| 14 | hat | `0f` | four bits |
+
+Two runs cross-validate it. The first worked every button except the paddles
+and the PS button and reported buttons 3 to 12. The second added exactly
+those controls and reported buttons 1, 2 and 13 on top. So the paddles are
+buttons 1 and 2, PS is button 13, and between them the runs account for all
+thirteen.
+
+Meanwhile CrossOver's controller panel registers no button at all, in either
+its DirectInput or its XInput view. The wheel is therefore fine and this is
+an input path problem in macOS HID, SDL or winebus. B8 is where to look, and
+it is independent of force feedback.
 
 Everything below was written when the wheel was believed to be at fault, and
 is kept because the reasoning still holds if the wheel turns out not to obey
@@ -605,8 +699,18 @@ driver never uses it.
 > `wIndex` 0, that is, directed at the interface macOS's HID driver owns.
 
 **C7. A macOS implementation reports that Thrustmaster firmware ACKs the
-control SET_REPORT and ignores it.** This is the most consequential external
-finding this project has, because it predicts exactly what A8 measured.
+control SET_REPORT and ignores it. Measured false for the T150, see A19.**
+It held the project's architecture hostage for six sessions and it does not
+apply to this wheel: `IOHIDDeviceSetReport` was later shown to change the
+T150's autocenter, from an ordinary unprivileged process, with CrossOver
+free to keep reading the wheel.
+
+The reason it looked true is recorded in A15: every HID attempt until then
+sent `-A`, the autocenter enable flag, which is a no-op on macOS by design.
+The transport was never the thing that was broken.
+
+What follows is kept as written, because it is still an accurate account of
+a T300RS implementation and of why the hypothesis was reasonable.
 
 `Akellacom/thrustmaster_t300rs_gt_macos_driver` is a userspace macOS driver
 for the T300RS on Apple Silicon. Its wheel configuration code carries this

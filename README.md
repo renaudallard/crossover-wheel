@@ -5,21 +5,26 @@ Force feedback for the **Thrustmaster T150** in games running under
 DriverKit system extension, no SIP change, no AMFI change, no system
 extension approval.
 
-> **Status: nothing here drives a wheel yet, and the measurement that would
-> decide it is currently blocked on hardware.** A T150 has been in front of
-> the probes three times. USB communication is healthy, the mode switch works
-> unprivileged and every write is accepted, but the wheel is held rigid and
-> cannot be turned by hand: in boot mode, in firmware mode, and in the PS4
-> position where it takes nothing from this project at all. It calibrates
-> normally, so it is not broken. The leading explanation is now external: a
-> macOS driver for the sibling T300RS documents that Thrustmaster firmware
-> acknowledges the control SET_REPORT pipe and ignores it, and seizes the USB
-> interface to write on the interrupt OUT pipe instead. If that holds for the
-> T150, the unprivileged non-seizing path this design rests on does not
-> reach the wheel. See [`docs/RESEARCH.md`](docs/RESEARCH.md) A4 to A11 and
-> C7. Everything that can be
-> built and tested without a wheel has been: see
-> [what exists today](#what-exists-today).
+> **Status: the wheel obeys us, and it does so on the unprivileged path this
+> design rests on.** Measured on a T150: an ordinary `IOHIDDeviceSetReport`
+> from a process with no root and no device capture sets the autocenter to
+> full and the wheel becomes hard to turn, then releases it and the wheel
+> turns freely. CrossOver can keep reading the wheel throughout. The same
+> works on the interrupt OUT pipe, so both transports reach the firmware.
+>
+> Six sessions of "the wheel is locked and ignores everything" were one
+> mistake: the command being sent was `0x04`, an autocenter flag that is a
+> no-op on macOS because the effect is active whenever no application has the
+> wheel's input open. Only the force releases it. Nothing was ever wrong with
+> the wheel, the pipes, or the settings protocol.
+>
+> **Force feedback still does not work**, on either pipe, with the autocenter
+> cleared and the gain set. Since the transports are proven, that is now a
+> question about the effect layout in `docs/PROTOCOL.md` rather than about
+> macOS. Separately, the wheel puts all thirteen of its buttons on the wire
+> and CrossOver registers none of them, which is an input path problem in
+> macOS HID, SDL or winebus. See [`docs/RESEARCH.md`](docs/RESEARCH.md) A15
+> and A19 to A21, and [what needs doing next](#what-needs-doing-next).
 
 **Picking this up?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first. It is
 written for someone starting with no context: what is decided, what is
@@ -80,8 +85,9 @@ in-bottle bus driver was considered and rejected.
 
 | Component | State |
 | --- | --- |
-| `probe_hid`, `probe_setreport`, `probe_ep0` | working, macOS only |
-| `probe_intr`, the interrupt OUT writer | working, macOS only, needs root. The wheel obeys it |
+| `probe_hid`, `probe_ep0` | working, macOS only |
+| `probe_setreport`, the HID writer | working, macOS only, no root. **The wheel obeys it** |
+| `probe_intr`, the interrupt OUT writer and pipe reader | working, macOS only, needs root. The wheel obeys it too |
 | `include/t150/*.h` shared contracts | written, compiled and tested on Linux |
 | `src/lib/encode.c` wire encoders | written, golden-vector tested on Linux |
 | `src/lib/proto.c` DLL to daemon protocol | written, round-trip tested on Linux |
@@ -111,43 +117,58 @@ conversion, then load the DLL with a copy of the system `dinput8` beside it
 and confirm both entry points chain-load. Whether a Wine bottle resolves the
 same way is the first thing M5 has to try.
 
-None of this says the wheel agrees with the bytes. That is
-[`docs/PROBES.md`](docs/PROBES.md), and it has not been answered.
+The wheel agrees with the settings bytes on both pipes, which
+[`docs/PROBES.md`](docs/PROBES.md) is the procedure for. It does not yet
+agree with the force feedback ones.
 
 ## What needs doing next
 
 Everything that can be built without hardware has been, and **the gate is
-answered for the interrupt OUT route**: `sudo probe_intr -a 0` freed a wheel
-that had been gripping, so the wheel obeys bytes this project chooses and
-sends. The same bytes through the HID layer have never moved it.
+answered yes on the pipe the project was designed around**. Measured:
+`probe_setreport` set the autocenter to full and the wheel became hard to
+turn; `probe_setreport -a 0` released it and it turned freely. No root, no
+capture, ordinary `IOHIDDeviceSetReport`, with CrossOver free to keep
+reading the wheel throughout.
 
-That settles the transport and leaves three experiments, all needing the Mac
-and **all independent of each other**.
+`sudo probe_intr -a 0` does the same thing on the interrupt OUT pipe, so
+**both transports work**. Everything that once looked like a firmware that
+ignored us was `-A`, an autocenter flag that does nothing on macOS. See
+[`docs/RESEARCH.md`](docs/RESEARCH.md) A15 and A19.
 
-**1. Force feedback on the pipe that works**, step by step under
-[testing it today](#testing-it-today). Settings are proven; effects are not,
-and every attempt so far went through the HID path, which was this project's
-instructions being wrong rather than a result. One `probe_intr` capture
-carries the whole upload:
+Two things are settled by that. There is no ownership conflict: the daemon
+can write settings without taking the wheel from CrossOver. And `t150ctl`
+needs no privilege at all.
 
-- **The wheel pushes.** `docs/PROTOCOL.md` is right end to end and
-  `src/lib/encode.c` is validated with it.
-- **It does not.** The transport is fine and the effect layout is wrong,
-  which is far more tractable. From there the next step is a `usbmon`
-  capture on the Linux machine with `scarburato/t150_driver` driving the
-  wheel, which shows the real bytes rather than anyone's reading of source.
+What is left is three experiments, all needing the Mac and **all independent
+of each other**.
 
-While you are there, two things the encoders currently guess at also settle:
-whether a constant force tops out at `0x40` or `0x7f`, and whether the
-contiguous type codes `0x4020` and `0x4021` are the square and triangle the
+**1. Force feedback, which does not work on either pipe.** Measured with the
+autocenter cleared and the gain set in the same capture, for a constant force
+and for a periodic: every write accepted, the wheel did not move. Since both
+transports are proven, that points at the effect layout in
+`docs/PROTOCOL.md`, which is the tractable failure. Two things to try before
+accepting it, step by step under [testing it today](#testing-it-today):
+
+- **The upload through the HID path**, which has never been tried and which
+  A19 has now shown reaches the firmware.
+- **With something holding the wheel's input open.** The driver's own comment
+  says the autocenter is active "while no input are open", so the firmware
+  distinguishes the two, and a captured device has nothing open at all. If
+  effects need an opened input, `probe_intr` can never show one.
+
+Failing both, the next step is a `usbmon` capture on the Linux machine with
+`scarburato/t150_driver` driving the wheel, which shows the real bytes
+rather than anyone's reading of source. Two things the encoders guess at
+settle on the way: whether a constant force tops out at `0x40` or `0x7f`, and
+whether type codes `0x4020` and `0x4021` are the square and triangle the
 Linux driver never implemented.
 
-**2. Where the buttons go.** In firmware mode CrossOver lists the wheel but
-registers none of its buttons, though the wheel's own descriptor declares
-thirteen of them. `sudo probe_intr -R 15` reads the interrupt IN pipe with
-the device captured and prints every report that changes, which says whether
-the bits leave the wheel at all. If they do, the loss is in macOS, SDL or
-winebus and this is an input problem rather than a force feedback one.
+**2. Where CrossOver loses the buttons.** Answered as far as the wheel is
+concerned: `probe_intr -R` proved all thirteen buttons reach the wire, and
+the mask it printed matches the report descriptor field for field. CrossOver
+registers none of them, in either its DirectInput or its XInput view, so the
+loss is in macOS HID, SDL or winebus. That makes it an input problem rather
+than a force feedback one, and `docs/RESEARCH.md` B8 is where to start.
 
 **3. Try the proxy in a bottle**, step by step under
 [testing it today](#testing-it-today). The DLL has never run under Wine, and
@@ -156,28 +177,25 @@ needs no working force feedback at all.
 
 Then, whichever way those went:
 
-**3. `t150ctl`, and `t150boot`.** Rotation range, gain and autocenter from
-the command line. `probe_intr` is already the working core of it: capture,
-write, hand the wheel back, and the wheel keeps the setting. That path needs
-root but no SIP or AMFI change, and it leaves CrossOver's wheel alone
-afterwards. `t150boot` is the mode switch, which is already known to need no
-privilege at all; ship it as a LaunchAgent matching the boot product id,
-because sleep, wake and replug all drop the wheel back.
+**4. `t150ctl`, and `t150boot`.** Rotation range, gain and autocenter from
+the command line, on `IOHIDDeviceSetReport` with a non-seizing open. **No
+root, no capture, and CrossOver keeps the wheel while it runs**, which is
+what A19 bought. `probe_setreport` is already the working core of it.
+`t150boot` is the mode switch; ship it as a LaunchAgent matching the boot
+product id, because sleep, wake and replug all drop the wheel back.
 
-**This is buildable now**, and does not wait on anything above: the pipe it
-needs is the one already shown to work, and the wheel keeps a setting after
-the device goes back. That makes it the safest thing to do next.
+**This is buildable now** and waits on nothing above, which makes it the
+safest thing to do next.
 
-**4. The daemon's backend, which has a design problem to solve first.** The
-HID path has never delivered a setting, so the non-seizing open that
-`backend_fake.c` was written behind is not available, and the pipe that does
-work cannot be held: the daemon cannot own the device and let CrossOver read
-the wheel at the same time. Settings survive this because they are
-write-and-release. Continuous effects do not. `docs/HANDOFF.md` section 8
-is where the alternatives are, and this is now the largest open question in
-the project.
+**5. The daemon's macOS backend.** A non-seizing open and output writes
+behind the interface `backend_fake.c` already implements, with
+`src/probe/common.c` as the enumeration it needs, moved rather than
+rewritten. The ownership conflict that used to sit here is gone: A19 showed
+the HID path works, so the daemon never has to take the wheel from CrossOver.
+What it cannot yet do is drive effects, because no effect has been made to
+render on any pipe.
 
-**5. Robustness, then a real game.** Reconnect on both ends, hot plug, and
+**6. Robustness, then a real game.** Reconnect on both ends, hot plug, and
 the watchdog under real crash conditions. Measure the latency and jitter of
 the whole path under Rosetta while you are there: a wheel wants updates near
 500 Hz and nobody has measured it.
@@ -186,8 +204,8 @@ Later, and not blocking: an ARM64EC build for CrossOver 27's bottles, an
 installer that does the bottle setup in one step, and optionally an SCS
 telemetry plugin, which is the only way any native macOS game can be reached.
 
-The gate said yes for settings on the interrupt OUT pipe. If force feedback
-turns out not to follow, the ladder of fallbacks is in
+The gate said yes for settings, on both pipes. Force feedback has not
+followed, and if it turns out not to, the ladder of fallbacks is in
 [`docs/HANDOFF.md`](docs/HANDOFF.md) section 8, and the honest last rung is
 to say so and stop.
 
@@ -481,17 +499,16 @@ firmware product id, so against any other wheel, or against one still in boot
 mode, every one of these does nothing until `-p` names the id `probe_hid`
 actually reported.
 
-**A6. Prove the force feedback protocol**, on `probe_intr` and not on
-`probe_setreport`. The HID path already accepts everything and acts on
-nothing, so an effect sent that way answers nothing new. Everything below
-goes out on one capture, because handing the wheel back re-enumerates it and
-an uploaded effect will not survive that. The first packet clears the
-autocenter, which otherwise fights the effect at whatever force the previous
-command left; the second sets the gain, because nothing has established what
-the wheel powers up with. Then a constant force at half level, endless:
+**A6. Prove the force feedback protocol.** This has been run on the interrupt
+OUT pipe and produced nothing, so **run it on the HID path**, which A19
+showed reaches the firmware and which no effect upload has ever used. The
+first packet clears the autocenter, which otherwise fights the effect at
+whatever force the previous command left; the second sets the gain, because
+nothing has established what the wheel powers up with. Then a constant force
+at half level, endless:
 
 ```sh
-sudo ./build/bin/probe_intr \
+./build/bin/probe_setreport \
     -x "40 03 00 00" \
     -x "43 60" \
     -x "02 1c 00 00 00 00 00 00 00 46 54" \
@@ -503,7 +520,27 @@ sudo ./build/bin/probe_intr \
 **Hold the wheel or keep a hand on the plug**, then stop it:
 
 ```sh
-sudo ./build/bin/probe_intr -x "41 00 00 01"
+./build/bin/probe_setreport -x "41 00 00 01"
+```
+
+If that does nothing either, try it **with the wheel's input held open**, by
+starting a game in a bottle or leaving CrossOver's controller panel showing
+the wheel, and running the same command again. The driver's own comment says
+the autocenter is active "while no input are open", so the firmware knows the
+difference, and effects may only render for an opened input.
+
+For the record, this is the interrupt OUT form, already run and already
+silent. Every packet goes out on one capture, because handing the wheel back
+re-enumerates it and an uploaded effect will not survive that:
+
+```sh
+sudo ./build/bin/probe_intr \
+    -x "40 03 00 00" \
+    -x "43 60" \
+    -x "02 1c 00 00 00 00 00 00 00 46 54" \
+    -x "03 0e 00 20" \
+    -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
+    -x "41 00 41 01"
 ```
 
 **A7. Three cheap answers while you are set up.** Compare `03 0e 00 40`
