@@ -1,18 +1,17 @@
 /*
  * probe_intr - write to the wheel on the pipe it actually listens to.
  *
- * probe_setreport asks whether IOHIDDeviceSetReport moves the wheel. On a
- * T150 the answer so far is that every write is accepted and nothing ever
- * happens, which RESEARCH.md C7 explains: Thrustmaster firmware acknowledges
- * the control SET_REPORT pipe and ignores it, and the pipe it listens to is
- * interrupt OUT.
+ * The wheel obeys settings on both this pipe and the HID one, so this tool is
+ * the cross-check rather than the only way in. RESEARCH.md A19 has the
+ * measurement, and C7, which predicted the HID path could not work, is
+ * recorded there as false for this wheel.
  *
- * Reaching that pipe from userspace means taking the device away from the
- * HID driver, which is what this does: capture, write, release. That is the
- * price, and it is why this cannot be how the daemon drives effects during a
- * game. It is fine for settings, which the wheel keeps after the device goes
- * back, and it is the experiment that says whether the bytes in
- * docs/PROTOCOL.md are right.
+ * Reaching this pipe from userspace means taking the device away from the HID
+ * driver, which is what this does: capture, write, release. That is the price,
+ * and it is why the daemon uses the HID path instead. Settings survive the
+ * release because the wheel keeps them. An uploaded effect does not, because
+ * the release re-enumerates the wheel, so -H holds the device open for a while
+ * first and a force feedback test is meaningless without it.
  *
  * Having the device captured also allows the opposite direction: -R reads the
  * interrupt IN pipe, which is the only way to see what the wheel reports
@@ -571,6 +570,7 @@ usage(void)
 {
 	fprintf(stderr,
 	    "usage: probe_intr [-v vid] [-p pid] [-N pad]\n"
+	    "                  [-H seconds]\n"
 	    "                  [-I | -a force | -A | -r degrees | -g gain |\n"
 	    "                   -R seconds | -x \"hex bytes\"]\n"
 	    "\n"
@@ -597,6 +597,10 @@ usage(void)
 	    "               This is what says whether the buttons reach the\n"
 	    "               wire at all, independently of what Wine makes of\n"
 	    "               them\n"
+	    "  -H seconds   after writing, hold the wheel this long instead of\n"
+	    "               handing it straight back, reading the IN pipe while\n"
+	    "               it waits. An uploaded effect does not survive the\n"
+	    "               release, so a force feedback test needs this\n"
 	    "  -x \"40 04 ..\"  send these raw bytes, repeatable up to %d times\n",
 	    T150_VID, T150_PID_FIRMWARE, T150_PID_BOOT, T150_RANGE_MIN,
 	    T150_RANGE_MAX, READ_SECONDS, MAX_PACKETS);
@@ -612,6 +616,7 @@ main(int argc, char *argv[])
 	struct pipe out, in;
 	io_service_t svc;
 	unsigned long arg = 10000, padto = 0, seconds = READ_SECONDS;
+	unsigned long hold = 0;
 	long vid = T150_VID, pid = T150_PID_FIRMWARE;
 	enum action act = ACT_NONE;
 	size_t npkt = 0, i;
@@ -674,6 +679,10 @@ main(int argc, char *argv[])
 			    probe_parse_uint(optarg, 3600, &seconds) != 0)
 				usage();
 			act = ACT_READ;
+			break;
+		case 'H':
+			if (probe_parse_uint(optarg, 3600, &hold) != 0)
+				usage();
 			break;
 		case 'x':
 			if (act != ACT_NONE && act != ACT_RAW)
@@ -826,6 +835,24 @@ main(int argc, char *argv[])
 			rc = 1;
 			break;
 		}
+	}
+
+	/*
+	 * Hold the device rather than handing it straight back. An uploaded
+	 * effect does not survive the release, because the release
+	 * re-enumerates the wheel, so without this an effect that worked
+	 * perfectly would still look like nothing happened. Akellacom's T300RS
+	 * driver keeps its session open for exactly this reason and pumps a
+	 * read while it does; reading the IN pipe here does both jobs at once,
+	 * because a wheel that starts pushing also starts reporting movement.
+	 */
+	if (rc == 0 && hold > 0 && act != ACT_INIT) {
+		printf("\nholding the wheel for %lu second(s) before handing "
+		    "it back\n", hold);
+		if (in.ref != 0)
+			(void)read_reports(iface, &in, hold);
+		else
+			nap((long)hold * 1000);
 	}
 
 	/*

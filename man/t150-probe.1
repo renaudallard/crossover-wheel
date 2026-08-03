@@ -35,6 +35,7 @@
 .Op Fl v Ar vid
 .Op Fl p Ar pid
 .Op Fl N Ar pad
+.Op Fl H Ar seconds
 .Oo
 .Fl I |
 .Fl a Ar force |
@@ -138,6 +139,10 @@ The default is 0x0006, the T150 row.
 .Nm probe_intr
 writes on the interrupt OUT pipe instead of through the HID layer. The wheel
 obeys both, so this is the cross-check and the reader, not the only way in.
+Settings survive the release because the wheel keeps them; an effect does not,
+which is what
+.Fl H
+is for.
 Reaching that pipe means capturing the wheel away from macOS, so this tool
 .Em needs root ,
 unlike every other tool here. It captures, writes and hands the wheel back on
@@ -173,6 +178,12 @@ nothing has it open, which on macOS is always. Only the force releases it.
 Set the rotation range.
 .It Fl g Ar gain
 Set the gain, 0 to 10000.
+.It Fl H Ar seconds
+After writing, hold the wheel this long instead of handing it straight back,
+reading the interrupt IN pipe while it waits. An uploaded effect does not
+survive the release, because the release re-enumerates the wheel, so a force
+feedback test without this cannot show anything however correct its packets
+are.
 .It Fl R Ar seconds
 Write nothing. Read the interrupt IN pipe instead and print every report that
 differs from the one before, which is how to see what the wheel puts on the
@@ -236,6 +247,11 @@ See what the wheel reports while you work every control, which is how it was
 shown to put all thirteen of its buttons on the wire:
 .Pp
 .Dl $ sudo probe_intr -R 15
+.Pp
+Upload an effect and give it ten seconds to do something before the wheel
+goes back:
+.Pp
+.Dl $ sudo probe_intr -N 32 -H 10 -x \(dq02 1c ...\(dq -x \(dq41 00 41 01\(dq
 .Sh SEE ALSO
 .Xr crossover-wheel 7
 .Pp
