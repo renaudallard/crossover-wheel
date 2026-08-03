@@ -340,6 +340,7 @@ struct reader {
 	UInt8		ref;
 	int		outstanding;	/* a read is queued in the kernel */
 	int		stopping;	/* past the deadline, do not re-arm */
+	int		varied;		/* reports were not all one length */
 	int		failed;
 };
 
@@ -398,6 +399,15 @@ read_done(void *refcon, IOReturn result, void *arg0)
 		rd->widest = len;
 
 	if (len != rd->prev_len || memcmp(rd->buf, rd->prev, len) != 0) {
+		/*
+		 * The mask can only compare the bytes both reports have. A
+		 * device that mixes report lengths on one endpoint would leave
+		 * the tail uncompared, so say so rather than let a zero there
+		 * read as "this never moved".
+		 */
+		if (rd->prev_len != 0 && len != rd->prev_len)
+			rd->varied = 1;
+
 		n = len < rd->prev_len ? len : rd->prev_len;
 		for (i = 0; i < n; i++)
 			rd->changed[i] |= (uint8_t)(rd->buf[i] ^ rd->prev[i]);
@@ -487,8 +497,13 @@ read_reports(IOUSBInterfaceInterface500 **iface, struct pipe *in,
 	} else {
 		printf("bits that changed at any point:");
 		probe_hexdump(stdout, rd.changed, rd.widest);
-		printf("a byte reading 00 there never moved, whatever you "
-		    "pressed\n");
+		if (rd.varied)
+			printf("reports arrived in more than one length, so "
+			    "read that mask with care: only the bytes every\n"
+			    "report had are compared\n");
+		else
+			printf("a byte reading 00 there never moved, whatever "
+			    "you pressed\n");
 	}
 
 	return rd.failed ? -1 : 0;
