@@ -55,6 +55,10 @@
 
 #define READ_SECONDS	15
 
+/* Bound on how long the abort below is given to settle. */
+#define DRAIN_TRIES	20
+#define DRAIN_STEP	0.1
+
 static void
 nap(long ms)
 {
@@ -334,6 +338,8 @@ struct reader {
 	unsigned long	total;
 	unsigned long	shown;
 	UInt8		ref;
+	int		outstanding;	/* a read is queued in the kernel */
+	int		stopping;	/* past the deadline, do not re-arm */
 	int		failed;
 };
 
@@ -352,7 +358,9 @@ arm_read(struct reader *rd)
 		    probe_ioreturn_str(r));
 		rd->failed = 1;
 		CFRunLoopStop(CFRunLoopGetCurrent());
+		return;
 	}
+	rd->outstanding = 1;
 }
 
 /*
@@ -367,6 +375,8 @@ read_done(void *refcon, IOReturn result, void *arg0)
 {
 	struct reader *rd = refcon;
 	size_t len, i, n;
+
+	rd->outstanding = 0;
 
 	if (result != kIOReturnSuccess) {
 		/* Aborted is how the deadline below ends a pending read. */
@@ -399,6 +409,16 @@ read_done(void *refcon, IOReturn result, void *arg0)
 		rd->shown++;
 	}
 
+	/*
+	 * A completion can already be queued when the deadline expires, and it
+	 * is dispatched by the drain below. Re-arming from there would start a
+	 * read that outlives the interface, so the deadline says stop.
+	 */
+	if (rd->stopping) {
+		CFRunLoopStop(CFRunLoopGetCurrent());
+		return;
+	}
+
 	arm_read(rd);
 }
 
@@ -408,6 +428,7 @@ read_reports(IOUSBInterfaceInterface500 **iface, struct pipe *in,
 {
 	CFRunLoopSourceRef src = NULL;
 	IOReturn r;
+	int i;
 
 	/*
 	 * Static, not automatic. A queued read has given the kernel a pointer
@@ -438,15 +459,21 @@ read_reports(IOUSBInterfaceInterface500 **iface, struct pipe *in,
 		    (CFTimeInterval)seconds, 0);
 
 	/*
-	 * A read is still queued unless the callback already stopped the loop.
-	 * Abort it and let the run loop deliver the aborted completion, or the
-	 * kernel is left writing into a buffer that is about to go away.
+	 * Stop re-arming before aborting, not after. A completion that was
+	 * already queued when the deadline expired is dispatched by the drain,
+	 * and without this it would queue another read that outlives both the
+	 * interface and this function.
 	 */
+	rd.stopping = 1;
 	(void)(*iface)->AbortPipe(iface, in->ref);
-	CFRunLoopRunInMode(kCFRunLoopDefaultMode, (CFTimeInterval)1.0, 0);
+	for (i = 0; rd.outstanding && i < DRAIN_TRIES; i++)
+		CFRunLoopRunInMode(kCFRunLoopDefaultMode, DRAIN_STEP, 0);
 
 	CFRunLoopRemoveSource(CFRunLoopGetCurrent(), src, kCFRunLoopDefaultMode);
 	CFRelease(src);
+
+	if (rd.outstanding)
+		warnx("a read is still queued after the abort");
 
 	printf("\n%lu report(s) read, %lu of them different from the one "
 	    "before\n", rd.total, rd.shown);
