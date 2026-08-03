@@ -42,7 +42,8 @@ DAEMON_LIB_NAMES = session backend_fake
 DAEMON_LIB_OBJS  = $(addprefix $(DAEMONOBJ)/,$(addsuffix .o,$(DAEMON_LIB_NAMES)))
 DAEMON_BIN	 = $(BIN)/t150d
 
-TEST_NAMES = header_check encode_check proto_check daemon_check socket_check
+TEST_NAMES = header_check encode_check proto_check daemon_check socket_check \
+             usage_check
 TEST_BINS  = $(addprefix $(BIN)/,$(TEST_NAMES))
 
 # The in-bottle proxy. A PE, so it is cross compiled, and only when the
@@ -141,6 +142,12 @@ $(BIN)/daemon_check: tests/daemon_check.c $(DAEMON_LIB_OBJS) $(LIB_OBJS) | $(BIN
 # objects. Order-only, because it execs it instead of linking it.
 $(BIN)/socket_check: tests/socket_check.c $(LIB_OBJS) | $(BIN) $(DAEMON_BIN)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+# usage_check reads the probe sources rather than linking them, because the
+# probes themselves only build on macOS. It needs to know where they are.
+$(BIN)/usage_check: tests/usage_check.c | $(BIN)
+	$(CC) $(CPPFLAGS) -DPROBE_SRC_DIR='"$(CURDIR)/src/probe"' $(CFLAGS) \
+	    -o $@ tests/usage_check.c $(LDFLAGS)
 
 $(BIN)/%_check: tests/%_check.c $(LIB_OBJS) | $(BIN)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS)
