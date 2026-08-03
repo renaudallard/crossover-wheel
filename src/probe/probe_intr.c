@@ -555,8 +555,15 @@ mode_switch(IOUSBDeviceInterface500 **dev)
 	r = (*dev)->DeviceRequestTO(dev, &req);
 	printf("  mode switch                  %s\n", probe_ioreturn_str(r));
 
-	/* The wheel leaves before it can answer, which is the normal case. */
-	return (r == kIOReturnSuccess || r == kIOReturnNotResponding) ? 0 : -1;
+	/*
+	 * The wheel leaves before it can answer, which is the normal case, and
+	 * the host sees that departure as any of three things depending on how
+	 * far the transfer had got. Measured on a T150: kIOUSBPipeStalled, on a
+	 * switch that worked and re-enumerated at the firmware id. Treating it
+	 * as a failure printed a replug warning for a wheel that was fine.
+	 */
+	return (r == kIOReturnSuccess || r == kIOReturnNotResponding ||
+	    r == kIOUSBPipeStalled) ? 0 : -1;
 }
 
 static void

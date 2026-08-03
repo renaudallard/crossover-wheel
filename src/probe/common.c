@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <IOKit/usb/IOUSBLib.h>	/* for the kIOUSB error codes below */
+
 #include "common.h"
 
 static CFMutableDictionaryRef
@@ -272,6 +274,21 @@ probe_ioreturn_str(IOReturn r)
 		return "kIOReturnBusy";
 	case kIOReturnOffline:
 		return "kIOReturnOffline";
+	/*
+	 * USB specific. A wheel that detaches mid transfer reports the stall
+	 * rather than anything in the list above, and printing it as a bare
+	 * hex code made a working mode switch look like a failure.
+	 */
+	case kIOUSBPipeStalled:
+		return "kIOUSBPipeStalled";
+	case kIOUSBTransactionTimeout:
+		return "kIOUSBTransactionTimeout";
+	case kIOUSBTransactionReturned:
+		return "kIOUSBTransactionReturned";
+	case kIOUSBUnknownPipeErr:
+		return "kIOUSBUnknownPipeErr";
+	case kIOUSBNoAsyncPortErr:
+		return "kIOUSBNoAsyncPortErr";
 	default:
 		(void)snprintf(unknown, sizeof(unknown), "0x%08x",
 		    (unsigned int)r);
