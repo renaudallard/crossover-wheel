@@ -81,7 +81,7 @@ in-bottle bus driver was considered and rejected.
 | Component | State |
 | --- | --- |
 | `probe_hid`, `probe_setreport`, `probe_ep0` | working, macOS only |
-| `probe_intr`, the interrupt OUT writer | written, macOS only, needs root, not yet run |
+| `probe_intr`, the interrupt OUT writer | working, macOS only, needs root. The wheel obeys it |
 | `include/t150/*.h` shared contracts | written, compiled and tested on Linux |
 | `src/lib/encode.c` wire encoders | written, golden-vector tested on Linux |
 | `src/lib/proto.c` DLL to daemon protocol | written, round-trip tested on Linux |
@@ -116,39 +116,45 @@ None of this says the wheel agrees with the bytes. That is
 
 ## What needs doing next
 
-Everything that can be built without hardware has been. What is left starts
-with two experiments, both needing the Mac, and **they are independent of
-each other**: the second is worth running even if the first fails, and if the
-first succeeds the second is the next thing in the way regardless.
+Everything that can be built without hardware has been, and **the gate is
+answered for the interrupt OUT route**: `sudo probe_intr -a 0` freed a wheel
+that had been gripping, so the wheel obeys bytes this project chooses and
+sends. The same bytes through the HID layer have never moved it.
 
-**1. Send the same bytes down both pipes**, step by step under
-[testing it today](#testing-it-today). `sudo probe_intr -a 0` writes on the
-interrupt OUT pipe; `probe_setreport -a 0` writes through the HID layer. One
-command each, and between them they decide the shape of the whole project:
+That settles the transport and leaves three experiments, all needing the Mac
+and **all independent of each other**.
 
-- **Interrupt OUT frees the wheel, HID does not.** The protocol is right and
-  the transport was the problem. Settings become buildable immediately, and
-  the game-driven half needs redesigning, because holding that pipe means
-  owning the device and CrossOver cannot read a wheel the daemon owns.
-- **Both free it.** The original architecture stands and everything below is
-  as planned.
-- **Neither frees it.** The transport is not the problem and the packet
-  layout is, which is where `docs/PROTOCOL.md` gets rechecked against a
-  capture rather than against a reading of someone's source.
+**1. Force feedback on the pipe that works**, step by step under
+[testing it today](#testing-it-today). Settings are proven; effects are not,
+and every attempt so far went through the HID path, which was this project's
+instructions being wrong rather than a result. One `probe_intr` capture
+carries the whole upload:
 
-While you are there, three things the encoders currently guess at also
-settle: whether a constant force tops out at `0x40` or `0x7f`, whether the
+- **The wheel pushes.** `docs/PROTOCOL.md` is right end to end and
+  `src/lib/encode.c` is validated with it.
+- **It does not.** The transport is fine and the effect layout is wrong,
+  which is far more tractable. From there the next step is a `usbmon`
+  capture on the Linux machine with `scarburato/t150_driver` driving the
+  wheel, which shows the real bytes rather than anyone's reading of source.
+
+While you are there, two things the encoders currently guess at also settle:
+whether a constant force tops out at `0x40` or `0x7f`, and whether the
 contiguous type codes `0x4020` and `0x4021` are the square and triangle the
-Linux driver never implemented, and whether the wheel obeys settings in boot
-mode.
+Linux driver never implemented.
 
-**2. Try the proxy in a bottle**, step by step under
+**2. Where the buttons go.** In firmware mode CrossOver lists the wheel but
+registers none of its buttons, though the wheel's own descriptor declares
+thirteen of them. `sudo probe_intr -R 15` reads the interrupt IN pipe with
+the device captured and prints every report that changes, which says whether
+the bits leave the wheel at all. If they do, the loss is in macOS, SDL or
+winebus and this is an input problem rather than a force feedback one.
+
+**3. Try the proxy in a bottle**, step by step under
 [testing it today](#testing-it-today). The DLL has never run under Wine, and
 finding out whether it loads and whether a game's effects reach the daemon
-needs no working force feedback at all, which is why it does not wait for the
-gate.
+needs no working force feedback at all.
 
-Then, depending on which way step 1 went:
+Then, whichever way those went:
 
 **3. `t150ctl`, and `t150boot`.** Rotation range, gain and autocenter from
 the command line. `probe_intr` is already the working core of it: capture,
@@ -158,17 +164,18 @@ afterwards. `t150boot` is the mode switch, which is already known to need no
 privilege at all; ship it as a LaunchAgent matching the boot product id,
 because sleep, wake and replug all drop the wheel back.
 
-**This is buildable whichever way step 1 goes**, as long as one of the two
-pipes works, which makes it the safest thing to do next.
+**This is buildable now**, and does not wait on anything above: the pipe it
+needs is the one already shown to work, and the wheel keeps a setting after
+the device goes back. That makes it the safest thing to do next.
 
-**4. The daemon's backend, whose shape step 1 decides.** If the HID path
-works it is a non-seizing open and output writes behind the interface
-`backend_fake.c` already implements, and `src/probe/common.c` is the
-enumeration it needs, moved rather than rewritten. If only the interrupt OUT
-path works, there is a real design problem to solve first: the daemon cannot
-hold that pipe and let CrossOver read the wheel, so game-driven force
-feedback needs a different answer, and `docs/HANDOFF.md` section 8 is where
-the alternatives are.
+**4. The daemon's backend, which has a design problem to solve first.** The
+HID path has never delivered a setting, so the non-seizing open that
+`backend_fake.c` was written behind is not available, and the pipe that does
+work cannot be held: the daemon cannot own the device and let CrossOver read
+the wheel at the same time. Settings survive this because they are
+write-and-release. Continuous effects do not. `docs/HANDOFF.md` section 8
+is where the alternatives are, and this is now the largest open question in
+the project.
 
 **5. Robustness, then a real game.** Reconnect on both ends, hot plug, and
 the watchdog under real crash conditions. Measure the latency and jitter of
@@ -179,7 +186,8 @@ Later, and not blocking: an ARM64EC build for CrossOver 27's bottles, an
 installer that does the bottle setup in one step, and optionally an SCS
 telemetry plugin, which is the only way any native macOS game can be reached.
 
-If the gate says no, the ladder of fallbacks is in
+The gate said yes for settings on the interrupt OUT pipe. If force feedback
+turns out not to follow, the ladder of fallbacks is in
 [`docs/HANDOFF.md`](docs/HANDOFF.md) section 8, and the honest last rung is
 to say so and stop.
 
@@ -504,6 +512,23 @@ stop at `0x40`. Try `20 40` and `21 40` in place of `00 40` in the commit
 packet, which would mean square and triangle exist after all. And repeat A3
 once with a game running in a bottle, because macOS 26 fails `setReport` for
 every client the moment anything seizes the device.
+
+**A8. Find out where the buttons go.** CrossOver lists the wheel in firmware
+mode but registers none of its buttons, and this says whether the bits ever
+leave the wheel:
+
+```sh
+sudo ./build/bin/probe_intr -R 15
+```
+
+That reads the interrupt IN pipe with the device captured, so nothing sits
+between the wheel and the output. Only reports that differ from the one
+before are printed. **Work every button, the hat and the pedals while it
+runs**, and turn the wheel a little so you can tell the stream is live.
+
+A line for each press means the wheel puts the buttons on the wire and
+whatever loses them is above the USB layer, in macOS, SDL or winebus. No
+line for any press, on a stream that is otherwise changing, means the wheel.
 
 ### Test B: does the proxy load in a bottle
 

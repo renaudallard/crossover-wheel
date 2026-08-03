@@ -434,8 +434,38 @@ sudo ./build/bin/probe_intr \
 ```
 
 That is a one second period at half magnitude with type `0x4020`. Repeat with
-`21 40` and `25 40` in the third packet. Anything that oscillates is a
+`21 40` and `25 40` in the commit packet, the one starting `01 00`. Anything that oscillates is a
 waveform we can stop downgrading. Stop it the same way as above.
+
+---
+
+## Question 6: do the wheel's buttons reach the wire?
+
+In firmware mode CrossOver lists the wheel but registers none of its
+buttons, though the wheel's own report descriptor declares thirteen of them
+in report `0x07`, after four 16-bit axes and before the hat. Either the
+wheel is not sending the bits or something above the USB layer is dropping
+them, and nothing that reads HID node properties can tell those apart.
+
+```sh
+sudo ./build/bin/probe_intr -R 15
+```
+
+That reads the interrupt IN pipe with the device captured, so nothing sits
+between the wheel and the output, and it prints only the reports that differ
+from the one before because the wheel streams its state continuously. **Work
+every button, the hat and the pedals while it runs**, and move the wheel a
+little so you can see the stream is live.
+
+| Outcome | Meaning |
+| --- | --- |
+| A line for each press | The wheel is fine. The loss is in macOS, SDL or winebus, and B8 is where to look. An input problem, not a force feedback one. |
+| No line for any press, stream otherwise changing | The wheel is not reporting buttons in this mode, which would be a firmware mode property worth knowing before anything depends on it. |
+| Nothing at all | Either the wheel sends nothing while captured, or the read is wrong. Compare against boot mode, which declares a different report entirely. |
+
+Boot mode puts the buttons first in an unnumbered report, so its layout says
+nothing about firmware mode. Run this in whichever mode the question is
+about.
 
 ---
 
@@ -444,7 +474,7 @@ waveform we can stop downgrading. Stop it the same way as above.
 | Outcome | Consequence |
 | --- | --- |
 | Wheel already at `B677` | No control transfer, no root, anywhere. Best case. |
-| `-A` frees a rigid wheel | E1 is answered yes. The firmware has been obeying all along and the architecture works. Build it. |
+| `-a 0` frees a rigid wheel | E1 is answered yes. The firmware has been obeying all along and the architecture works. Build it. |
 | `probe_intr -a 0` frees it but `probe_setreport -a 0` does not | C7 confirmed on this wheel. Settings are reachable and `t150ctl` can be built; driving effects during a game is not, because it needs the pipe held. |
 | Neither frees it | The transport is not the problem and the packet layout is. Better than the alternative, and where PROTOCOL.md gets rechecked. |
 | `-w` works without `sudo` | The finished tool never needs a password. Record it. |

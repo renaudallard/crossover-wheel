@@ -343,6 +343,51 @@ The test that would mean something is the whole sequence in **one**
 `probe_intr` capture, because the release re-enumerates the device and an
 uploaded effect is unlikely to survive it.
 
+A second session ran the effect sequences again and again saw no movement,
+and again sent every packet through `probe_setreport`. That was this
+project's fault, not the tester's: PROBES.md and the README both still
+prescribed the HID path for force feedback long after the settings
+instructions had been corrected. Both now prescribe `probe_intr`.
+
+That run also left the autocenter at maximum force on the interrupt OUT pipe
+and never cleared it, so even had the effect packets arrived they would have
+been working against a full-strength spring. The corrected sequence clears it
+in the same capture.
+
+**A17. Autocenter force has a physical effect, and it is not the effect its
+name implies.** Measured: with the force set through the whole range the
+wheel's resistance changes, and the change is felt as a stiffening around a
+point rather than as a pull back to centre. Releasing the wheel does not
+return it to zero.
+
+This is the first time a parameter *value* this project sent has changed how
+the wheel feels, as distinct from A15's on-or-off result, and it confirms the
+settings transport a second way. It does not confirm that `0x03` is a spring.
+A stiffness that rises near a point and does not restore is closer to damping
+or friction than to a spring, and nothing yet explains it. `t150ctl` can
+expose the control without settling what to call it; the effect's shape is
+worth resolving before any autocenter figure appears in a user interface.
+
+**A18. The wheel's buttons do not reach Wine in firmware mode. Cause not yet
+established.** Observed: with the wheel at `0xb677`, CrossOver's game
+controller panel lists the wheel, but no button on it registers.
+
+The wheel's own descriptor does declare them. Report `0x07` carries four
+16-bit axes, then 13 buttons, then a hat, and its total matches the reported
+`MaxInputReportSize` of 15 exactly. So either the wheel is not putting the
+bits on the wire or something above the USB layer is dropping them, and
+nothing that reads only HID node properties can tell those apart.
+
+`probe_intr -R` was added for this. It reads the interrupt IN pipe with the
+device captured, so what it prints is what the wheel sends with nothing in
+between. A button that produces no line there never left the wheel; one that
+does means the loss is in macOS, SDL or winebus, and B8 is where to look
+next.
+
+Note this is a firmware mode observation. Boot mode declares a completely
+different report, buttons first and no report id, and that is the layout
+every earlier session saw.
+
 Everything below was written when the wheel was believed to be at fault, and
 is kept because the reasoning still holds if the wheel turns out not to obey
 settings.
