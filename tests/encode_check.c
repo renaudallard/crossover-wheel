@@ -86,6 +86,16 @@ test_settings(void)
 	CHECK("gain full", b, t150_enc_gain(b, sizeof(b), 10000), 0x43, 0xff);
 	CHECK("gain half", b, t150_enc_gain(b, sizeof(b), 5000), 0x43, 0x80);
 	CHECK("gain zero", b, t150_enc_gain(b, sizeof(b), 0), 0x43, 0x00);
+
+	/*
+	 * Opening the wheel's input. Two bytes, and the driver builds them as
+	 * a little-endian uint16 0x0442, so the opcode is the low byte and
+	 * goes first. Getting that round the wrong way would send 04 42.
+	 */
+	CHECK("input open", b, t150_enc_input_open(b, sizeof(b)), 0x42, 0x04);
+	CHECK("input close", b, t150_enc_input_close(b, sizeof(b)), 0x42, 0x00);
+	check_int("input open refuses a short buffer",
+	    (long)t150_enc_input_open(b, 1), 0);
 }
 
 static void

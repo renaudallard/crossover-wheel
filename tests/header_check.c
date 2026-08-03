@@ -42,6 +42,16 @@ _Static_assert(T150_FF_TYPE_SPRING == 0x4040, "spring type code");
 _Static_assert(T150_FF_TYPE_DAMPER == 0x4041, "damper type code");
 _Static_assert(T150_FF_OP_CONTROL == 0x41, "effect control opcode");
 
+/*
+ * The input open and close bytes. The driver writes them as little-endian
+ * uint16 0x0442 and 0x0042, so the opcode is the low byte and leads on the
+ * wire. Transcribing them the other way round would send 04 42.
+ */
+_Static_assert(T150_OP_INPUT == 0x42, "input open/close opcode");
+_Static_assert(T150_INPUT_OPEN == 0x04, "input open subcommand");
+_Static_assert(T150_INPUT_WHAT == 0x05, "the packet sent twice before close");
+_Static_assert(T150_INPUT_CLOSE == 0x00, "input close subcommand");
+
 /* Measured on hardware, not transcribed, so worth pinning down. */
 _Static_assert(T150_EP_INTR_OUT == 0x01, "interrupt OUT endpoint");
 _Static_assert(T150_EP_INTR_IN == 0x82, "interrupt IN endpoint");

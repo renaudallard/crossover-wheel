@@ -174,6 +174,25 @@
 #define T150_GAIN_MAX		0xffu
 #define T150_AUTOCENTER_MAX	100u
 
+/*
+ * Opening and closing the wheel's input, two bytes each on the interrupt OUT
+ * pipe. The firmware tracks whether an application has the input open, which
+ * is why t150_set_enable_autocenter's comment says the autocenter "is always
+ * active while no input are open": nothing on macOS opens it, so it always is.
+ * Whether the wheel also gates force feedback on this is the open question
+ * these exist to answer.
+ *
+ * Source: scarburato/t150_driver hid-t150/hid-t150.c, which allocates the
+ * three packets in t150_init() as little-endian uint16 0x0442, 0x0542 and
+ * 0x0042, and hid-t150/input.c, which sends them with usb_interrupt_msg() on
+ * pipe_out with length 2: open on t150_input_open(), then "what" twice and
+ * close on t150_input_close().
+ */
+#define T150_OP_INPUT		0x42u
+#define T150_INPUT_OPEN		0x04u
+#define T150_INPUT_WHAT		0x05u	/* sent twice, before close */
+#define T150_INPUT_CLOSE	0x00u
+
 /* Control packet: [0x41, slot, mode, times]. There is no erase packet. */
 #define T150_FF_OP_CONTROL	0x41u
 #define T150_FF_CTRL_PLAY	0x41u

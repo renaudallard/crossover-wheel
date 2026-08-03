@@ -17,6 +17,7 @@
 
 #define SETTINGS_LEN	4
 #define GAIN_LEN	2
+#define INPUT_LEN	2
 
 /*
  * Scale a signed DirectInput value onto a signed wire range, rounding to
@@ -178,6 +179,35 @@ t150_enc_autocenter_force(uint8_t *buf, size_t buflen, uint32_t force)
 	    T150_AUTOCENTER_MAX);
 
 	return enc_settings(buf, buflen, T150_OP_AUTOCENTER_FORCE, arg);
+}
+
+/*
+ * The wheel's input open and close, two bytes each. The driver sends the
+ * close as three packets, "what" twice then close, and does so after
+ * hid_hw_close(); only the last of them is the close itself.
+ */
+static size_t
+enc_input(uint8_t *buf, size_t buflen, uint8_t sub)
+{
+	if (buflen < INPUT_LEN)
+		return 0;
+
+	buf[0] = T150_OP_INPUT;
+	buf[1] = sub;
+
+	return INPUT_LEN;
+}
+
+size_t
+t150_enc_input_open(uint8_t *buf, size_t buflen)
+{
+	return enc_input(buf, buflen, T150_INPUT_OPEN);
+}
+
+size_t
+t150_enc_input_close(uint8_t *buf, size_t buflen)
+{
+	return enc_input(buf, buflen, T150_INPUT_CLOSE);
 }
 
 size_t

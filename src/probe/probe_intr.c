@@ -118,7 +118,9 @@ enum action {
 	ACT_RANGE,
 	ACT_GAIN,
 	ACT_RAW,
-	ACT_READ
+	ACT_READ,
+	ACT_INPUT_OPEN,
+	ACT_INPUT_CLOSE
 };
 
 static io_service_t
@@ -589,8 +591,8 @@ usage(void)
 	fprintf(stderr,
 	    "usage: probe_intr [-v vid] [-p pid] [-N pad]\n"
 	    "                  [-H seconds]\n"
-	    "                  [-I | -a force | -A | -r degrees | -g gain |\n"
-	    "                   -R seconds | -x \"hex bytes\"]\n"
+	    "                  [-I | -O | -C | -a force | -A | -r degrees |\n"
+	    "                   -g gain | -R seconds | -x \"hex bytes\"]\n"
 	    "\n"
 	    "  Writes on the interrupt OUT pipe rather than through the HID\n"
 	    "  layer, which means capturing the wheel from macOS and handing\n"
@@ -603,6 +605,12 @@ usage(void)
 	    "  -I           send the initialisation the Linux driver sends on\n"
 	    "               this pipe, then the mode switch, in one capture.\n"
 	    "               Run it on a wheel still at the boot id 0x%04x.\n"
+	    "  -O           open the wheel's input, 42 04. The firmware tracks\n"
+	    "               whether an application has the input open and the\n"
+	    "               autocenter is unconditionally active while none\n"
+	    "               has, so effects may be gated the same way. Combine\n"
+	    "               with -H, or nothing holds the input open\n"
+	    "  -C           close the wheel's input, 42 00\n"
 	    "  -a force     autocenter to force (0..10000) and enable it\n"
 	    "  -A           clear the autocenter enable flag. Note this does\n"
 	    "               not free a held wheel: the autocenter is always\n"
@@ -644,7 +652,7 @@ main(int argc, char *argv[])
 	memset(&out, 0, sizeof(out));
 	memset(&in, 0, sizeof(in));
 
-	while ((ch = getopt(argc, argv, "v:p:N:Ia:Ar:g:R:H:x:")) != -1) {
+	while ((ch = getopt(argc, argv, "v:p:N:IOCa:Ar:g:R:H:x:")) != -1) {
 		unsigned long parsed;
 
 		switch (ch) {
@@ -701,6 +709,16 @@ main(int argc, char *argv[])
 		case 'H':
 			if (probe_parse_uint(optarg, 3600, &hold) != 0)
 				usage();
+			break;
+		case 'O':
+			if (act != ACT_NONE)
+				usage();
+			act = ACT_INPUT_OPEN;
+			break;
+		case 'C':
+			if (act != ACT_NONE)
+				usage();
+			act = ACT_INPUT_CLOSE;
 			break;
 		case 'x':
 			if (act != ACT_NONE && act != ACT_RAW)
@@ -766,6 +784,16 @@ main(int argc, char *argv[])
 	case ACT_GAIN:
 		pkt[0].len = t150_enc_gain(pkt[0].bytes, sizeof(pkt[0].bytes),
 		    (uint32_t)arg);
+		npkt = 1;
+		break;
+	case ACT_INPUT_OPEN:
+		pkt[0].len = t150_enc_input_open(pkt[0].bytes,
+		    sizeof(pkt[0].bytes));
+		npkt = 1;
+		break;
+	case ACT_INPUT_CLOSE:
+		pkt[0].len = t150_enc_input_close(pkt[0].bytes,
+		    sizeof(pkt[0].bytes));
 		npkt = 1;
 		break;
 	case ACT_RAW:

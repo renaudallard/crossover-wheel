@@ -26,6 +26,15 @@
 
 #include "t150/effect.h"
 
+/*
+ * Open and close the wheel's input. The firmware tracks whether an
+ * application has the input open, and the autocenter is unconditionally
+ * active while none has. Whether force feedback is gated the same way is not
+ * yet known, so a daemon should open before it uploads anything.
+ */
+size_t	t150_enc_input_open(uint8_t *buf, size_t buflen);
+size_t	t150_enc_input_close(uint8_t *buf, size_t buflen);
+
 /* Settings. Arguments are in DirectInput units, see effect.h. */
 size_t	t150_enc_autocenter_force(uint8_t *buf, size_t buflen, uint32_t force);
 size_t	t150_enc_autocenter_enable(uint8_t *buf, size_t buflen, int enable);
