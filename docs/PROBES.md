@@ -228,11 +228,14 @@ root**, unlike everything else here. It captures, writes, and hands the wheel
 straight back.
 
 ```sh
-sudo ./build/bin/probe_intr -A
+sudo ./build/bin/probe_intr -a 0
 ```
 
-With no action it releases the autocenter, which is the single most
-informative thing to send a wheel that is being held rigid. **If the wheel
+That sets the autocenter force to zero, which is what actually frees a
+gripped wheel. **Not `-A`**: `0x04` only decides whether the autocenter
+survives an application opening the input, and since nothing on macOS does
+that, the autocenter is always on and the flag changes nothing. This has been
+measured both ways. **If the wheel
 becomes turnable, three questions are answered at once**: the wheel is
 healthy, the bytes in PROTOCOL.md are right, and the pipe was the whole
 problem. If it does not, the layout is wrong rather than the transport, which

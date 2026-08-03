@@ -309,10 +309,39 @@ all**, while it fits the interrupt OUT pipe's 32-byte packets easily. That
 retires the contradiction PROTOCOL.md carried from the start, in favour of
 the interrupt OUT route.
 
-What is not yet established is whether the wheel obeys a *setting*. The
-spring may be the wheel's own resting behaviour rather than anything sent.
-Rotation range is the clean test, because three quarters of a turn against
-three turns is not a matter of interpretation.
+**A15. The wheel obeys settings sent on the interrupt OUT pipe. E1 is
+answered yes for that route.** Measured: `probe_intr -a 0`, which sends
+`40 03 00 00` followed by `40 04 01 00`, left the wheel **free to turn with
+no resistance at all**, from a state where it had been gripped. That is an
+unambiguous physical reaction to bytes this project chose and sent.
+
+It also explains every earlier failure to free it, and the explanation was in
+the driver source the whole time. `t150_set_enable_autocenter`'s comment:
+"true if the autocenter effect is to be kept enabled when the input is
+opened. **The autocentering effect is always active while no input are
+open**".
+
+So `0x04` is not an on/off switch. It decides whether the autocenter survives
+an application opening the input, and nothing on macOS opens the input the
+way a Linux application does, so the autocenter is permanently active and
+`0x04` changes nothing observable. Every `-A` sent in every session was a
+no-op by design. **Only the force, `0x03`, releases the wheel.**
+
+That retires the whole "the wheel is locked" line of investigation. The wheel
+was never locked, never faulty, and never ignoring us once the initialisation
+was right: it was holding a maximum autocenter that the command we kept
+sending was never going to lift.
+
+**A16. Force feedback has not been demonstrated, and has not yet been tested
+properly.** The effect upload sequences were sent through `probe_setreport`,
+which is the HID path, and the wheel did not move. That is not evidence about
+the protocol: the same path has never delivered a setting either, `ff_commit`
+is 15 bytes against a declared 14-byte report, and the pipe now known to work
+was not used.
+
+The test that would mean something is the whole sequence in **one**
+`probe_intr` capture, because the release re-enumerates the device and an
+uploaded effect is unlikely to survive it.
 
 Everything below was written when the wheel was believed to be at fault, and
 is kept because the reasoning still holds if the wheel turns out not to obey

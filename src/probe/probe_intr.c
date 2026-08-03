@@ -358,7 +358,10 @@ usage(void)
 	    "               this pipe, then the mode switch, in one capture.\n"
 	    "               Run it on a wheel still at the boot id 0x%04x.\n"
 	    "  -a force     autocenter to force (0..10000) and enable it\n"
-	    "  -A           disable autocenter, the one that frees a held wheel\n"
+	    "  -A           clear the autocenter enable flag. Note this does\n"
+	    "               not free a held wheel: the autocenter is always\n"
+	    "               active while nothing has the input open, so use\n"
+	    "               -a 0 for that, which is also the default\n"
 	    "  -r degrees   set rotation range (%u..%u)\n"
 	    "  -g gain      set gain (0..10000)\n"
 	    "  -x \"40 04 ..\"  send these raw bytes, repeatable up to %d times\n",
@@ -451,8 +454,15 @@ main(int argc, char *argv[])
 		usage();
 
 	if (act == ACT_NONE) {
-		act = ACT_AUTOCENTER_OFF;
-		printf("no action given, so releasing the autocenter\n");
+		/*
+		 * Autocenter force zero, not the enable flag. The wheel's
+		 * autocenter is always active while nothing has its input
+		 * open, which on macOS is always, so clearing the flag
+		 * changes nothing and only the strength does.
+		 */
+		act = ACT_AUTOCENTER;
+		arg = 0;
+		printf("no action given, so setting the autocenter to zero\n");
 	}
 
 	/*
@@ -604,7 +614,7 @@ out:
 	else if (rc == 0)
 		printf("\nEvery write was accepted on the pipe the firmware\n"
 		    "listens to. What settles this is whether the wheel\n"
-		    "reacted: with -A, whether it became turnable.\n");
+		    "reacted: with -a 0, whether it became free to turn.\n");
 
 	return rc;
 }

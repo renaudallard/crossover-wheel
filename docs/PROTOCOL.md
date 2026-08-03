@@ -142,8 +142,19 @@ All except gain share one form, sent on the interrupt OUT endpoint:
 | op | Meaning | Argument |
 | --- | --- | --- |
 | `0x03` | Autocenter spring force | 0..100, a hardware percent |
-| `0x04` | Autocenter enable | 0 off, 1 on |
+| `0x04` | Keep the autocenter once an application opens the input | 0 off, 1 on |
 | `0x11` | Rotation range | `degrees * 0xFFFF / 1080` |
+
+**`0x04` is not an on/off switch, and reading it as one wastes days.** The
+driver's own comment is explicit: it means "the autocenter effect is to be
+kept enabled when the input is opened", and "the autocentering effect is
+always active while no input are open".
+
+Nothing on macOS opens the wheel's input the way a Linux application does, so
+the autocenter is always on and `0x04` changes nothing observable. **The only
+way to free the wheel is to set its force to zero with `0x03`.** Measured:
+`40 04 00 00` leaves a wheel gripped, and `40 03 00 00` releases it
+completely.
 
 Gain is two bytes with a different opcode:
 
