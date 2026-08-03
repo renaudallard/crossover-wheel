@@ -291,8 +291,32 @@ that nothing re-enumerates between the two.
 > `usb_fill_control_urb()`. The same five packets appear in Akellacom's macOS
 > T300RS driver, described as mandatory before the mode switch.
 
+**A14. The initialisation changed the wheel's behaviour.** `probe_intr -I`
+was run: all five packets went out on the interrupt OUT pipe at the boot id,
+the model query answered `0x06`/`0x03`, the switch went out, and the wheel
+re-enumerated as `044f:b677 Thrustmaster T150RS`.
+
+**The wheel then turned.** Against force, springing back to centre, where
+before the same wheel from the same starting state was immovable. That is the
+first physical change this project has ever produced, and it followed the one
+thing that had been missing.
+
+The same run finally captured the firmware mode descriptor. Its only output
+report is id `0x0A` with 14 bytes of payload, exactly as the firmware 3.5
+capture said, and `MaxOutputReportSize` 15 is those 14 plus the report id.
+**So `ff_commit`, at 15 bytes of payload, cannot fit the HID output report at
+all**, while it fits the interrupt OUT pipe's 32-byte packets easily. That
+retires the contradiction PROTOCOL.md carried from the start, in favour of
+the interrupt OUT route.
+
+What is not yet established is whether the wheel obeys a *setting*. The
+spring may be the wheel's own resting behaviour rather than anything sent.
+Rotation range is the clean test, because three quarters of a turn against
+three turns is not a matter of interpretation.
+
 Everything below was written when the wheel was believed to be at fault, and
-is kept because the reasoning still holds if `-I` does not fix it.
+is kept because the reasoning still holds if the wheel turns out not to obey
+settings.
 
 **The wheel stays blocked, as of before that initialisation existed.**
 

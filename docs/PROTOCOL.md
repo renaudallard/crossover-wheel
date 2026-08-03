@@ -85,11 +85,22 @@ The 32-byte maximum matters for the force feedback packets: `ff_commit` is
 
 ## HID report descriptor
 
-Decoded from `t150_driver/traffic/old_caps/hid_report_fw35`, a capture of
-firmware 3.5. **Not** captured from current hardware, so `probe_hid` should
-confirm it before anything relies on it.
+**Confirmed on current hardware.** `probe_hid` dumped the firmware mode
+descriptor, 130 bytes, and its output report is exactly what the firmware 3.5
+capture said: report id `0x0A`, vendor usage page, 14 bytes.
 
-The relevant part is an output report:
+macOS reports `MaxOutputReportSize` 15, which is those 14 bytes plus the
+report id byte. That resolves the contradiction flagged below, and not in the
+HID layer's favour: **`ff_commit` is 15 bytes of payload and does not fit a
+14-byte report.** It fits the interrupt OUT pipe, whose maximum packet is 32,
+with room to spare.
+
+The firmware mode descriptor also differs from boot mode in ways worth
+knowing: the top level usage is Joystick (`0x04`) rather than Gamepad, X is
+16 bits where boot mode had 12, and there are input reports `0x02` and `0x14`
+that boot mode does not declare.
+
+The original derivation, which the measurement confirms:
 
 ```
 85 0A           Report ID (0x0A)

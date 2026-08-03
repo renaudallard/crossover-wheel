@@ -584,8 +584,18 @@ out:
 		(*dev)->USBDeviceClose(dev);
 		(*dev)->Release(dev);
 	}
-	printf("\nhanding the wheel back to macOS\n");
-	release_device(vid, pid);
+	/*
+	 * After a successful switch the wheel has already detached and is
+	 * coming back under a different product id, so there is nothing to
+	 * hand back and looking for it only produces a false alarm.
+	 */
+	if (rc == 0 && act == ACT_INIT) {
+		printf("\nthe wheel has left to re-enumerate, so there is "
+		    "nothing to hand back\n");
+	} else {
+		printf("\nhanding the wheel back to macOS\n");
+		release_device(vid, pid);
+	}
 
 	if (rc == 0 && act == ACT_INIT)
 		printf("\nThe wheel should have re-enumerated at 0x%04x, and\n"
