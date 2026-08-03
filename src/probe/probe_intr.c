@@ -626,7 +626,7 @@ main(int argc, char *argv[])
 	memset(&out, 0, sizeof(out));
 	memset(&in, 0, sizeof(in));
 
-	while ((ch = getopt(argc, argv, "v:p:N:Ia:Ar:g:R:x:")) != -1) {
+	while ((ch = getopt(argc, argv, "v:p:N:Ia:Ar:g:R:H:x:")) != -1) {
 		unsigned long parsed;
 
 		switch (ch) {
