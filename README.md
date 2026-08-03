@@ -122,8 +122,8 @@ each other**: the second is worth running even if the first fails, and if the
 first succeeds the second is the next thing in the way regardless.
 
 **1. Send the same bytes down both pipes**, step by step under
-[testing it today](#testing-it-today). `sudo probe_intr -A` writes on the
-interrupt OUT pipe; `probe_setreport -A` writes through the HID layer. One
+[testing it today](#testing-it-today). `sudo probe_intr -a 0` writes on the
+interrupt OUT pipe; `probe_setreport -a 0` writes through the HID layer. One
 command each, and between them they decide the shape of the whole project:
 
 - **Interrupt OUT frees the wheel, HID does not.** The protocol is right and
@@ -395,11 +395,14 @@ stop and reassess: seizing takes the wheel away from CrossOver.
 captures the wheel from macOS, writes, and hands it straight back:
 
 ```sh
-sudo ./build/bin/probe_intr -A
+sudo ./build/bin/probe_intr -a 0
 ```
 
-That releases the autocenter, which is the most informative thing to send a
-wheel being held rigid. **If the wheel becomes turnable, three questions are
+That sets the autocenter force to zero, which is the most informative thing
+to send a wheel being held rigid. **Not `-A`**: the enable flag only says
+whether the autocenter survives a process opening the wheel's input, and the
+effect is active whenever nothing has it open, which on macOS is always.
+Only the force releases it. **If the wheel becomes turnable, three questions are
 answered at once**: the wheel is healthy, the bytes in `docs/PROTOCOL.md` are
 right, and the pipe was the whole problem. On the evidence in
 [`docs/RESEARCH.md`](docs/RESEARCH.md) C7 this is more likely to move the
@@ -423,7 +426,7 @@ informative single command is the one that releases the spring, because if it
 frees up the firmware has been obeying all along:
 
 ```sh
-./build/bin/probe_setreport -A
+./build/bin/probe_setreport -a 0
 ```
 
 Then autocenter, because its effect is unmistakable, the wheel starts pulling
@@ -431,7 +434,7 @@ itself to centre:
 
 ```sh
 ./build/bin/probe_setreport
-./build/bin/probe_setreport -A
+./build/bin/probe_setreport -a 0
 ```
 
 **A success return is not the answer.** macOS can accept a report the
@@ -443,19 +446,19 @@ concluding anything:
 
 ```sh
 ./build/bin/probe_setreport -i 0x0a
-./build/bin/probe_setreport -A
+./build/bin/probe_setreport -a 0
 ./build/bin/probe_setreport -P
-./build/bin/probe_setreport -A
+./build/bin/probe_setreport -a 0
 ./build/bin/probe_setreport -i 0x0a -P
-./build/bin/probe_setreport -A
+./build/bin/probe_setreport -a 0
 ./build/bin/probe_setreport -n 1
 ./build/bin/probe_setreport -r 270
 ./build/bin/probe_setreport -r 1080
 ```
 
-**The `-A` between each one is not optional.** Every variant here is the
+**The `-a 0` between each one is not optional.** Every variant here is the
 autocenter action, setting the spring to maximum and enabling it. Without
-disabling it in between, a wheel that obeyed the first command stays rigid
+releasing it in between, a wheel that obeyed the first command stays rigid
 for the whole run and looks identical to one that obeyed nothing. Turn the
 wheel by hand after each pair and watch for a *change*, not for stiffness.
 

@@ -36,6 +36,7 @@
 .Op Fl p Ar pid
 .Op Fl N Ar pad
 .Oo
+.Fl I |
 .Fl a Ar force |
 .Fl A |
 .Fl r Ar degrees |
@@ -89,7 +90,10 @@ Set the autocenter spring to
 .Ar force ,
 0 to 100, and enable it.
 .It Fl A
-Disable the autocenter spring.
+Clear the autocenter enable flag. This does
+.Em not
+free a held wheel, see the same option under
+.Nm probe_intr .
 .It Fl r Ar degrees
 Set the rotation range, 270 to 1080.
 .It Fl g Ar gain
@@ -137,27 +141,39 @@ means capturing the wheel away from macOS, so this tool
 unlike every other tool here. It captures, writes and hands the wheel back on
 every exit path.
 .Pp
-With no action it disables the autocenter, which is the most informative
-thing to send a wheel that is being held rigid: if the wheel becomes turnable
-the firmware was listening all along and only the pipe was wrong. Its packets
-are built by the shared encoders in
+With no action it sets the autocenter force to zero, which is the most
+informative thing to send a wheel that is being held rigid: if the wheel
+becomes turnable the firmware was listening all along and only the pipe was
+wrong. Its packets are built by the shared encoders in
 .Pa src/lib/encode.c ,
 so a run exercises those too.
 .Bl -tag -width Ds
 .It Fl N Ar pad
 Zero-pad every packet to this length.
+.It Fl I
+Send the five initialisation packets the Linux driver sends on this pipe,
+then the mode switch, in one capture. Run it on a wheel still at the boot
+product id. Skipping the initialisation is what leaves the wheel blocked.
 .It Fl a Ar force
 Autocenter to
 .Ar force ,
 0 to 10000, and enable it.
+.Fl a Ar 0
+is what frees a held wheel.
 .It Fl A
-Disable the autocenter.
+Clear the autocenter enable flag. This does
+.Em not
+free a held wheel: the flag only says whether the autocenter survives a
+process opening the wheel's input, and the effect is always active while
+nothing has it open, which on macOS is always. Only the force releases it.
 .It Fl r Ar degrees
 Set the rotation range.
 .It Fl g Ar gain
 Set the gain, 0 to 10000.
 .It Fl x Ar bytes
-Raw hex payload, repeatable.
+Raw hex payload, repeatable. Every packet goes out on one capture, which
+matters for a sequence such as a force feedback upload, because the release
+re-enumerates the wheel.
 .El
 .Pp
 If it is killed between the capture and the release the wheel stays gone from
@@ -186,7 +202,7 @@ Record the wheel's identity and descriptors:
 Try to make the wheel self-centre, then stop:
 .Pp
 .Dl $ probe_setreport
-.Dl $ probe_setreport -A
+.Dl $ probe_setreport -a 0
 .Pp
 If that returned success but nothing moved, work through the framings:
 .Pp
@@ -202,7 +218,7 @@ Find out whether endpoint 0 needs root:
 Release a wheel that is being held rigid, on the pipe the firmware listens
 to:
 .Pp
-.Dl $ sudo probe_intr -A
+.Dl $ sudo probe_intr -a 0
 .Sh SEE ALSO
 .Xr crossover-wheel 7
 .Pp

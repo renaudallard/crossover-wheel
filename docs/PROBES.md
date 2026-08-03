@@ -248,7 +248,7 @@ sudo ./build/bin/probe_intr -r 270
 sudo ./build/bin/probe_intr -r 1080
 sudo ./build/bin/probe_intr -g 5000
 sudo ./build/bin/probe_intr -a 10000
-sudo ./build/bin/probe_intr -A
+sudo ./build/bin/probe_intr -a 0
 ```
 
 Its packets come from `src/lib/encode.c`, the same encoders the daemon uses,
@@ -284,7 +284,7 @@ Then the single most informative command, on a wheel you have just found to
 be rigid, is the one that releases the spring:
 
 ```sh
-./build/bin/probe_setreport -A
+./build/bin/probe_setreport -a 0
 ```
 
 If the wheel frees up, the firmware has been obeying all along and E1 is
@@ -299,7 +299,7 @@ effect is unmistakable: the wheel starts pulling itself back to centre
 immediately, with no need to hunt for the end stops. Switch it back off with:
 
 ```sh
-./build/bin/probe_setreport -A
+./build/bin/probe_setreport -a 0
 ```
 
 **A success return is not the answer.** macOS can accept a report that the
@@ -309,17 +309,17 @@ work through the framings before concluding anything:
 
 ```sh
 ./build/bin/probe_setreport -i 0x0a
-./build/bin/probe_setreport -A
+./build/bin/probe_setreport -a 0
 ./build/bin/probe_setreport -P
-./build/bin/probe_setreport -A
+./build/bin/probe_setreport -a 0
 ./build/bin/probe_setreport -i 0x0a -P
-./build/bin/probe_setreport -A
+./build/bin/probe_setreport -a 0
 ./build/bin/probe_setreport -n 1
 ```
 
-**The `-A` between each one is not optional.** Every variant here is the
+**The `-a 0` between each one is not optional.** Every variant here is the
 autocenter action, which sets the spring to maximum and enables it. Without
-disabling it in between, a wheel that obeyed the first command is held rigid
+releasing it in between, a wheel that obeyed the first command is held rigid
 for the rest of the run, and a wheel that obeys nothing looks exactly the
 same. Turn the wheel by hand after each pair: the question is whether it
 changes, not whether it is stiff.
@@ -427,7 +427,7 @@ waveform we can stop downgrading. Stop it the same way as above.
 | --- | --- |
 | Wheel already at `B677` | No control transfer, no root, anywhere. Best case. |
 | `-A` frees a rigid wheel | E1 is answered yes. The firmware has been obeying all along and the architecture works. Build it. |
-| `probe_intr -A` frees it but `probe_setreport -A` does not | C7 confirmed on this wheel. Settings are reachable and `t150ctl` can be built; driving effects during a game is not, because it needs the pipe held. |
+| `probe_intr -a 0` frees it but `probe_setreport -a 0` does not | C7 confirmed on this wheel. Settings are reachable and `t150ctl` can be built; driving effects during a game is not, because it needs the pipe held. |
 | Neither frees it | The transport is not the problem and the packet layout is. Better than the alternative, and where PROTOCOL.md gets rechecked. |
 | `-w` works without `sudo` | The finished tool never needs a password. Record it. |
 | Wheel locked rigid and will not turn by hand | Do question 2, then question 3. Question 3 is the one most likely to free it. |
