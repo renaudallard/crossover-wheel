@@ -610,6 +610,56 @@ sudo probe_intr -N 32 -H 15 -x "42 04" -x "40 03 00 00" -x "43 60" \
 > `hid-t150/hid-t150.c` `t150_init()`, and `hid-t150/input.c`
 > `t150_input_open()` and `t150_input_close()`.
 
+**A27. The driver repository ships packet captures, and they settle four
+things.** `traffic/old_caps/*.pcapng`, readable with `tshark -r f -Y
+usb.capdata -T fields -e usb.capdata`. Provenance is not recorded, so treat
+them as "a working session" rather than as any particular driver.
+
+**`42 04` is on the wire**, which confirms A26 independently of the source.
+`test5.pcapng` opens a session like this, in order:
+
+```
+00 00 / 00 02 / 00 00 / 00 01 / 00 00 / 20 00
+42 04                                  <- open the input
+40 04 01 00                            <- autocenter enable
+40 03 0c 00                            <- autocenter force 12
+0a 04 12 10 00 ... (15 bytes)
+0a 04 00 0c 00 ... (15 bytes)
+0a 04 90 03 00 ... (15 bytes)
+42 05
+```
+
+Two details beyond the open. The enable is sent **before** the force, where
+this project sends force then enable. And the `0a 04` packets are padded to 15
+bytes, where `probe_intr -I` sends them at 8.
+
+**The control packet is exactly as documented.** `force_feedback.pcapng` ends
+an upload with `41 00 41 01` and `41 01 41 01`, playing slots 0 and 1. That is
+`[0x41, slot, 0x41, 0x01]`, confirmed on the wire.
+
+**`ff_commit` at 15 bytes and a periodic `ff_update` at 8 are confirmed too.**
+
+**But `ff_first` is 9 bytes, not 11, and no capture anywhere contains the
+`46 54` trailer.** Every `ff_first` in every capture is nine bytes:
+
+```
+02 1c 00 55 01 79 71 05 00      class 02, slot 0, attack 0x0155/0x79,
+                                fade 0x0571/0x00
+02 38 00 0c 0a 00 c0 01 18      class 02, slot 1
+```
+
+The layout matches PROTOCOL.md field for field and then simply stops, where
+this project sends `46 54` after it. Those two bytes exist only in
+`struct ff_first`, which is 11 bytes packed and which the current driver does
+send in full, so both forms may work. **Nothing has ever tested the 9-byte
+form on this wheel**, and it sits at the head of every effect upload that has
+failed, which makes it the cheapest remaining variable after the open command.
+
+The observed upload order is also not quite the documented one: `ff_first`,
+`ff_commit`, `ff_first` again, `ff_update`, `ff_commit` again, then play. That
+reads as create-then-modify rather than a different protocol, and the
+three-packet order this project sends is what the driver does.
+
 **A21. The wheel puts all thirteen buttons on the wire. Whatever loses them
 is above the USB layer.** A18 is answered, and against the wheel.
 

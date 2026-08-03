@@ -463,6 +463,24 @@ sudo ./build/bin/probe_intr -N 32 -H 15 \
     -x "41 00 41 01"
 ```
 
+**And once more with the nine-byte `ff_first`.** No capture of a working
+session contains the `46 54` trailer; every one of them stops at nine bytes.
+Drop those two bytes and change nothing else:
+
+```sh
+sudo ./build/bin/probe_intr -N 32 -H 15 \
+    -x "42 04" \
+    -x "40 03 00 00" \
+    -x "43 60" \
+    -x "02 1c 00 00 00 00 00 00 00" \
+    -x "03 0e 00 20" \
+    -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
+    -x "41 00 41 01"
+```
+
+Between the open command and this, that is two variables and four runs. See
+RESEARCH.md A26 and A27.
+
 `-H` is not optional here: the open only lasts as long as the session does.
 RESEARCH.md A26.
 

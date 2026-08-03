@@ -546,6 +546,7 @@ moves is the wheel moving itself:
 
 ```sh
 sudo ./build/bin/probe_intr -N 32 -H 15 \
+    -x "42 04" \
     -x "40 03 00 00" \
     -x "43 60" \
     -x "02 1c 00 00 00 00 00 00 00 46 54" \
@@ -554,8 +555,24 @@ sudo ./build/bin/probe_intr -N 32 -H 15 \
     -x "41 00 41 01"
 ```
 
-It prints the wheel's own reports for those fifteen seconds and then hands the
-wheel back on its own. `nothing ever changed` at the end means the effect did
+**`42 04` first opens the wheel's input**, which is the leading suspect and
+which no run before this ever sent. Then once more with the nine-byte
+`ff_first`, because no capture of a working session carries the `46 54`
+trailer:
+
+```sh
+sudo ./build/bin/probe_intr -N 32 -H 15 \
+    -x "42 04" \
+    -x "40 03 00 00" \
+    -x "43 60" \
+    -x "02 1c 00 00 00 00 00 00 00" \
+    -x "03 0e 00 20" \
+    -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
+    -x "41 00 41 01"
+```
+
+Each prints the wheel's own reports for those fifteen seconds and then hands
+the wheel back on its own. `nothing ever changed` at the end means the effect did
 nothing; a run of changing steering bytes with your hands off is the answer we
 are looking for.
 
