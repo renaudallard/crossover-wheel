@@ -397,8 +397,16 @@ train's own friction, so it resists leaving centre and cannot drag the wheel
 back. The earlier "does not restore" reading was the friction, not the
 opcode.
 
+A fourth run characterised it further at force 10: past roughly 25 degrees the
+wheel gets harder to turn, and on release it returns only part way, to a
+smaller angle rather than to centre. From about 120 degrees it returns further.
+That is a spring whose restoring torque grows with displacement, working
+against a fixed friction it can only overcome once it is wound up far enough.
+
 So `0x03` is a spring force in hardware percent, exactly as PROTOCOL.md
-records it, and `t150ctl` can present it as one.
+records it, and `t150ctl` can present it as one. A user interface should not
+promise that a low setting recentres the wheel, because below roughly a
+quarter turn it will not.
 
 **A18. The wheel's buttons do not reach Wine in firmware mode. Cause not yet
 established.** Superseded by A21, which established it: the wheel puts them
@@ -513,6 +521,55 @@ Only after all three, and only if it is still silent, is the layout the
 suspect. The answer then is a `usbmon` capture on the Linux machine with
 `scarburato/t150_driver` driving the wheel, which shows the real bytes rather
 than anyone's reading of the source, including the open packet's.
+
+**A23. An idle T150 is completely static on the wire, which is the control an
+effect test needs.** Measured: `probe_intr -R 15` with nothing touched
+returned **61 reports, 1 of them different from the one before**. So the wheel
+emits roughly four reports a second at rest and its report never changes.
+
+That makes `-H` decisive when it is run properly. If an effect renders, the
+steering bytes move with nobody touching the wheel, against a baseline that is
+otherwise flat. Nothing else this project can measure separates "the effect
+did nothing" from "the effect was never running".
+
+**A24. Force feedback through the HID path, properly run, moved nothing.**
+The first genuinely clean effect test. `probe_setreport` with all six packets
+on one open handle, the autocenter cleared first and the gain set:
+
+```
+40 03 00 00 / 43 60 / 02 1c 00 .. 46 54 / 03 0e 00 20 /
+01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00 / 41 00 41 01
+```
+
+Every write accepted, the wheel did not move. None of A20's confounds apply
+to this one: the autocenter was at zero, the gain was set, all six packets
+went out, and the HID path does not re-enumerate the wheel. The one thing it
+does do is close the handle immediately afterwards, and whether an effect
+survives an `IOHIDDeviceClose` is unknown.
+
+**The interrupt OUT run alongside it is still not readable**, for a reason
+that is this project's fault again. `-H` reused the reader's own instructions,
+which tell the tester to work every button and pedal, so the wheel was being
+handled throughout its fifteen seconds and its five thousand changing reports
+say nothing about the effect. Fixed, and the retest is one command.
+
+So the position is: **one clean negative on the HID path, none yet on the
+interrupt OUT pipe.** What has still never been tried is the open command.
+The T300RS driver sends `60 01 05` before any effect (A20), the T150 driver
+has an equivalent whose bytes are left null in its published source, and no
+run has ever sent one. That is now the leading explanation, ahead of the
+layout.
+
+**A25. Enabling winebus's hidraw backend makes the wheel vanish from
+CrossOver entirely.** Measured: with hidraw and SDL both enabled in
+CrossOver's controller settings the wheel is not listed at all; with either
+off it is listed. In every combination CrossOver registers no button and no
+axis movement.
+
+That is a real datum for B8 rather than a workaround: the hidraw path is the
+one that would carry the wheel's own report descriptor into the bottle, and it
+drops the device instead of describing it. Whatever is losing the buttons is
+in that neighbourhood.
 
 **A21. The wheel puts all thirteen buttons on the wire. Whatever loses them
 is above the USB layer.** A18 is answered, and against the wheel.

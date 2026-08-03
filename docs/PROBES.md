@@ -380,13 +380,17 @@ The settings opcodes prove the transport, on both pipes, and A19 settled
 that. This is the part the daemon will actually spend its time on, and it is
 the one thing that has never worked.
 
-**Where this stands: two runs have tried and neither could have worked.** The
-interrupt OUT run cleared the autocenter and set the gain correctly, but
-`probe_intr` handed the wheel back the instant the upload finished, and the
-release re-enumerates the device, so the effect was destroyed within
-milliseconds. The HID run had no such problem but left the autocenter at full
-strength, fighting anything the effect did. So force feedback is untested
-rather than broken. RESEARCH.md A20.
+**Where this stands: one clean negative, on the HID path.** All six packets
+on one handle, autocenter cleared, gain set, and the wheel did not move
+(RESEARCH.md A24). The interrupt OUT equivalent has still not produced a
+readable run: `-H` was telling the tester to work every button while it held
+the wheel, so self-movement could not be seen. That is fixed and the retest is
+one command.
+
+**The leading suspect is now a missing open command**, not the packet layout.
+Akellacom's T300RS driver sends `60 01 05` before range, gain or any effect,
+and the T150 driver's equivalent is left null in its published source, so no
+run here has ever sent one. RESEARCH.md A20 and A24.
 
 An effect uploads as three packets that correlate through slot keys, then a
 fourth starts it. `-x` is repeatable and every packet goes out on one open
@@ -405,11 +409,13 @@ constant force at half level, endless:
     -x "41 00 41 01"
 ```
 
-**On the interrupt OUT pipe, holding the wheel this time.** `-H` keeps the
+**On the interrupt OUT pipe, holding the wheel and hands off.** `-H` keeps the
 session open for fifteen seconds and reads the IN pipe while it waits, so the
 effect has time to do something and its reports are visible. `-N 32` pads
-every packet to the endpoint size, which is what Akellacom's working T300RS
-driver does:
+every packet to the endpoint size, which is what the T300RS driver does.
+**Take your hands off the wheel while it runs**: an idle T150 sends about four
+reports a second and never changes them, so anything that moves is the wheel
+moving itself:
 
 ```sh
 sudo ./build/bin/probe_intr -N 32 -H 15 \

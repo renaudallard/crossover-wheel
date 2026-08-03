@@ -18,11 +18,12 @@ extension approval.
 > wheel's input open. Only the force releases it. Nothing was ever wrong with
 > the wheel, the pipes, or the settings protocol.
 >
-> **Force feedback has still never moved the wheel**, though neither attempt
-> so far was capable of showing it: one ran with the autocenter at full
-> strength fighting it, and the other handed the wheel back, which
-> re-enumerates it, milliseconds after the upload. Both are fixed in the
-> tools now and the retest is the next thing to run.
+> **Force feedback has still never moved the wheel.** There is now one clean
+> negative, through the HID path with the autocenter cleared, the gain set and
+> all six packets on one handle. The leading suspect is no longer the packet
+> layout but a missing step: the T300RS driver sends an explicit open command
+> before any effect, the T150's Linux driver has an equivalent whose bytes are
+> left null in its published source, and this project has never sent one.
 >
 > Separately, the wheel puts all thirteen of its buttons on the wire and
 > CrossOver registers none of them, which is an input path problem in macOS
@@ -151,32 +152,27 @@ needs no privilege at all.
 What is left is three experiments, all needing the Mac and **all independent
 of each other**.
 
-**1. Force feedback, which has never moved the wheel and has never had a fair
-test.** Two runs tried and neither could have worked. The interrupt OUT run
-uploaded the effect and then handed the wheel back, which re-enumerates it and
-destroys the effect within milliseconds. The HID run left the autocenter at
-full strength, fighting anything the effect did. Both are fixed:
-`probe_intr -H` holds the device open, and the procedure clears the autocenter
-first.
+**1. Force feedback, the one thing that has never worked.** There is now a
+clean negative on the HID path: six packets on one handle, autocenter cleared,
+gain set, no movement. The interrupt OUT equivalent has still not produced a
+readable run, because `-H` was telling the tester to work the buttons while it
+held the wheel, which makes self-movement impossible to see. That is fixed.
 
-Comparing against Akellacom's T300RS driver, which does deliver force feedback
-on macOS, gives three more things to change, all under
-[testing it today](#testing-it-today) and detailed in
-[`docs/RESEARCH.md`](docs/RESEARCH.md) A20:
+Two things to run, both under [testing it today](#testing-it-today):
 
-- **Hold the session open**, which is what `-H` is for.
-- **Send an open command first.** That driver sends `60 01 05` before range,
-  gain or any effect. It is the T300RS analogue of the T150 driver's
-  input-open callback, whose bytes are null in the published source and which
-  this project has never sent.
-- **Pad to the endpoint size and pace the packets.** It pads everything to 64
-  bytes and sleeps 50 ms between setup packets; we send bare 2 to 15-byte
-  packets back to back. `probe_intr -N 32` is the analogue.
+- **The `-H` retest, hands off.** An idle T150 emits about four reports a
+  second and never changes them, so a wheel that moves under an effect is
+  unmistakable against that baseline.
+- **The open command.** This is the leading suspect now. Akellacom's T300RS
+  driver sends `60 01 05` before range, gain or any effect, and the T150
+  driver's equivalent is left null in its published source, so no run here has
+  ever sent one. Nothing tells us the T150's bytes, which is why the `usbmon`
+  capture below matters more than it did.
 
-Only if it is still silent after all that is the layout in
-`docs/PROTOCOL.md` the suspect, and the answer then is a `usbmon` capture on
-the Linux machine with `scarburato/t150_driver` driving the wheel. Two things
-the encoders guess at settle on the way: whether a constant force tops out at
+If both fail, the answer is a `usbmon` capture on the Linux machine with
+`scarburato/t150_driver` driving the wheel. That shows the real bytes rather
+than anyone's reading of source, the open packet's included. Two things the
+encoders guess at settle on the way: whether a constant force tops out at
 `0x40` or `0x7f`, and whether type codes `0x4020` and `0x4021` are the square
 and triangle the Linux driver never implemented.
 
@@ -539,11 +535,12 @@ what the wheel powers up with:
 ./build/bin/probe_setreport -x "41 00 00 01"
 ```
 
-**On the interrupt OUT pipe, this time holding the wheel.** The last attempt
-here handed the wheel back the instant the upload finished, and the release
-re-enumerates the device, so the effect was destroyed before anyone could
-feel it. `-H` keeps the session open, and `-N 32` pads every packet to the
-endpoint size, which is what Akellacom's working T300RS driver does:
+**On the interrupt OUT pipe, holding the wheel and hands off.** `-H` keeps the
+session open, so the effect is not destroyed by the release, and `-N 32` pads
+every packet to the endpoint size, which is what Akellacom's working T300RS
+driver does. **Take your hands off the wheel while it runs.** An idle T150
+emits about four reports a second and never changes them, so anything that
+moves is the wheel moving itself:
 
 ```sh
 sudo ./build/bin/probe_intr -N 32 -H 15 \
@@ -555,17 +552,20 @@ sudo ./build/bin/probe_intr -N 32 -H 15 \
     -x "41 00 41 01"
 ```
 
-That prints the wheel's own reports for fifteen seconds while the effect
-should be running, so if the wheel starts pushing you will see it in the
-steering bytes as well as feel it. It hands the wheel back on its own
-afterwards.
+It prints the wheel's own reports for those fifteen seconds and then hands the
+wheel back on its own. `nothing ever changed` at the end means the effect did
+nothing; a run of changing steering bytes with your hands off is the answer we
+are looking for.
 
-**If both are silent, try it with the wheel's input held open**, by starting
-a game in a bottle or leaving CrossOver's controller panel showing the wheel,
-then running the `probe_setreport` form again. The driver's comment says the
-autocenter is active "while no input are open", so the firmware knows the
-difference, and the T300RS driver sends an explicit open command before any
-effect. See [`docs/RESEARCH.md`](docs/RESEARCH.md) A20.
+**If both are silent, the missing open command is the leading suspect.** Try
+the `probe_setreport` form again with the wheel's input held open, by starting
+a game in a bottle or leaving CrossOver's controller panel showing the wheel.
+The driver's comment says the autocenter is active "while no input are open",
+so the firmware distinguishes the two, and the T300RS driver sends an explicit
+`60 01 05` before any effect. The T150's equivalent is left null in its
+published source, so nobody knows its bytes and a `usbmon` capture on Linux is
+what would recover them. See [`docs/RESEARCH.md`](docs/RESEARCH.md) A20 and
+A24.
 
 **A7. Three cheap answers while you are set up.** Compare `03 0e 00 40`
 against `03 0e 00 7f` in A6: if they feel the same, a constant really does
