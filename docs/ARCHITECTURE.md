@@ -23,7 +23,9 @@ Two things are already true with nothing installed, and the design leans on
 both:
 
 - macOS enumerates the wheel as an ordinary joystick once it is in firmware
-  mode, so axes, pedals, buttons and the hat already reach games.
+  mode, so the steering and pedals already reach games. The buttons do not,
+  for a reason above the USB layer that is not yet diagnosed (RESEARCH.md
+  A21), and that is a gap in this claim rather than a change to the design.
 - CrossOver carries it into the bottle without any driver, and it opens the
   device without seizing it, so a second process can still write to it.
 
@@ -130,6 +132,12 @@ The proxy has never been executed. It cross builds and CI loads it on
 Windows, but there is no Wine on the development machine, so whether a bottle
 resolves its chain-load is unverified.
 
-The build order is Phase 0 first (see [PROBES.md](PROBES.md)), because a
-single measurement decides whether any of the rest is worth writing: whether
-an unprivileged `IOHIDDeviceSetReport` physically moves the wheel.
+The build order was Phase 0 first (see [PROBES.md](PROBES.md)), because a
+single measurement decided whether any of the rest was worth writing: whether
+an unprivileged `IOHIDDeviceSetReport` physically moves the wheel. **It does**,
+so the architecture above stands as drawn, and the daemon never has to take
+the wheel away from CrossOver. RESEARCH.md A19.
+
+What Phase 0 has not produced is a force feedback effect. Settings work on
+both transports; no effect has yet moved the wheel on either, and RESEARCH.md
+A20 explains why neither attempt so far could have.

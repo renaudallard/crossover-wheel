@@ -96,7 +96,11 @@ The port and token, removed on exit.
 There is no macOS HID backend yet, so
 .Nm
 drives nothing: every packet goes to a log instead, and it says so at
-startup. Whether the wheel honours these packets at all is the measurement
-described in
-.Pa docs/PROBES.md ,
-and it has not been made.
+startup.
+.Pp
+The wheel does honour the settings packets, measured through an unprivileged
+.Fn IOHIDDeviceSetReport
+with the device left to macOS, which is the transport this daemon is designed
+around. The force feedback packets have never moved it on any transport. The
+procedure is in
+.Pa docs/PROBES.md .

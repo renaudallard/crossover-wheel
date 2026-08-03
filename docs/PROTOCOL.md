@@ -303,10 +303,12 @@ projected onto the X axis for a constant force and ignored for everything
 else, because that is what the driver does. A periodic arguably deserves the
 same treatment. Left alone until hardware can say.
 
-Note that `ff_commit` is 15 bytes while the declared output report is 14. If
-the HID framing turns out to be the one the firmware honours, the report id
-byte accounts for the difference and the payload is 14; if the raw framing
-wins, the packet is 15 bytes on the wire. Another thing Phase 0 settles.
+Note that `ff_commit` is 15 bytes while the declared output report is 14.
+Both framings are known to reach the firmware for settings, so that no longer
+picks a winner. macOS accepted a 15-byte unnumbered payload without
+complaint, but nothing confirms all 15 bytes arrived, and no effect has yet
+rendered on either transport. This is the one place the length question could
+still bite.
 
 ## Effect coverage
 

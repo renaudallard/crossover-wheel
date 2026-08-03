@@ -228,10 +228,12 @@ the daemon holds it, which is not a degraded mode but a different design.
 
 ## Question 3: does the wheel listen on the interrupt OUT pipe?
 
-**Run this before concluding anything from question 4.** RESEARCH.md C7 says
-Thrustmaster firmware acknowledges the control SET_REPORT pipe and ignores
-it, which is exactly what question 4 keeps measuring, and that the pipe it
-listens to is interrupt OUT. `probe_intr` writes there.
+**The cross-check on question 4, not a replacement for it.** RESEARCH.md C7
+predicted that Thrustmaster firmware acknowledges the control SET_REPORT pipe
+and ignores it, and that the pipe it listens to is interrupt OUT. Measured
+false for this wheel: both pipes work. Keeping this question is still worth
+it, because two independent transports agreeing is what makes a force
+feedback failure interpretable. `probe_intr` writes on interrupt OUT.
 
 Reaching that pipe means capturing the wheel from macOS, so this one **needs
 root**, unlike everything else here. It captures, writes, and hands the wheel
@@ -376,22 +378,22 @@ important.
 
 The settings opcodes prove the transport, on both pipes, and A19 settled
 that. This is the part the daemon will actually spend its time on, and it is
-the one thing that still does not work.
+the one thing that has never worked.
 
-**Where this stands.** The sequence below has been run on the interrupt OUT
-pipe with the autocenter cleared and the gain set, for a constant force and
-for a periodic. Every write was accepted and the wheel did not move. So run
-it on the **HID path**, which no effect upload has ever used and which is now
-known to reach the firmware.
+**Where this stands: two runs have tried and neither could have worked.** The
+interrupt OUT run cleared the autocenter and set the gain correctly, but
+`probe_intr` handed the wheel back the instant the upload finished, and the
+release re-enumerates the device, so the effect was destroyed within
+milliseconds. The HID run had no such problem but left the autocenter at full
+strength, fighting anything the effect did. So force feedback is untested
+rather than broken. RESEARCH.md A20.
 
 An effect uploads as three packets that correlate through slot keys, then a
 fourth starts it. `-x` is repeatable and every packet goes out on one open
-handle, which matters because nobody knows whether the wheel keeps an
-uploaded effect across a close.
+handle.
 
-**Clear the autocenter first, in the same run.** At full force it fights
-anything the effect does, and it is where the previous command left it. Slot
-0, a constant force at half level, endless:
+**On the HID path**, with the autocenter cleared first this time. Slot 0, a
+constant force at half level, endless:
 
 ```sh
 ./build/bin/probe_setreport \
@@ -403,18 +405,14 @@ anything the effect does, and it is where the previous command left it. Slot
     -x "41 00 41 01"
 ```
 
-**Then again with the wheel's input held open**, by starting a game in a
-bottle or leaving CrossOver's controller panel showing the wheel. The Linux
-driver's comment says the autocenter is active "while no input are open", so
-the firmware distinguishes an opened input from a closed one. If effects need
-one, `probe_intr` can never demonstrate an effect at all, because a captured
-device has nothing open.
-
-The interrupt OUT form, for reference. It is the one already run and already
-silent, and it needs one capture because the release re-enumerates the wheel:
+**On the interrupt OUT pipe, holding the wheel this time.** `-H` keeps the
+session open for fifteen seconds and reads the IN pipe while it waits, so the
+effect has time to do something and its reports are visible. `-N 32` pads
+every packet to the endpoint size, which is what Akellacom's working T300RS
+driver does:
 
 ```sh
-sudo ./build/bin/probe_intr \
+sudo ./build/bin/probe_intr -N 32 -H 15 \
     -x "40 03 00 00" \
     -x "43 60" \
     -x "02 1c 00 00 00 00 00 00 00 46 54" \
@@ -434,18 +432,25 @@ the ceiling is real and `T150_FF_LEVEL_MAX` is right; if `0x7f` is stronger,
 raise it.
 
 **Hold the wheel or keep a hand on the plug.** A constant force with no
-duration limit does not stop on its own. Stop it with:
+duration limit does not stop on its own. The `-H` form releases the wheel by
+itself; stop the HID one with:
 
 ```sh
 ./build/bin/probe_setreport -x "41 00 00 01"
 ```
 
-The settings packets move the wheel on both pipes, so if this still does
-nothing the transport is fine and the force feedback layout is wrong, which
-is a much better place to be than the alternative. The next step from there
-is a `usbmon` capture on the Linux machine while `scarburato/t150_driver`
-drives the wheel, which shows the real bytes rather than anyone's reading of
-the source.
+**Then again with the wheel's input held open**, by starting a game in a
+bottle or leaving CrossOver's controller panel showing the wheel, and running
+the `probe_setreport` form again. The Linux driver's comment says the
+autocenter is active "while no input are open", so the firmware distinguishes
+an opened input from a closed one, and the T300RS driver sends an explicit
+open command, `60 01 05`, before any effect. The T150's equivalent is left
+null in its published source and this project has never sent it.
+
+If everything above is silent, the layout is finally the suspect, and the
+answer is a `usbmon` capture on the Linux machine while
+`scarburato/t150_driver` drives the wheel. That shows the real bytes rather
+than anyone's reading of the source, including the open packet's.
 
 ### While you are here: the two missing waveforms
 
@@ -474,11 +479,12 @@ as above.
 
 ## Question 6: do the wheel's buttons reach the wire?
 
-In firmware mode CrossOver lists the wheel but registers none of its
-buttons, though the wheel's own report descriptor declares thirteen of them
-in report `0x07`, after four 16-bit axes and before the hat. Either the
-wheel is not sending the bits or something above the USB layer is dropping
-them, and nothing that reads HID node properties can tell those apart.
+**Answered, and against the wheel: it sends them.** In firmware mode
+CrossOver lists the wheel but registers none of its buttons, though the
+wheel's own report descriptor declares thirteen of them in report `0x07`,
+after four 16-bit axes and before the hat. This run showed all thirteen
+changing on the wire, so the loss is above the USB layer. RESEARCH.md A21.
+Rerun it to reproduce that, or against a different wheel.
 
 ```sh
 sudo ./build/bin/probe_intr -R 15
@@ -498,8 +504,8 @@ its four 16-bit axes, so those are the ones to look at.
 
 | Outcome | Meaning |
 | --- | --- |
-| A line for each press | The wheel is fine. The loss is in macOS, SDL or winebus, and B8 is where to look. An input problem, not a force feedback one. |
-| No line for any press, stream otherwise changing | The wheel is not reporting buttons in this mode, which would be a firmware mode property worth knowing before anything depends on it. |
+| A line for each press | **What happened.** The wheel is fine and the loss is in macOS, SDL or winebus, where B8 is the place to look. An input problem, not a force feedback one. |
+| No line for any press, stream otherwise changing | Would mean the wheel is not reporting buttons in this mode. Did not happen. |
 | Nothing at all | The wheel sends nothing while captured. Check it is still attached, then compare against boot mode, which declares a different report entirely. |
 | `the read failed` | The read path itself broke, so the run says nothing either way. Rerun it before concluding anything. |
 

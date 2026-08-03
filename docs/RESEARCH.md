@@ -215,16 +215,14 @@ speed, so at a standstill it is zero, and a shorted bridge feels like treacle
 rather than a wall.
 
 So "cannot be turned" is very likely "very strongly held", which is what a
-wheel sitting at maximum autocenter feels like to a light grip. That is
-consistent with everything else and it keeps hypothesis 1 alive: the wheel is
-holding, and nothing this project sends persuades it to stop.
+wheel sitting at maximum autocenter feels like to a light grip. **That is
+exactly what it was.** `40 03 00 00` frees the wheel completely, on either
+pipe, and the reason nothing this project sent ever persuaded it to stop is
+that everything sent was `-A`. A15 and A19.
 
-The cheap test that separates electrical from mechanical, if there is any
-doubt left: **pull the mains lead and leave USB connected.** The motor rail
-comes from mains, the logic rail from USB. If the wheel frees up, the hold is
-being produced electrically and the hardware is fine. Do not escalate force
-to find out: a stripped gear and a shredded belt are this wheel's signature
-failures.
+The electrical against mechanical question this section proposed to settle by
+pulling the mains lead is therefore closed, and the answer is neither: the
+hold was a firmware setting doing precisely what it was asked to.
 
 > T150 motor output from published reviews; dynamic braking behaviour from
 > standard motor control references. The mains-out test is reasoning from the
@@ -242,18 +240,18 @@ of tree and has to be installed deliberately. So a stock Linux box reaches
 exactly the state this project reaches on macOS: wheel switched to `b677`,
 nothing driving it, wheel holding itself.
 
-Two OSes agreeing therefore says the behaviour is not macOS-specific, and
-says nothing yet about whether the wheel is faulty.
+Two OSes agreeing says the behaviour is not macOS-specific, and it is not a
+fault either: the wheel holds a full autocenter until something tells it not
+to, and neither OS does on its own. A19.
 
 **This makes the decisive experiment cheap, and it needs no Mac.** Install
 `scarburato/t150_driver` on that same Linux machine, which is a DKMS module
 with an `install.sh`, and watch the wheel.
 
-- **It releases** — the wheel and the protocol are both fine, the T150 simply
-  requires an initialisation this project has never sent, and hypothesis 2
-  above is the answer.
-- **It stays rigid** — a driver written for this exact wheel cannot free it
-  either, and the problem is the wheel or its firmware revision.
+- **It releases** — the wheel and the protocol are both fine. This is what
+  happened, and it did not need Linux: `40 03 00 00` from macOS does it.
+- **It stays rigid** — would have meant the wheel or its firmware revision.
+  Did not happen.
 
 And whichever way it goes, the same setup yields something this project has
 wanted from the beginning. `usbmon` on that machine captures the exact bytes
@@ -284,10 +282,10 @@ were guesses:
 The wheel has exactly two pipes on interface 0. The 32-byte maximum means
 every packet in PROTOCOL.md fits one transfer, `ff_commit` included at 15.
 
-What this run does **not** record is whether the wheel physically reacted,
-which is still the only thing E1 needs. Capture, write and release all
-returning success says the bytes reached the firmware's doorstep; it does not
-say the firmware acted on them.
+What this run did **not** record is whether the wheel physically reacted,
+which was the only thing E1 needed. Capture, write and release all returning
+success says the bytes reached the firmware's doorstep; it does not say the
+firmware acted on them. A15 later recorded the reaction, and E1 is answered.
 
 **A13. The wheel is fine, and the initialisation was incomplete.** On a Linux
 machine the same wheel switches to `b677`, reports itself as a
@@ -395,7 +393,9 @@ expose the control without settling what to call it; the effect's shape is
 worth resolving before any autocenter figure appears in a user interface.
 
 **A18. The wheel's buttons do not reach Wine in firmware mode. Cause not yet
-established.** Observed: with the wheel at `0xb677`, CrossOver's game
+established.** Superseded by A21, which established it: the wheel puts them
+on the wire, so the loss is above the USB layer. Kept for the descriptor
+decode and for what `-R` was built to answer. Observed: with the wheel at `0xb677`, CrossOver's game
 controller panel lists the wheel, but no button on it registers.
 
 The wheel's own descriptor does declare them. Report `0x07` carries four
@@ -439,31 +439,66 @@ plan. The design problem recorded here and in the README is withdrawn.
 It also says the six sessions of "the firmware ignores the HID layer" were
 an artefact of `-A`. Both pipes work. Neither was ever the problem.
 
-**A20. Force feedback does not work on either pipe, so the effect layout is
-wrong rather than the transport.** Measured with the autocenter cleared and
-the gain set in the same capture, all six packets on interrupt OUT, for a
-constant force and for a periodic:
+**A20. Force feedback has moved nothing yet, and neither run that tried was
+capable of showing it.** An earlier draft of this entry concluded that the
+effect layout must therefore be wrong. That conclusion is withdrawn: it does
+not follow, because both attempts were confounded, each in a different way.
+
+**The interrupt OUT attempt.** All six packets in one capture, autocenter
+cleared, gain set, for a constant force and again for a periodic with type
+`0x4020`:
 
 ```
 40 03 00 00 / 43 60 / 02 1c 00 .. 46 54 / 03 0e 00 20 /
 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00 / 41 00 41 01
 ```
 
-Every write accepted, the wheel did not move. Repeated with a periodic and
-type `0x4020`: the same. With A19 establishing that both transports reach the
-firmware, this is now a statement about `docs/PROTOCOL.md`, not about macOS.
+Every write accepted, no movement. But `probe_intr` hands the wheel back the
+moment the last packet goes out, and the release is a
+`USBDeviceReEnumerate`. **An uploaded effect cannot survive that**, so a
+correct upload and a wrong one produce the same silence. `-H` was added to
+hold the device open instead, and no run has yet used it.
 
-Two things are worth trying before treating the layout as wrong. The upload
-has never been sent through the HID path, which A19 has now shown to work and
-which leaves macOS owning the device. And the driver's own comment says the
-autocenter is active "while no input are open", so the firmware distinguishes
-an opened input from a closed one, and a captured device has nothing open at
-all. If effects only render for an opened input, `probe_intr` cannot ever
-demonstrate one and `probe_setreport` is the only tool that can.
+**The HID attempt.** The same four effect packets through `probe_setreport`,
+which A19 later showed reaches the firmware. Also silent, and also
+confounded: the last autocenter force sent before it was `40 03 64 00`, and
+everything after that was `-A`, which clears nothing. **The effect was
+working against a full-strength autocenter throughout.**
 
-Failing both, the answer is a `usbmon` capture on the Linux machine with
+So the honest position is that force feedback is untested, not that it fails.
+The three things to change, all from comparing against Akellacom's T300RS
+driver, which does deliver force feedback on macOS:
+
+- **Hold the session open.** Its `thrustmaster_usb_start()` captures the
+  wheel, keeps the interface open, and pumps a `ReadPipeAsync` on the IN pipe
+  for the life of the session. `probe_intr -H` now does the same.
+- **Open force feedback first.** Before range, before gain, before any
+  effect, it sends `60 01 05`: report id `0x60`, command `0x01`
+  "openClose", argument `0x05`. That is the T300RS analogue of the T150
+  driver's input-open callback, whose bytes are left null in the published
+  source and which this project has therefore never sent. Its existence turns
+  the "effects may need an opened input" guess into something with prior art.
+- **Pad and pace.** Every packet it sends is zero-padded to 64 bytes with
+  `memset` then `WritePipe(..., 64)`, and it sleeps 50 ms between setup
+  packets. This project sends bare 2 to 15-byte packets back to back. The
+  T150's OUT endpoint maxes at 32, so 32 is the analogue, and `probe_intr -N`
+  has always been able to do it.
+
+**None of the T300RS bytes transfer.** Its command set is different
+throughout: everything carries a `0x60` report id prefix and the commands are
+`0x01`, `0x02`, `0x08`, `0x6A`, `0x89`, where the T150 uses `0x40`, `0x43`,
+`0x02`, `0x03`, `0x41`. What transfers is the shape: open first, pad, pace,
+hold.
+
+> Akellacom/thrustmaster_t300rs_gt_macos_driver,
+> `Sources/CUSBModeSwitch/CUSBModeSwitch.c` `thrustmaster_usb_start()` and
+> `ff_constant_inner()`, and `Sources/ThrustmasterWheel/T300RSProtocol.swift`
+> `SetupCommand.openClose` and `openCommand`.
+
+Only after all three, and only if it is still silent, is the layout the
+suspect. The answer then is a `usbmon` capture on the Linux machine with
 `scarburato/t150_driver` driving the wheel, which shows the real bytes rather
-than anyone's reading of the source.
+than anyone's reading of the source, including the open packet's.
 
 **A21. The wheel puts all thirteen buttons on the wire. Whatever loses them
 is above the USB layer.** A18 is answered, and against the wheel.
@@ -686,9 +721,9 @@ the whole driver returns nothing.
 > `usb_sndintpipe()`. Its own `traffic/old_caps/t150_test.py` does the same
 > from userspace with libusb, claiming interface 0 and writing to `0x01`.
 >
-> **This is the single biggest risk in the project.** C2 proves Thrustmaster
-> firmware can accept HID output reports; C3 means nobody has demonstrated
-> that the T150's does.
+> **This was the single biggest risk in the project, and A19 retired it.** C2
+> proves Thrustmaster firmware can accept HID output reports, C3 meant nobody
+> had demonstrated that the T150's does, and now someone has.
 
 **C4. On Linux, a SET_REPORT on an output report goes out the interrupt OUT
 endpoint** when the device has one, falling back to the control pipe only
@@ -743,11 +778,11 @@ and took the device away from the HID driver to write on the interrupt OUT
 pipe instead. It also confirms E3's 62-byte clip, which until now rested on a
 single second-hand report.
 
-That is precisely the shape of what was measured here: every write accepted,
-nothing ever happens. It is C3 arriving as feared, one layer further out than
-expected. C3 said the T150's driver never uses the HID layer; C7 says that on
-macOS the HID layer is the only thing an unprivileged process has, and the
-firmware does not listen to it.
+That was precisely the shape of what had been measured here at the time:
+every write accepted, nothing ever happening. It looked like C3 arriving as
+feared, one layer further out than expected. It was not. Every one of those
+runs tried to release the wheel with `-A`, which cannot, so an obedient
+firmware and a deaf one produced identical results. A15 and A19.
 
 **Two things stop this being conclusive for this project.** It is a T300RS
 finding, not a T150 one, and the T150's protocol and firmware differ. And the
@@ -755,8 +790,9 @@ project has not itself demonstrated which pipe `IOHIDDeviceSetReport` uses on
 macOS 26; the claim that it is the control pipe is Akellacom's, inferred from
 behaviour rather than from Apple's sources, which are closed.
 
-It is nonetheless the best available explanation of A8, and it should be
-treated as the leading hypothesis rather than as one of several.
+It was the best available explanation of A8 at the time, and it was wrong.
+A19 measured `IOHIDDeviceSetReport` moving this wheel, and A8's real cause
+was `-A`, which is A15.
 
 > `Sources/CUSBModeSwitch/CUSBModeSwitch.c`, the comment above
 > `thrustmaster_configure_wheel()`, and its use of `USBInterfaceOpenSeize`
@@ -786,23 +822,24 @@ second path owns the device. Its native and ETS2 modes additionally need SIP
 and AMFI disabled, but only because they publish a virtual HID device, which
 this project does not do (D2).
 
-**What that means here, split honestly in two:**
+**What that means here, with the parts that have since been measured:**
 
-- **The settings half of this project is unblocked.** Rotation range, gain
-  and autocenter are exactly what `thrustmaster_configure_wheel()` sets, by
-  briefly capturing the wheel and letting it go. `t150ctl` can be built that
-  way, needs root but no SIP or AMFI change, and leaves CrossOver's wheel
-  alone afterwards because the settings persist in the wheel's own firmware.
-  It also predicts something testable: sending `40 04 00 00` down that pipe
-  should release the autocenter and free the rigid wheel, which would
-  simultaneously prove the wheel healthy, the encoders correct and the pipe
-  the culprit.
-- **The game-driven half is not.** Continuous per-effect writes need the
-  interrupt OUT pipe held open, and holding it means capturing the device,
-  and capturing it takes the wheel away from CrossOver. That is the exact
-  trade B6 and D5 were written to avoid, and no amount of care avoids it: the
-  wheel cannot be owned by the daemon and read by the bottle at the same
-  time.
+- **The settings half of this project is unblocked, and more cheaply than
+  this suggested.** Rotation range, gain and autocenter are exactly what
+  `thrustmaster_configure_wheel()` sets, by briefly capturing the wheel and
+  letting it go, and `t150ctl` could be built that way. It does not have to
+  be: A19 showed the same settings work through `IOHIDDeviceSetReport` with
+  no capture and no root at all.
+- **The prediction written here was wrong, and expensively so.** It said
+  sending `40 04 00 00` down the interrupt OUT pipe should release the
+  autocenter and free the wheel. `0x04` is the enable flag and frees nothing;
+  `40 03 00 00` is what does. Following it cost several sessions. See A15.
+- **The game-driven half is still open, but not for the reason given.** The
+  claim was that continuous writes need the interrupt OUT pipe held, and that
+  holding it takes the wheel from CrossOver. The first half no longer follows
+  now that the HID path is known to carry settings; whether it carries
+  effects is untested, because no effect has been made to render on any pipe.
+  A20 is where that stands.
 
 **C8. The same project shows what a T-series wheel wants before it will
 behave.** `T300RSProtocol.swift` carries a set of pre-initialisation packets
@@ -822,8 +859,9 @@ the same conclusion as C7 reached from the other direction. Their model table
 also lists the T150 as `0x0603`, the same two bytes the probes read here in
 the other order.
 
-This is the initialisation this project has never sent and could not send,
-because it has no route to the interrupt OUT pipe. Whether the T150 needs an
+This was the initialisation this project had never sent and had no route to
+send. `probe_intr -I` now sends exactly these five packets before the mode
+switch, in one capture, which is A13. Whether the T150 needs an
 equivalent is unknown; that it exists for a sibling wheel makes the question
 worth settling rather than assuming.
 
@@ -971,22 +1009,29 @@ state rather than a fault.
 
 ## E. Open questions. Only the Mac can answer these
 
-In rough order of how much they matter.
+In rough order of how much they matter. The first five are answered and are
+kept here with their answers, because each was once the thing the project
+turned on.
 
-1. Does an unprivileged, non-seizing `IOHIDDeviceSetReport` physically move
-   the T150? Everything depends on this. See C3 and C5 for why it is genuinely
-   uncertain rather than merely unconfirmed.
-2. Which framing does the firmware honour: report id `0x0A` or unnumbered,
-   padded to 14 bytes or the raw 2 to 4?
+1. **Answered yes.** Does an unprivileged, non-seizing `IOHIDDeviceSetReport`
+   physically move the T150? It does: A19. C3 and C5 argued this was genuinely
+   uncertain rather than merely unconfirmed, and they were right to; the
+   answer came out the good way.
+2. **Answered: unnumbered and unpadded works.** Which framing does the
+   firmware honour? A19 used report id 0, payload `40 03 64 00`, no padding.
+   Whether the others also work is untested and no longer interesting for
+   settings. It may yet matter for `ff_commit`, which is 15 bytes against a
+   declared 14-byte report.
 3. Does macOS clip an output report to the descriptor-declared maximum? One
    first-hand report on a T300RS on Apple Silicon says it clips at 62 bytes.
    No open source shows a clip; the decision happens inside the closed
-   `AppleUserUSBHostHIDDevice` dext.
-4. Does the T150 sit at `044F:B65D` on macOS with nothing installed, or does
-   it already come up at `B677`? If the latter, question 5 is moot.
-5. Can the ep0 vendor requests (recipient = interface, `wIndex` 0) be issued
-   against a HID-claimed interface, unprivileged or as root, without device
-   capture?
+   `AppleUserUSBHostHIDDevice` dext. Still open, and still relevant only to
+   `ff_commit`: a 15-byte payload was accepted without complaint, but nothing
+   confirms all 15 bytes arrived.
+4. **Answered: `B65D`.** The wheel comes up at the boot id in the PS3
+   position and needs the mode switch.
+5. **Answered yes, unprivileged.** The ep0 vendor requests work against the
+   HID-claimed interface with no capture and no root: A6.
 6. How many `IOHIDDevice` nodes does one wheel publish, and which one accepts
    the output report? CrossWheel's documentation says a working G29 shows two
    nodes, usage page 1 and usage page 65280, and that both are needed.

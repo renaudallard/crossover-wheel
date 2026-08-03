@@ -117,10 +117,10 @@ at startup.
 
 The probe tools compile clean on `macos-latest` with `-Werror` against the
 real CoreFoundation and IOKit headers, and they have now been run against a
-real T150. What they found is in RESEARCH.md A4 to A8: the wheel identifies
-itself, the endpoint 0 mode switch works and needs no privilege to query, and
-every HID write returns success. What they have not yet shown is the wheel
-physically reacting to one, which is section 6.
+real T150. What they found is in RESEARCH.md A4 to A21: the wheel identifies
+itself, the endpoint 0 mode switch works and needs no privilege, every HID
+write returns success, **and the wheel physically obeys them**. Section 6 has
+the measurement.
 
 The protocol record was corrected against `scarburato/t150_driver` before any
 encoder was written. Three of PROTOCOL.md's force feedback values did not
@@ -128,22 +128,26 @@ exist in the driver it cites, and square and triangle were recorded as native
 effects the wheel has no type code for. If you are holding notes older than
 that, discard them.
 
-## 6. The gate
+## 6. The gate, and its answer
 
-One measurement decides whether the whole design is viable: does an
+One measurement decided whether the whole design was viable: does an
 unprivileged, non-seizing `IOHIDDeviceSetReport` physically move the wheel?
 
-This originally said not to write the daemon or the DLL until it was
+**It does.** `probe_setreport` sets the autocenter to full and the wheel
+becomes hard to turn; `probe_setreport -a 0` releases it and it turns freely.
+No root, no device capture, and CrossOver keeps reading the wheel throughout.
+RESEARCH.md A19.
+
+This section originally said not to write the daemon or the DLL until it was
 answered. Both were written anyway, deliberately, because everything in them
 is testable without a wheel and the encoders turned out to be what the gate
-itself needs to send a real effect by hand. Nothing below that touches
-hardware should be built on top of them until this is settled, and if the
-answer is no, all of it is wasted rather than merely early.
+itself needed to send a real effect by hand. That gamble came good.
 
-It is genuinely uncertain, not merely unconfirmed. The T150's Linux driver
-bypasses the HID layer entirely and writes raw on the interrupt OUT pipe,
-while the newer T300 family does go through `hid_hw_request(SET_REPORT)`.
-See RESEARCH.md C3 and C5.
+It was genuinely uncertain rather than merely unconfirmed, and worth the
+caution: the T150's Linux driver bypasses the HID layer entirely and writes
+raw on the interrupt OUT pipe, while the newer T300 family goes through
+`hid_hw_request(SET_REPORT)`. See RESEARCH.md C3 and C5, and C7, which
+predicted the answer would be no.
 
 The procedure, what to record and what each outcome means are in
 [PROBES.md](PROBES.md). It needs the Mac, the wheel and about half an hour.

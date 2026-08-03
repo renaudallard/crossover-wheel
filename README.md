@@ -18,10 +18,13 @@ extension approval.
 > wheel's input open. Only the force releases it. Nothing was ever wrong with
 > the wheel, the pipes, or the settings protocol.
 >
-> **Force feedback still does not work**, on either pipe, with the autocenter
-> cleared and the gain set. Since the transports are proven, that is now a
-> question about the effect layout in `docs/PROTOCOL.md` rather than about
-> macOS. Separately, the wheel puts all thirteen of its buttons on the wire
+> **Force feedback has still never moved the wheel**, though neither attempt
+> so far was capable of showing it: one ran with the autocenter at full
+> strength fighting it, and the other handed the wheel back, which
+> re-enumerates it, milliseconds after the upload. Both are fixed in the
+> tools now and the retest is the next thing to run.
+>
+> Separately, the wheel puts all thirteen of its buttons on the wire
 > and CrossOver registers none of them, which is an input path problem in
 > macOS HID, SDL or winebus. See [`docs/RESEARCH.md`](docs/RESEARCH.md) A15
 > and A19 to A21, and [what needs doing next](#what-needs-doing-next).
@@ -124,8 +127,8 @@ and confirm both entry points chain-load. Whether a Wine bottle resolves the
 same way is the first thing M5 has to try.
 
 The wheel agrees with the settings bytes on both pipes, which
-[`docs/PROBES.md`](docs/PROBES.md) is the procedure for. It does not yet
-agree with the force feedback ones.
+[`docs/PROBES.md`](docs/PROBES.md) is the procedure for. It has never been
+asked the force feedback question in a way that could have been answered.
 
 ## What needs doing next
 
@@ -148,26 +151,34 @@ needs no privilege at all.
 What is left is three experiments, all needing the Mac and **all independent
 of each other**.
 
-**1. Force feedback, which does not work on either pipe.** Measured with the
-autocenter cleared and the gain set in the same capture, for a constant force
-and for a periodic: every write accepted, the wheel did not move. Since both
-transports are proven, that points at the effect layout in
-`docs/PROTOCOL.md`, which is the tractable failure. Two things to try before
-accepting it, step by step under [testing it today](#testing-it-today):
+**1. Force feedback, which has never moved the wheel and has never had a fair
+test.** Two runs tried and neither could have worked. The interrupt OUT run
+uploaded the effect and then handed the wheel back, which re-enumerates it and
+destroys the effect within milliseconds. The HID run left the autocenter at
+full strength, fighting anything the effect did. Both are fixed:
+`probe_intr -H` holds the device open, and the procedure clears the autocenter
+first.
 
-- **The upload through the HID path**, which has never been tried and which
-  A19 has now shown reaches the firmware.
-- **With something holding the wheel's input open.** The driver's own comment
-  says the autocenter is active "while no input are open", so the firmware
-  distinguishes the two, and a captured device has nothing open at all. If
-  effects need an opened input, `probe_intr` can never show one.
+Comparing against Akellacom's T300RS driver, which does deliver force feedback
+on macOS, gives three more things to change, all under
+[testing it today](#testing-it-today) and detailed in
+[`docs/RESEARCH.md`](docs/RESEARCH.md) A20:
 
-Failing both, the next step is a `usbmon` capture on the Linux machine with
-`scarburato/t150_driver` driving the wheel, which shows the real bytes
-rather than anyone's reading of source. Two things the encoders guess at
-settle on the way: whether a constant force tops out at `0x40` or `0x7f`, and
-whether type codes `0x4020` and `0x4021` are the square and triangle the
-Linux driver never implemented.
+- **Hold the session open**, which is what `-H` is for.
+- **Send an open command first.** That driver sends `60 01 05` before range,
+  gain or any effect. It is the T300RS analogue of the T150 driver's
+  input-open callback, whose bytes are null in the published source and which
+  this project has never sent.
+- **Pad to the endpoint size and pace the packets.** It pads everything to 64
+  bytes and sleeps 50 ms between setup packets; we send bare 2 to 15-byte
+  packets back to back. `probe_intr -N 32` is the analogue.
+
+Only if it is still silent after all that is the layout in
+`docs/PROTOCOL.md` the suspect, and the answer then is a `usbmon` capture on
+the Linux machine with `scarburato/t150_driver` driving the wheel. Two things
+the encoders guess at settle on the way: whether a constant force tops out at
+`0x40` or `0x7f`, and whether type codes `0x4020` and `0x4021` are the square
+and triangle the Linux driver never implemented.
 
 **2. Where CrossOver loses the buttons.** Answered as far as the wheel is
 concerned: `probe_intr -R` proved all thirteen buttons reach the wire, and
@@ -497,13 +508,14 @@ firmware product id, so against any other wheel, or against one still in boot
 mode, every one of these does nothing until `-p` names the id `probe_hid`
 actually reported.
 
-**A6. Prove the force feedback protocol.** This has been run on the interrupt
-OUT pipe and produced nothing, so **run it on the HID path**, which A19
-showed reaches the firmware and which no effect upload has ever used. The
-first packet clears the autocenter, which otherwise fights the effect at
-whatever force the previous command left; the second sets the gain, because
-nothing has established what the wheel powers up with. Then a constant force
-at half level, endless:
+**A6. Prove the force feedback protocol.** Two runs have tried and neither
+could have worked, so this is a fresh start rather than a repeat. Run both
+forms below.
+
+**On the HID path**, which A19 showed reaches the firmware. The last attempt
+here left the autocenter at full strength fighting the effect, so the first
+packet clears it; the second sets the gain, because nothing has established
+what the wheel powers up with:
 
 ```sh
 ./build/bin/probe_setreport \
@@ -521,18 +533,14 @@ at half level, endless:
 ./build/bin/probe_setreport -x "41 00 00 01"
 ```
 
-If that does nothing either, try it **with the wheel's input held open**, by
-starting a game in a bottle or leaving CrossOver's controller panel showing
-the wheel, and running the same command again. The driver's own comment says
-the autocenter is active "while no input are open", so the firmware knows the
-difference, and effects may only render for an opened input.
-
-For the record, this is the interrupt OUT form, already run and already
-silent. Every packet goes out on one capture, because handing the wheel back
-re-enumerates it and an uploaded effect will not survive that:
+**On the interrupt OUT pipe, this time holding the wheel.** The last attempt
+here handed the wheel back the instant the upload finished, and the release
+re-enumerates the device, so the effect was destroyed before anyone could
+feel it. `-H` keeps the session open, and `-N 32` pads every packet to the
+endpoint size, which is what Akellacom's working T300RS driver does:
 
 ```sh
-sudo ./build/bin/probe_intr \
+sudo ./build/bin/probe_intr -N 32 -H 15 \
     -x "40 03 00 00" \
     -x "43 60" \
     -x "02 1c 00 00 00 00 00 00 00 46 54" \
@@ -541,6 +549,18 @@ sudo ./build/bin/probe_intr \
     -x "41 00 41 01"
 ```
 
+That prints the wheel's own reports for fifteen seconds while the effect
+should be running, so if the wheel starts pushing you will see it in the
+steering bytes as well as feel it. It hands the wheel back on its own
+afterwards.
+
+**If both are silent, try it with the wheel's input held open**, by starting
+a game in a bottle or leaving CrossOver's controller panel showing the wheel,
+then running the `probe_setreport` form again. The driver's comment says the
+autocenter is active "while no input are open", so the firmware knows the
+difference, and the T300RS driver sends an explicit open command before any
+effect. See [`docs/RESEARCH.md`](docs/RESEARCH.md) A20.
+
 **A7. Three cheap answers while you are set up.** Compare `03 0e 00 40`
 against `03 0e 00 7f` in A6: if they feel the same, a constant really does
 stop at `0x40`. Try `20 40` and `21 40` in place of `00 40` in the commit
@@ -548,9 +568,9 @@ packet, which would mean square and triangle exist after all. And repeat A3
 once with a game running in a bottle, because macOS 26 fails `setReport` for
 every client the moment anything seizes the device.
 
-**A8. Find out where the buttons go.** CrossOver lists the wheel in firmware
-mode but registers none of its buttons, and this says whether the bits ever
-leave the wheel:
+**A8. Where the buttons go, if you are chasing that.** Already answered
+against the wheel: it puts all thirteen on the wire and CrossOver registers
+none of them. Rerun it only to reproduce that, or on a different wheel:
 
 ```sh
 sudo ./build/bin/probe_intr -R 15
@@ -565,9 +585,9 @@ It finishes with a mask of every bit that moved at any point, which is the
 line to read if an analogue axis jitters at rest and floods the output. A
 byte reading `00` in that mask never changed, whatever you pressed.
 
-A line for each press means the wheel puts the buttons on the wire and
-whatever loses them is above the USB layer, in macOS, SDL or winebus. No
-line for any press, on a stream that is otherwise changing, means the wheel.
+A line for each press is what happened, so the wheel is fine and whatever
+loses them is above the USB layer, in macOS, SDL or winebus. No line for any
+press, on a stream that is otherwise changing, would mean the wheel.
 
 ### Test B: does the proxy load in a bottle
 
