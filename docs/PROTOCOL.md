@@ -90,10 +90,16 @@ descriptor, 130 bytes, and its output report is exactly what the firmware 3.5
 capture said: report id `0x0A`, vendor usage page, 14 bytes.
 
 macOS reports `MaxOutputReportSize` 15, which is those 14 bytes plus the
-report id byte. That resolves the contradiction flagged below, and not in the
-HID layer's favour: **`ff_commit` is 15 bytes of payload and does not fit a
-14-byte report.** It fits the interrupt OUT pipe, whose maximum packet is 32,
+report id byte. **`ff_commit` is 15 bytes of payload, so it does not fit the
+declared report**, while it fits the interrupt OUT pipe's 32-byte maximum
 with room to spare.
+
+That looked decisive for the transport question and was not: the settings
+packets are 2 to 4 bytes, fit either way, and were later measured to work on
+both. It remains a live objection to `ff_commit` specifically, and force
+feedback is the one thing that still does not work. Note macOS accepted a
+15-byte unnumbered payload without complaint, so if the report length is the
+problem the firmware is where it is enforced, not the HID stack.
 
 The firmware mode descriptor also differs from boot mode in ways worth
 knowing: the top level usage is Joystick (`0x04`) rather than Gamepad, X is
@@ -118,22 +124,32 @@ and a hat, which is why macOS already exposes the wheel as a working
 joystick with nothing installed. There is no Physical Interface Device
 collection anywhere in it, which is why games see no force feedback.
 
-**The contradiction that Phase 0 has to resolve.** The descriptor declares a
-14-byte output report, so `IOHIDDeviceSetReport(kIOHIDReportTypeOutput,
-0x0A, ...)` has something valid to address. But the Linux driver never uses
-the HID layer: it writes 2 to 4 raw bytes straight to the interrupt OUT pipe
-with no report id prefix, and the Python capture tool does the same. Whether
-the firmware honours the HID-framed form is unknown and is exactly what
-`probe_setreport` exists to find out.
+**Resolved: the firmware accepts both.** The descriptor declares a 14-byte
+output report, and the Linux driver ignores the HID layer entirely, writing
+2 to 4 raw bytes straight to the interrupt OUT pipe with no report id prefix.
+That looked like a contradiction Phase 0 had to settle, and it was settled
+in the HID layer's favour as well: `probe_setreport`, sending an unnumbered
+4-byte payload through `IOHIDDeviceSetReport`, changes the autocenter and the
+wheel obeys. `probe_intr` does the same on the interrupt OUT pipe. So the
+settings packets below reach the firmware either way. RESEARCH.md A19.
 
-For comparison, the newer T300 family does go through the HID layer:
-`hid-tmff2`'s `t300rs_send_buf()` ends in `hid_hw_request(hdev, report,
-HID_REQ_SET_REPORT)`. So Thrustmaster firmware is capable of accepting HID
-output reports; it is the older T150 that is in doubt.
+That matters because only one of them costs anything: the HID path needs no
+root and leaves the device with macOS, so CrossOver keeps the wheel while the
+daemon writes to it.
+
+The newer T300 family was the reason to think this possible: `hid-tmff2`'s
+`t300rs_send_buf()` ends in `hid_hw_request(hdev, report,
+HID_REQ_SET_REPORT)`, so Thrustmaster firmware is capable of accepting HID
+output reports. The older T150 turns out to be as well.
+
+**Force feedback is a separate question and is still open.** The effect
+packets below have been sent on both pipes, with the autocenter cleared and
+the gain set, and the wheel does not move. See RESEARCH.md A20.
 
 ## Settings packets
 
-All except gain share one form, sent on the interrupt OUT endpoint:
+All except gain share one form, and reach the firmware on either
+transport:
 
 ```
 [0x40, op, arg_lo, arg_hi]      little-endian uint16 argument
