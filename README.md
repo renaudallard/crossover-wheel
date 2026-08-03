@@ -526,6 +526,10 @@ between the wheel and the output. Only reports that differ from the one
 before are printed. **Work every button, the hat and the pedals while it
 runs**, and turn the wheel a little so you can tell the stream is live.
 
+It finishes with a mask of every bit that moved at any point, which is the
+line to read if an analogue axis jitters at rest and floods the output. A
+byte reading `00` in that mask never changed, whatever you pressed.
+
 A line for each press means the wheel puts the buttons on the wire and
 whatever loses them is above the USB layer, in macOS, SDL or winebus. No
 line for any press, on a stream that is otherwise changing, means the wheel.

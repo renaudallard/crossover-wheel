@@ -457,11 +457,22 @@ from the one before because the wheel streams its state continuously. **Work
 every button, the hat and the pedals while it runs**, and move the wheel a
 little so you can see the stream is live.
 
+It ends with a mask of every bit that moved at any point. That is the line to
+read when an analogue pedal jitters at rest and makes almost every report
+different: a byte reading `00` in the mask never changed, whatever you
+pressed. Report `0x07` puts the thirteen buttons in the two bytes that follow
+its four 16-bit axes, so those are the ones to look at.
+
 | Outcome | Meaning |
 | --- | --- |
 | A line for each press | The wheel is fine. The loss is in macOS, SDL or winebus, and B8 is where to look. An input problem, not a force feedback one. |
 | No line for any press, stream otherwise changing | The wheel is not reporting buttons in this mode, which would be a firmware mode property worth knowing before anything depends on it. |
 | Nothing at all | Either the wheel sends nothing while captured, or the read is wrong. Compare against boot mode, which declares a different report entirely. |
+
+The reads are asynchronous on a run loop rather than the plain synchronous
+call, because IOUSBLib rejects timeouts on an interrupt pipe and the version
+without them would block forever on a wheel that reports nothing, which is
+one of the outcomes above.
 
 Boot mode puts the buttons first in an unnumbered report, so its layout says
 nothing about firmware mode. Run this in whichever mode the question is

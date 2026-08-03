@@ -53,8 +53,6 @@
 #define WAIT_TRIES	300
 #define WAIT_STEP_MS	10
 
-/* Short enough that -R still stops on time between reports. */
-#define READ_TIMEOUT_MS	100
 #define READ_SECONDS	15
 
 static void
@@ -319,71 +317,154 @@ find_pipes(IOUSBInterfaceInterface500 **iface, struct pipe *out,
 }
 
 /*
- * Read the interrupt IN pipe and print only the reports that differ from the
- * one before. The wheel streams its state continuously, so printing every
- * report would bury the one thing this is for: whether pressing a button
- * changes any bit. A press shows up as one new line.
+ * State for the asynchronous read below. The reads have to be asynchronous:
+ * IOUSBLib documents ReadPipeTO as bulk only and says it returns
+ * kIOReturnBadArgument if timeout values are given for an interrupt pipe, and
+ * the synchronous ReadPipe takes no timeout and would block forever on a
+ * wheel that reports nothing, which is one of the answers this is looking
+ * for. So the read is queued on a run loop that stops on its own.
  */
+struct reader {
+	IOUSBInterfaceInterface500 **iface;
+	uint8_t		buf[MAX_PAYLOAD];
+	uint8_t		prev[MAX_PAYLOAD];
+	uint8_t		changed[MAX_PAYLOAD];	/* bits that ever moved */
+	size_t		prev_len;
+	size_t		widest;
+	unsigned long	total;
+	unsigned long	shown;
+	UInt8		ref;
+	int		failed;
+};
+
+/* Each completion queues the next read, so the two refer to each other. */
+static void read_done(void *refcon, IOReturn result, void *arg0);
+
+static void
+arm_read(struct reader *rd)
+{
+	IOReturn r;
+
+	r = (*rd->iface)->ReadPipeAsync(rd->iface, rd->ref, rd->buf,
+	    (UInt32)sizeof(rd->buf), read_done, rd);
+	if (r != kIOReturnSuccess) {
+		printf("  ReadPipeAsync                %s\n",
+		    probe_ioreturn_str(r));
+		rd->failed = 1;
+		CFRunLoopStop(CFRunLoopGetCurrent());
+	}
+}
+
+/*
+ * One report arrived. Print it only if it differs from the one before,
+ * because the wheel streams its state continuously and printing every report
+ * would bury the one thing this is for: whether pressing a button changes any
+ * bit. Remember which bits ever moved, so that an axis jittering at rest
+ * cannot hide the answer in a wall of output.
+ */
+static void
+read_done(void *refcon, IOReturn result, void *arg0)
+{
+	struct reader *rd = refcon;
+	size_t len, i, n;
+
+	if (result != kIOReturnSuccess) {
+		/* Aborted is how the deadline below ends a pending read. */
+		if (result != kIOReturnAborted) {
+			printf("  read                         %s\n",
+			    probe_ioreturn_str(result));
+			rd->failed = 1;
+		}
+		CFRunLoopStop(CFRunLoopGetCurrent());
+		return;
+	}
+
+	len = (size_t)(uintptr_t)arg0;
+	if (len > sizeof(rd->buf))
+		len = sizeof(rd->buf);
+
+	rd->total++;
+	if (len > rd->widest)
+		rd->widest = len;
+
+	if (len != rd->prev_len || memcmp(rd->buf, rd->prev, len) != 0) {
+		n = len < rd->prev_len ? len : rd->prev_len;
+		for (i = 0; i < n; i++)
+			rd->changed[i] |= (uint8_t)(rd->buf[i] ^ rd->prev[i]);
+
+		printf("  read %2zu byte(s):", len);
+		probe_hexdump(stdout, rd->buf, len);
+		memcpy(rd->prev, rd->buf, len);
+		rd->prev_len = len;
+		rd->shown++;
+	}
+
+	arm_read(rd);
+}
+
 static int
 read_reports(IOUSBInterfaceInterface500 **iface, struct pipe *in,
     unsigned long seconds)
 {
-	uint8_t buf[MAX_PAYLOAD], prev[MAX_PAYLOAD];
-	unsigned long total = 0, shown = 0;
-	struct timespec start, now;
-	size_t prev_len = 0;
+	CFRunLoopSourceRef src = NULL;
+	IOReturn r;
 
-	if (clock_gettime(CLOCK_MONOTONIC, &start) != 0) {
-		warnx("clock_gettime failed");
+	/*
+	 * Static, not automatic. A queued read has given the kernel a pointer
+	 * into this, and the abort below is drained rather than waited on, so
+	 * the buffer has to outlive the function even in the case where the
+	 * drain gives up. Nothing here is re-entered, so static costs nothing.
+	 */
+	static struct reader rd;
+
+	memset(&rd, 0, sizeof(rd));
+	rd.iface = iface;
+	rd.ref = in->ref;
+
+	r = (*iface)->CreateInterfaceAsyncEventSource(iface, &src);
+	printf("CreateInterfaceAsyncEventSource %s\n", probe_ioreturn_str(r));
+	if (r != kIOReturnSuccess || src == NULL)
 		return -1;
-	}
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), src, kCFRunLoopDefaultMode);
 
 	printf("\nreading on pipe %u, endpoint 0x%02x for %lu second(s)\n",
-	    in->ref, in->addr, seconds);
+	    (unsigned)in->ref, (unsigned)in->addr, seconds);
 	printf("only reports that differ from the one before are shown, so\n"
 	    "work every button, the hat and the pedals while this runs\n\n");
 
-	memset(prev, 0, sizeof(prev));
+	arm_read(&rd);
+	if (rd.failed == 0)
+		CFRunLoopRunInMode(kCFRunLoopDefaultMode,
+		    (CFTimeInterval)seconds, 0);
 
-	for (;;) {
-		UInt32 size = (UInt32)sizeof(buf);
-		IOReturn r;
+	/*
+	 * A read is still queued unless the callback already stopped the loop.
+	 * Abort it and let the run loop deliver the aborted completion, or the
+	 * kernel is left writing into a buffer that is about to go away.
+	 */
+	(void)(*iface)->AbortPipe(iface, in->ref);
+	CFRunLoopRunInMode(kCFRunLoopDefaultMode, (CFTimeInterval)1.0, 0);
 
-		if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
-			break;
-		if ((unsigned long)(now.tv_sec - start.tv_sec) >= seconds)
-			break;
-
-		r = (*iface)->ReadPipeTO(iface, in->ref, buf, &size,
-		    READ_TIMEOUT_MS, READ_TIMEOUT_MS);
-		if (r == kIOReturnTimeout || r == kIOUSBTransactionTimeout)
-			continue;
-		if (r != kIOReturnSuccess) {
-			printf("  ReadPipeTO                   %s\n",
-			    probe_ioreturn_str(r));
-			return -1;
-		}
-		if (size > sizeof(buf))
-			size = (UInt32)sizeof(buf);
-
-		total++;
-		if (size == prev_len && memcmp(buf, prev, prev_len) == 0)
-			continue;
-
-		printf("  read %2u byte(s):", (unsigned)size);
-		probe_hexdump(stdout, buf, size);
-		memcpy(prev, buf, size);
-		prev_len = size;
-		shown++;
-	}
+	CFRunLoopRemoveSource(CFRunLoopGetCurrent(), src, kCFRunLoopDefaultMode);
+	CFRelease(src);
 
 	printf("\n%lu report(s) read, %lu of them different from the one "
-	    "before\n", total, shown);
-	if (total == 0)
+	    "before\n", rd.total, rd.shown);
+
+	if (rd.total == 0) {
 		printf("the wheel sent nothing at all, which is a result in "
 		    "itself\n");
+	} else if (rd.shown <= 1) {
+		printf("nothing ever changed, so nothing you did reached the "
+		    "wire\n");
+	} else {
+		printf("bits that changed at any point:");
+		probe_hexdump(stdout, rd.changed, rd.widest);
+		printf("a byte reading 00 there never moved, whatever you "
+		    "pressed\n");
+	}
 
-	return 0;
+	return rd.failed ? -1 : 0;
 }
 
 /*

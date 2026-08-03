@@ -175,7 +175,8 @@ Set the gain, 0 to 10000.
 Write nothing. Read the interrupt IN pipe instead and print every report that
 differs from the one before, which is how to see what the wheel puts on the
 wire with nothing above the USB layer in the way. A button that produces no
-line here never left the wheel.
+line here never left the wheel. It ends with a mask of every bit that moved
+at any point, which stays readable when an analogue axis jitters at rest.
 .It Fl x Ar bytes
 Raw hex payload, repeatable. Every packet goes out on one capture, which
 matters for a sequence such as a force feedback upload, because the release
