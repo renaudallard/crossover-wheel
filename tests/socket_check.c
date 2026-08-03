@@ -285,7 +285,7 @@ main(void)
 	if (send_frame(fd, T150_OP_SET_GAIN, buf, 4) != 0)
 		fail("cannot set the gain");
 	expect_ok(fd, "the gain was refused");
-	if (wait_for(pipefd[0], "write 2: 43 80\n") != 0)
+	if (wait_for(pipefd[0], "write 2: 43 40\n") != 0)
 		fail("the gain packet did not reach the backend");
 
 	memset(&ef, 0, sizeof(ef));

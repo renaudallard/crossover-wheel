@@ -108,11 +108,12 @@ usage(void)
 	    "               it, the default action with force 100\n"
 	    "  -A           disable autocenter\n"
 	    "  -r degrees   set rotation range (%u..%u)\n"
-	    "  -g gain      set gain (0..255)\n"
+	    "  -g gain      set gain, raw hardware units (0..%u), where full\n"
+	    "               scale is 0x80 and not 0xff\n"
 	    "  -x \"40 11 ..\"  send these raw bytes, repeatable up to %d times\n"
 	    "               to send a whole sequence on one open handle\n",
 	    T150_VID, T150_PID_FIRMWARE, T150_RANGE_MIN, T150_RANGE_MAX,
-	    MAX_PACKETS);
+	    T150_GAIN_MAX, MAX_PACKETS);
 	exit(2);
 }
 
@@ -174,8 +175,9 @@ main(int argc, char *argv[])
 			act = ACT_RANGE;
 			break;
 		case 'g':
+			/* Raw hardware units, where full scale is 0x80. */
 			if (act != ACT_NONE ||
-			    probe_parse_uint(optarg, 0xff, &arg) != 0)
+			    probe_parse_uint(optarg, T150_GAIN_MAX, &arg) != 0)
 				usage();
 			act = ACT_GAIN;
 			break;

@@ -102,7 +102,8 @@ free a held wheel, see the same option under
 .It Fl r Ar degrees
 Set the rotation range, 270 to 1080.
 .It Fl g Ar gain
-Set the gain, 0 to 255.
+Set the gain in raw hardware units, 0 to 0x80. Full scale is 0x80 and not
+0xff, so 0x40 is half.
 .It Fl x Ar bytes
 Send a raw payload given as hex, for example
 .Dq 40 11 ff 7f .

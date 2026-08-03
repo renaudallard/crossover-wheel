@@ -171,7 +171,18 @@
  */
 #define T150_FF_ENVELOPE_MAX	0xffu
 
-#define T150_GAIN_MAX		0xffu
+/*
+ * Gain full scale is 0x80, not 0xff. The driver's original setter documented
+ * "a value between 0x00 and 0x80 where 0x80 is 100% gain" and passed 0x66 as
+ * its "~80%" default, which is 102/128 = 79.7%, and the one capture of a
+ * working session sets 0x43 0x80.
+ *
+ * The current driver reads 0..0xffff and assigns it straight into a uint8,
+ * which truncates: its "~75%" default of 0xbffe leaves 0xfe on the wire,
+ * nearly double full scale. That is an upstream regression from commit
+ * 0e7c85f, February 2025, and not something to reproduce.
+ */
+#define T150_GAIN_MAX		0x80u
 #define T150_AUTOCENTER_MAX	100u
 
 /*

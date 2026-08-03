@@ -160,9 +160,10 @@ test_settings(void)
 	frame(T150_OP_SET_AUTOCENTER, arg, 4, 0, T150_OP_OK, T150_ERR_NONE);
 	expect_log("autocenter off is one packet", "write 4: 40 04 00 00\n");
 
+	/* Half gain is 0x40: the wire's full scale is 0x80, not 0xff. */
 	put_u32(arg, 5000);
 	frame(T150_OP_SET_GAIN, arg, 4, 0, T150_OP_OK, T150_ERR_NONE);
-	expect_log("gain", "write 2: 43 80\n");
+	expect_log("gain", "write 2: 43 40\n");
 
 	put_u32(arg, 900);
 	frame(T150_OP_SET_RANGE, arg, 4, 0, T150_OP_OK, T150_ERR_NONE);

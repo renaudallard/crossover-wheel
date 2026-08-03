@@ -209,11 +209,26 @@ Gain is two bytes with a different opcode:
 [0x43, gain]
 ```
 
-The original `t150_set_gain` assigns a `uint16` into a `uint8` slot, so the
-high byte is dropped in C. That narrowing is behaviour, not a bug to fix: it
-is what the wheel is known to accept.
+**Full scale is `0x80`, not `0xff`.** The driver's original setter documented
+"a value between 0x00 and 0x80 where 0x80 is 100% gain" and passed `0x66` as
+its "~80%" default, which is 102/128 = 79.7%, and the one capture of a working
+session sets `43 80`. Three independent agreements.
 
-Rotation range is clamped by the firmware below 270 degrees. The scaling in
+An earlier version of this document said the opposite, on the strength of the
+current driver assigning a `uint16` straight into a `uint8` slot, and called
+the narrowing "behaviour, not a bug to fix". It is a bug. Commit `0e7c85f`,
+February 2025, widened the parameter to 0..0xffff for the Linux force feedback
+API without changing the assignment, so its own "~75%" default of `0xbffe`
+truncates to `0xfe` on the wire, nearly double full scale. Do not reproduce
+it.
+
+The driver's force feedback path has a second, three-byte form,
+`struct ff_change_gain { uint8_t f0; uint16_t gain; }` giving
+`[0x43, lo, hi]`. No capture contains it and this project does not send it.
+
+Rotation range is clamped to 270..1080 by `t150_driver` before scaling. This
+document previously attributed that clamp to the firmware, which the driver
+source does not support and no measurement here has tested. The scaling in
 `t150_range_arg()` is checked against recorded values in
 `tests/header_check.c`.
 
@@ -309,7 +324,7 @@ input ranges are not.
 | spring saturation | `/ 0x030C` | 0..0x54 |
 | damper saturation | `/ 0x028F` | 0..0x64 |
 | autocenter force | `round(force * 100 / 0xFFFF)` | 0..100 |
-| gain | low byte only | 0..255 |
+| gain | `value * 0x80 / full scale` | 0..0x80 |
 
 Three of those are worth flagging rather than trusting.
 

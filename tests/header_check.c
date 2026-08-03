@@ -47,6 +47,7 @@ _Static_assert(T150_FF_OP_CONTROL == 0x41, "effect control opcode");
  * uint16 0x0442 and 0x0042, so the opcode is the low byte and leads on the
  * wire. Transcribing them the other way round would send 04 42.
  */
+_Static_assert(T150_GAIN_MAX == 0x80, "gain full scale, not 0xff");
 _Static_assert(T150_OP_INPUT == 0x42, "input open/close opcode");
 _Static_assert(T150_INPUT_OPEN == 0x04, "input open subcommand");
 _Static_assert(T150_INPUT_WHAT == 0x05, "the packet sent twice before close");

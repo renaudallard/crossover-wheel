@@ -79,12 +79,12 @@ test_settings(void)
 	    0x40, 0x11, 0xff, 0xff);
 
 	/*
-	 * Gain is two bytes, not four. The driver assigns a uint16 into a
-	 * uint8 slot, and that narrowing is the protocol rather than a bug to
-	 * repair, so the encoder produces the wire byte directly.
+	 * Gain is two bytes and its full scale is 0x80, so half gain is 0x40
+	 * rather than 0x80. Getting this wrong sends roughly twice the force
+	 * the caller asked for.
 	 */
-	CHECK("gain full", b, t150_enc_gain(b, sizeof(b), 10000), 0x43, 0xff);
-	CHECK("gain half", b, t150_enc_gain(b, sizeof(b), 5000), 0x43, 0x80);
+	CHECK("gain full", b, t150_enc_gain(b, sizeof(b), 10000), 0x43, 0x80);
+	CHECK("gain half", b, t150_enc_gain(b, sizeof(b), 5000), 0x43, 0x40);
 	CHECK("gain zero", b, t150_enc_gain(b, sizeof(b), 0), 0x43, 0x00);
 
 	/*
