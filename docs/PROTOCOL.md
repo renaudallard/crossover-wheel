@@ -146,6 +146,37 @@ output reports. The older T150 turns out to be as well.
 packets below have been sent on both pipes, with the autocenter cleared and
 the gain set, and the wheel does not move. See RESEARCH.md A20.
 
+## Opening and closing the wheel's input
+
+Two bytes each, on the interrupt OUT endpoint:
+
+```
+[0x42, 0x04]      open the input
+[0x42, 0x05]      sent twice, immediately before the close
+[0x42, 0x00]      close the input
+```
+
+The driver builds each as a little-endian `uint16`, `0x0442`, `0x0542` and
+`0x0042`, so the opcode is the low byte and leads on the wire. It sends them
+with `usb_interrupt_msg()` on `pipe_out` with length 2: the open from
+`t150_input_open()` before `hid_hw_open()`, and after `hid_hw_close()` the
+`0x05` packet twice followed by the close.
+
+**The firmware tracks whether an application has the input open**, and that is
+not a guess: `t150_set_enable_autocenter`'s comment says the autocentering
+effect "is always active while no input are open", which is exactly what this
+project measured before it understood why. Nothing on macOS opens the input
+the way a Linux application does, so unless something sends `42 04` the wheel
+believes no application is there.
+
+Whether force feedback is gated the same way is the open question. It would
+explain every silent effect run, and Akellacom's T300RS driver sends its own
+open command (`60 01 05`) before range, gain or any effect, which is the same
+shape one wheel family over. See RESEARCH.md A20 and A26.
+
+> `hid-t150/hid-t150.c` `t150_init()` for the three values, `hid-t150/input.c`
+> `t150_input_open()` and `t150_input_close()` for how they are sent.
+
 ## Settings packets
 
 All except gain share one form, and reach the firmware on either

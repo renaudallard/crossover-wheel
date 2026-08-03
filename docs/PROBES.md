@@ -389,8 +389,10 @@ one command.
 
 **The leading suspect is now a missing open command**, not the packet layout.
 Akellacom's T300RS driver sends `60 01 05` before range, gain or any effect,
-and the T150 driver's equivalent is left null in its published source, so no
-run here has ever sent one. RESEARCH.md A20 and A24.
+and the T150's own equivalent is `42 04`, recovered from the same driver in
+RESEARCH.md A26. No run here has ever sent it. `probe_intr -O` sends it, and
+it needs `-H` beside it because nothing holds the input open once the tool
+exits.
 
 An effect uploads as three packets that correlate through slot keys, then a
 fourth starts it. `-x` is repeatable and every packet goes out on one open
@@ -445,13 +447,24 @@ itself; stop the HID one with:
 ./build/bin/probe_setreport -x "41 00 00 01"
 ```
 
-**Then again with the wheel's input held open**, by starting a game in a
-bottle or leaving CrossOver's controller panel showing the wheel, and running
-the `probe_setreport` form again. The Linux driver's comment says the
-autocenter is active "while no input are open", so the firmware distinguishes
-an opened input from a closed one, and the T300RS driver sends an explicit
-open command, `60 01 05`, before any effect. The T150's equivalent is left
-null in its published source and this project has never sent it.
+**Then with the wheel's input actually open**, which is the one thing never
+tried and now the leading suspect. The firmware tracks whether an application
+has the input open, which is why the autocenter is "always active while no
+input are open", and nothing on macOS opens it. `42 04` does:
+
+```sh
+sudo ./build/bin/probe_intr -N 32 -H 15 \
+    -x "42 04" \
+    -x "40 03 00 00" \
+    -x "43 60" \
+    -x "02 1c 00 00 00 00 00 00 00 46 54" \
+    -x "03 0e 00 20" \
+    -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
+    -x "41 00 41 01"
+```
+
+`-H` is not optional here: the open only lasts as long as the session does.
+RESEARCH.md A26.
 
 If everything above is silent, the layout is finally the suspect, and the
 answer is a `usbmon` capture on the Linux machine while

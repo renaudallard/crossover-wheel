@@ -23,7 +23,8 @@ extension approval.
 > all six packets on one handle. The leading suspect is no longer the packet
 > layout but a missing step: the T300RS driver sends an explicit open command
 > before any effect, the T150's Linux driver has an equivalent whose bytes are
-> left null in its published source, and this project has never sent one.
+> `42 04`, recovered from the same driver, and this project has never sent
+> it.
 >
 > Separately, the wheel puts all thirteen of its buttons on the wire and
 > CrossOver registers none of them, which is an input path problem in macOS
@@ -163,11 +164,12 @@ Two things to run, both under [testing it today](#testing-it-today):
 - **The `-H` retest, hands off.** An idle T150 emits about four reports a
   second and never changes them, so a wheel that moves under an effect is
   unmistakable against that baseline.
-- **The open command.** This is the leading suspect now. Akellacom's T300RS
-  driver sends `60 01 05` before range, gain or any effect, and the T150
-  driver's equivalent is left null in its published source, so no run here has
-  ever sent one. Nothing tells us the T150's bytes, which is why the `usbmon`
-  capture below matters more than it did.
+- **The open command, `42 04`.** This is the leading suspect now. The
+  firmware tracks whether an application has the input open, which is why the
+  autocenter is "always active while no input are open", and nothing on macOS
+  opens it. `probe_intr -O` sends it, and an effect test needs it inline with
+  `-H`, because the open lasts only as long as the session.
+  [`docs/RESEARCH.md`](docs/RESEARCH.md) A26.
 
 If both fail, the answer is a `usbmon` capture on the Linux machine with
 `scarburato/t150_driver` driving the wheel. That shows the real bytes rather
@@ -562,10 +564,10 @@ the `probe_setreport` form again with the wheel's input held open, by starting
 a game in a bottle or leaving CrossOver's controller panel showing the wheel.
 The driver's comment says the autocenter is active "while no input are open",
 so the firmware distinguishes the two, and the T300RS driver sends an explicit
-`60 01 05` before any effect. The T150's equivalent is left null in its
-published source, so nobody knows its bytes and a `usbmon` capture on Linux is
-what would recover them. See [`docs/RESEARCH.md`](docs/RESEARCH.md) A20 and
-A24.
+`60 01 05` before any effect, and the T150's own equivalent is `42 04`. Send
+it inline with `-H`, as the interrupt OUT block above does, because the open
+lasts only as long as the session. See
+[`docs/RESEARCH.md`](docs/RESEARCH.md) A20, A24 and A26.
 
 **A7. Three cheap answers while you are set up.** Compare `03 0e 00 40`
 against `03 0e 00 7f` in A6: if they feel the same, a constant really does

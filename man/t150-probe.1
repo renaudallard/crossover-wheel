@@ -38,6 +38,8 @@
 .Op Fl H Ar seconds
 .Oo
 .Fl I |
+.Fl O |
+.Fl C |
 .Fl a Ar force |
 .Fl A |
 .Fl r Ar degrees |
@@ -162,6 +164,17 @@ Zero-pad every packet to this length.
 Send the five initialisation packets the Linux driver sends on this pipe,
 then the mode switch, in one capture. Run it on a wheel still at the boot
 product id. Skipping the initialisation is what leaves the wheel blocked.
+.It Fl O
+Open the wheel's input,
+.Dq 42 04 .
+The firmware tracks whether an application has the input open and the
+autocenter is unconditionally active while none has, so force feedback may be
+gated the same way. Nothing on macOS opens it. Combine with
+.Fl H ,
+because the open lasts only as long as the session does.
+.It Fl C
+Close the wheel's input,
+.Dq 42 00 .
 .It Fl a Ar force
 Autocenter to
 .Ar force ,

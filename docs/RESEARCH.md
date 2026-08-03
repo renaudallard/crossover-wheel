@@ -186,10 +186,10 @@ The two earlier hypotheses, both also retired by A15 and A19:
    no.
 2. **The wheel wants something first.** The Linux driver sends a packet on
    the interrupt OUT pipe when the input device is opened, before any setting
-   is honoured. Its bytes are not recoverable from the published source,
-   where the pointer is left null, so this project has never sent it. If the
-   firmware gates settings behind that, every write so far would be accepted
-   and ignored regardless of framing.
+   is honoured. This entry said its bytes were not recoverable, because the
+   pointer is null at its declaration; A26 found where it is filled in, and
+   the packet is `42 04`. Settings turn out not to be gated behind it, since
+   they work without. Whether effects are is A26's question and is open.
 
 Both predicted precisely what was measured, which is why neither could be
 concluded at the time. Both are now settled and both were wrong: the wheel
@@ -255,8 +255,7 @@ with an `install.sh`, and watch the wheel.
 
 And whichever way it goes, the same setup yields something this project has
 wanted from the beginning. `usbmon` on that machine captures the exact bytes
-a working driver puts on the wire: the initialisation packet whose bytes are
-left null in the published source, whether transfers go to the interrupt OUT
+a working driver puts on the wire: whether transfers go to the interrupt OUT
 pipe or endpoint 0, the real framing behind the 14 against 15 byte question,
 and enough traffic to check every encoder in `src/lib/encode.c` against
 ground truth rather than against a reading of someone's source.
@@ -497,9 +496,8 @@ driver, which does deliver force feedback on macOS:
 - **Open force feedback first.** Before range, before gain, before any
   effect, it sends `60 01 05`: report id `0x60`, command `0x01`
   "openClose", argument `0x05`. That is the T300RS analogue of the T150
-  driver's input-open callback, whose bytes are left null in the published
-  source and which this project has therefore never sent. Its existence turns
-  the "effects may need an opened input" guess into something with prior art.
+  driver's input-open callback, which this project had never sent. A26 has
+  the T150's own bytes, `42 04`, from the same driver.
 - **Pad and pace.** Every packet it sends is zero-padded to 64 bytes with
   `memset` then `WritePipe(..., 64)`, and it sleeps 50 ms between setup
   packets. This project sends bare 2 to 15-byte packets back to back. The
@@ -520,7 +518,8 @@ hold.
 Only after all three, and only if it is still silent, is the layout the
 suspect. The answer then is a `usbmon` capture on the Linux machine with
 `scarburato/t150_driver` driving the wheel, which shows the real bytes rather
-than anyone's reading of the source, including the open packet's.
+than anyone's reading of the source. A26 has since recovered the open
+packet from the source itself, so the capture is no longer needed for that.
 
 **A23. An idle T150 is completely static on the wire, which is the control an
 effect test needs.** Measured: `probe_intr -R 15` with nothing touched
@@ -555,9 +554,9 @@ say nothing about the effect. Fixed, and the retest is one command.
 
 So the position is: **one clean negative on the HID path, none yet on the
 interrupt OUT pipe.** What has still never been tried is the open command.
-The T300RS driver sends `60 01 05` before any effect (A20), the T150 driver
-has an equivalent whose bytes are left null in its published source, and no
-run has ever sent one. That is now the leading explanation, ahead of the
+The T300RS driver sends `60 01 05` before any effect (A20) and the T150 driver
+has an equivalent, `42 04`, which A26 recovered from the same source. No run
+here has ever sent it. That is now the leading explanation, ahead of the
 layout.
 
 **A25. Enabling winebus's hidraw backend makes the wheel vanish from
@@ -570,6 +569,46 @@ That is a real datum for B8 rather than a workaround: the hidraw path is the
 one that would carry the wheel's own report descriptor into the bottle, and it
 drops the device instead of describing it. Whatever is losing the buttons is
 in that neighbourhood.
+
+**A26. The packet that opens the wheel's input is recoverable after all, and
+this project has never sent it.** A20 and earlier entries said its bytes were
+left null in the published source. That was a misreading: the pointer is null
+at its declaration and `t150_init()` allocates and fills it.
+
+```
+42 04   open the input
+42 05   sent twice, immediately before the close
+42 00   close the input
+```
+
+Two bytes each, built as little-endian `uint16` `0x0442`, `0x0542`, `0x0042`,
+so the opcode leads on the wire. Sent with `usb_interrupt_msg()` on `pipe_out`
+with length 2, the open before `hid_hw_open()` and the other two after
+`hid_hw_close()`.
+
+**Why this is the leading explanation for A24.** The firmware knows whether an
+application has the input open; that is established, not inferred, because
+`t150_set_enable_autocenter`'s comment says the autocenter "is always active
+while no input are open" and this project measured exactly that behaviour for
+six sessions. Nothing on macOS opens the input, and no run here has ever sent
+`42 04`, so on every effect test so far the wheel had no application attached
+as far as it was concerned.
+
+Akellacom's T300RS driver sends its own open, `60 01 05`, before range, gain
+or any effect (A20). Same shape, one wheel family over, and it delivers force
+feedback.
+
+The test is one command, and it needs `-H` beside it because nothing holds the
+input open once the tool exits:
+
+```sh
+sudo probe_intr -N 32 -H 15 -x "42 04" -x "40 03 00 00" -x "43 60" \
+    -x "02 1c 00 00 00 00 00 00 00 46 54" -x "03 0e 00 20" \
+    -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" -x "41 00 41 01"
+```
+
+> `hid-t150/hid-t150.c` `t150_init()`, and `hid-t150/input.c`
+> `t150_input_open()` and `t150_input_close()`.
 
 **A21. The wheel puts all thirteen buttons on the wire. Whatever loses them
 is above the USB layer.** A18 is answered, and against the wheel.
