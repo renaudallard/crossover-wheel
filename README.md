@@ -358,9 +358,15 @@ are safe:
 
 ```sh
 ./build/bin/probe_ep0
-./build/bin/probe_ep0 -w
+sudo ./build/bin/probe_intr -I
 ./build/bin/probe_hid -o .
 ```
+
+**`probe_intr -I`, not `probe_ep0 -w`.** The switch is three steps: five
+packets on the interrupt OUT pipe first, while the wheel is still at the boot
+id, then the two control transfers. Skipping the first step leaves the wheel
+switched but blocked, which is what every session before this one did. `-I`
+does all three in one capture so nothing re-enumerates in between.
 
 The first only reads, and prints the model and attachment bytes of whatever
 it finds: `0x03` and `0x06` is a T150, anything else means passing that

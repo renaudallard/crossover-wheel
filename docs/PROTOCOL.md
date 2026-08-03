@@ -22,6 +22,33 @@ Sources:
 
 ## Boot to firmware switch
 
+**Three steps, not two.** The initialisation below has to happen first, and
+omitting it is the difference between a wheel that ends up turning freely and
+one that ends up blocked.
+
+### 1. Initialisation, on the interrupt OUT pipe
+
+Five packets, sent while the wheel is still at `B65D`, on endpoint `0x01`:
+
+```
+42 01 00 00 00 00 00 00 00
+0a 04 90 03 00 00 00 00
+0a 04 00 0c 00 00 00 00
+0a 04 12 10 00 00 00 00
+0a 04 00 06 00 00 00 00
+```
+
+Source: `drivers/hid/hid-thrustmaster.c`, `setup_0` to `setup_4`, sent by
+`thrustmaster_interrupts()` which `thrustmaster_probe()` calls **before** the
+model query. Its comment explains them as a crash fix for the T300RS and
+notes they harm no other wheel. Akellacom's macOS T300RS driver ships the
+same five and states they "MUST be sent before the mode switch".
+
+They are sent on `cur_altsetting->endpoint[1]`, which on the measured T150 is
+the interrupt OUT endpoint `0x01`.
+
+### 2 and 3. The control transfers
+
 Two vendor control transfers on endpoint 0.
 
 1. Model query: `bmRequestType 0xC1`, `bRequest 73`, `wValue 0`, `wIndex 0`,

@@ -268,9 +268,33 @@ which is still the only thing E1 needs. Capture, write and release all
 returning success says the bytes reached the firmware's doorstep; it does not
 say the firmware acted on them.
 
-**A13. The wheel stays blocked, and that now outranks every protocol
-question.** Reported after the interrupt OUT route was available: the wheel
-remains immovable.
+**A13. The wheel is fine, and the initialisation was incomplete.** On a Linux
+machine the same wheel switches to `b677`, reports itself as a
+`Thrustmaster T150RS`, binds to **`hid-generic`** with no force feedback
+driver whatsoever, and **turns freely**.
+
+That is decisive twice over. The wheel is healthy, so nothing mechanical or
+electrical is at fault. And nothing on that machine sent it a single setting,
+because no T150 driver was loaded, so being free is not something settings
+produce: it is what a properly initialised wheel simply is.
+
+The difference is in the initialisation, and it is now identified.
+`hid-thrustmaster` calls `thrustmaster_interrupts()` before the model query,
+sending five packets on the interrupt OUT endpoint while the wheel is still
+at the boot id. This project has only ever sent the two control transfers.
+The five packets are recorded in PROTOCOL.md and `probe_intr -I` now sends
+them, followed by the switch, without releasing the capture in between so
+that nothing re-enumerates between the two.
+
+> `drivers/hid/hid-thrustmaster.c`, `setup_0` to `setup_4` and
+> `thrustmaster_interrupts()`, called from `thrustmaster_probe()` before
+> `usb_fill_control_urb()`. The same five packets appear in Akellacom's macOS
+> T300RS driver, described as mandatory before the mode switch.
+
+Everything below was written when the wheel was believed to be at fault, and
+is kept because the reasoning still holds if `-I` does not fix it.
+
+**The wheel stays blocked, as of before that initialisation existed.**
 
 Put the whole record together and it does not describe a protocol problem:
 

@@ -42,7 +42,7 @@
 #include "t150/t150.h"
 
 #define MAX_PAYLOAD	64
-#define MAX_PACKETS	4
+#define MAX_PACKETS	8
 
 /* The device disappears and comes back around a capture. */
 #define SETTLE_MS	500
@@ -64,8 +64,29 @@ struct packet {
 	size_t	len;
 };
 
+/*
+ * The initialisation the Linux driver performs before the mode switch, sent
+ * on the interrupt OUT endpoint while the wheel is still at the boot product
+ * id. Source: drivers/hid/hid-thrustmaster.c, setup_0 to setup_4, sent by
+ * thrustmaster_interrupts() from thrustmaster_probe() before the model query.
+ * Akellacom's macOS T300RS driver ships the same five packets and says they
+ * "MUST be sent before the mode switch".
+ *
+ * This project never sent them, which is the difference between a wheel that
+ * ends up free on Linux and one that ends up blocked here.
+ */
+static const uint8_t init_pkts[][9] = {
+	{ 0x42, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+	{ 0x0a, 0x04, 0x90, 0x03, 0x00, 0x00, 0x00, 0x00 },
+	{ 0x0a, 0x04, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x00 },
+	{ 0x0a, 0x04, 0x12, 0x10, 0x00, 0x00, 0x00, 0x00 },
+	{ 0x0a, 0x04, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00 }
+};
+static const size_t init_lens[] = { 9, 8, 8, 8, 8 };
+
 enum action {
 	ACT_NONE = 0,
+	ACT_INIT,
 	ACT_AUTOCENTER,
 	ACT_AUTOCENTER_OFF,
 	ACT_RANGE,
@@ -276,12 +297,53 @@ find_out_pipe(IOUSBInterfaceInterface500 **iface, UInt8 *pipe, UInt8 *addr)
 	return *pipe != 0 ? 0 : -1;
 }
 
+/*
+ * The two endpoint 0 transfers, issued while the device is still captured so
+ * that nothing re-enumerates between the setup packets and the switch.
+ */
+static int
+mode_switch(IOUSBDeviceInterface500 **dev)
+{
+	IOUSBDevRequestTO req;
+	uint8_t buf[T150_RQ_MODEL_LEN];
+	IOReturn r;
+
+	memset(&req, 0, sizeof(req));
+	memset(buf, 0, sizeof(buf));
+	req.bmRequestType = T150_RQ_MODEL_TYPE;
+	req.bRequest = T150_RQ_MODEL;
+	req.wLength = T150_RQ_MODEL_LEN;
+	req.pData = buf;
+	req.noDataTimeout = 1000;
+	req.completionTimeout = 1000;
+
+	r = (*dev)->DeviceRequestTO(dev, &req);
+	printf("  model query                  %s\n", probe_ioreturn_str(r));
+	if (r != kIOReturnSuccess)
+		return -1;
+	printf("  attachment 0x%02x, model 0x%02x\n",
+	    buf[T150_RQ_MODEL_OFF_ATTACH], buf[T150_RQ_MODEL_OFF_MODEL]);
+
+	memset(&req, 0, sizeof(req));
+	req.bmRequestType = T150_RQ_SWITCH_TYPE;
+	req.bRequest = T150_RQ_SWITCH;
+	req.wValue = T150_SWITCH_VALUE;
+	req.noDataTimeout = 1000;
+	req.completionTimeout = 1000;
+
+	r = (*dev)->DeviceRequestTO(dev, &req);
+	printf("  mode switch                  %s\n", probe_ioreturn_str(r));
+
+	/* The wheel leaves before it can answer, which is the normal case. */
+	return (r == kIOReturnSuccess || r == kIOReturnNotResponding) ? 0 : -1;
+}
+
 static void
 usage(void)
 {
 	fprintf(stderr,
 	    "usage: probe_intr [-v vid] [-p pid] [-N pad]\n"
-	    "                  [-a force | -A | -r degrees | -g gain |\n"
+	    "                  [-I | -a force | -A | -r degrees | -g gain |\n"
 	    "                   -x \"hex bytes\"]\n"
 	    "\n"
 	    "  Writes on the interrupt OUT pipe rather than through the HID\n"
@@ -292,13 +354,16 @@ usage(void)
 	    "  -p pid       product id (default 0x%04x)\n"
 	    "  -N pad       zero-pad every packet to this length\n"
 	    "\n"
+	    "  -I           send the initialisation the Linux driver sends on\n"
+	    "               this pipe, then the mode switch, in one capture.\n"
+	    "               Run it on a wheel still at the boot id 0x%04x.\n"
 	    "  -a force     autocenter to force (0..10000) and enable it\n"
 	    "  -A           disable autocenter, the one that frees a held wheel\n"
 	    "  -r degrees   set rotation range (%u..%u)\n"
 	    "  -g gain      set gain (0..10000)\n"
 	    "  -x \"40 04 ..\"  send these raw bytes, repeatable up to %d times\n",
-	    T150_VID, T150_PID_FIRMWARE, T150_RANGE_MIN, T150_RANGE_MAX,
-	    MAX_PACKETS);
+	    T150_VID, T150_PID_FIRMWARE, T150_PID_BOOT, T150_RANGE_MIN,
+	    T150_RANGE_MAX, MAX_PACKETS);
 	exit(2);
 }
 
@@ -318,7 +383,7 @@ main(int argc, char *argv[])
 
 	memset(pkt, 0, sizeof(pkt));
 
-	while ((ch = getopt(argc, argv, "v:p:N:a:Ar:g:x:")) != -1) {
+	while ((ch = getopt(argc, argv, "v:p:N:Ia:Ar:g:x:")) != -1) {
 		unsigned long parsed;
 
 		switch (ch) {
@@ -346,6 +411,13 @@ main(int argc, char *argv[])
 			if (act != ACT_NONE)
 				usage();
 			act = ACT_AUTOCENTER_OFF;
+			break;
+		case 'I':
+			if (act != ACT_NONE)
+				usage();
+			act = ACT_INIT;
+			/* The wheel is at the boot id until this succeeds. */
+			pid = T150_PID_BOOT;
 			break;
 		case 'r':
 			if (act != ACT_NONE ||
@@ -388,6 +460,14 @@ main(int argc, char *argv[])
 	 * about the wheel it proves about src/lib/encode.c as well.
 	 */
 	switch (act) {
+	case ACT_INIT:
+		for (npkt = 0; npkt < sizeof(init_lens) / sizeof(init_lens[0]);
+		    npkt++) {
+			memcpy(pkt[npkt].bytes, init_pkts[npkt],
+			    init_lens[npkt]);
+			pkt[npkt].len = init_lens[npkt];
+		}
+		break;
 	case ACT_AUTOCENTER:
 		pkt[0].len = t150_enc_autocenter_force(pkt[0].bytes,
 		    sizeof(pkt[0].bytes), (uint32_t)arg);
@@ -456,6 +536,9 @@ main(int argc, char *argv[])
 	}
 	printf("\nwriting on pipe %u, endpoint 0x%02x\n", pipe, addr);
 
+	if (act == ACT_INIT)
+		printf("sending the initialisation the Linux driver sends\n");
+
 	rc = 0;
 	for (i = 0; i < npkt; i++) {
 		size_t len = pkt[i].len;
@@ -482,6 +565,16 @@ main(int argc, char *argv[])
 		}
 	}
 
+	/*
+	 * Still captured, so nothing re-enumerates between the setup packets
+	 * and the switch. That ordering is the point of doing both here.
+	 */
+	if (rc == 0 && act == ACT_INIT) {
+		printf("\nswitching to firmware mode\n");
+		if (mode_switch(dev) != 0)
+			rc = 1;
+	}
+
 out:
 	if (iface != NULL) {
 		(void)(*iface)->USBInterfaceClose(iface);
@@ -494,7 +587,11 @@ out:
 	printf("\nhanding the wheel back to macOS\n");
 	release_device(vid, pid);
 
-	if (rc == 0)
+	if (rc == 0 && act == ACT_INIT)
+		printf("\nThe wheel should have re-enumerated at 0x%04x, and\n"
+		    "this time it was initialised first. Check with probe_hid,\n"
+		    "then try turning it by hand.\n", T150_PID_FIRMWARE);
+	else if (rc == 0)
 		printf("\nEvery write was accepted on the pipe the firmware\n"
 		    "listens to. What settles this is whether the wheel\n"
 		    "reacted: with -A, whether it became turnable.\n");

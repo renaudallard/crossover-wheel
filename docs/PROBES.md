@@ -148,6 +148,27 @@ descriptor dumps written by `-o .` can be parsed offline on Linux with
 
 ## Question 2: can the wheel be switched to firmware mode?
 
+**Use `probe_intr -I`, not `probe_ep0 -w`.** The switch is three steps, not
+two: five packets go out on the interrupt OUT pipe first, while the wheel is
+still at the boot id, and skipping them leaves the wheel switched but
+blocked. That is what every earlier session did.
+
+```sh
+sudo ./build/bin/probe_intr -I
+./build/bin/probe_hid -o .
+```
+
+One capture covers the initialisation and the switch, so nothing
+re-enumerates between them. Then **turn the wheel by hand**: on Linux, where
+the kernel sends the same five packets, the wheel is free at this point with
+no force feedback driver loaded at all.
+
+`probe_ep0` remains the tool for asking what a wheel is and what privilege
+endpoint 0 needs. Its `-w` performs the switch without the initialisation,
+which is now known to be incomplete.
+
+### The old two-step switch
+
 Only needed if question 1 found the wheel at `B65D`, and then it is needed
 before anything else: until this succeeds the wheel is not the device
 PROTOCOL.md describes, and it may not even turn.
