@@ -11,7 +11,11 @@ WARNINGS = -Wall -Wextra -Wshadow -Wpointer-arith -Wstrict-prototypes \
 
 # The probes use getopt, nanosleep and PATH_MAX, so ask for POSIX 2008
 # explicitly rather than relying on whatever the compiler exposes by default.
-CPPFLAGS += -Iinclude -Isrc/probe -Isrc/t150d -D_POSIX_C_SOURCE=200809L
+# -MMD -MP writes a .d beside every .o listing the headers it used, and the
+# include at the end of this file feeds them back. Without it a change to
+# include/t150/*.h leaves every object stale, which is how a corrected gain
+# constant once passed its own test suite unnoticed.
+CPPFLAGS += -Iinclude -Isrc/probe -Isrc/t150d -D_POSIX_C_SOURCE=200809L -MMD -MP
 CFLAGS   += -std=c11 $(WARNINGS)
 
 UNAME_S := $(shell uname -s)
@@ -163,3 +167,6 @@ strict:
 
 clean:
 	rm -rf $(BUILD)
+
+DEPS = $(shell find $(OBJ) -name '*.d' 2>/dev/null)
+-include $(DEPS)
