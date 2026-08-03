@@ -73,6 +73,17 @@ struct packet {
 	size_t	len;
 };
 
+/*
+ * Why a read is running. The two callers want opposite things from the
+ * person at the wheel, and telling them the wrong one wastes the session:
+ * -R wants every control worked, -H wants hands off so that any movement is
+ * the wheel's own.
+ */
+enum read_why {
+	READ_CONTROLS = 0,
+	READ_EFFECT
+};
+
 /* A pipe reference as IOUSBLib wants it, plus the endpoint it belongs to. */
 struct pipe {
 	UInt8	ref;
@@ -433,7 +444,7 @@ read_done(void *refcon, IOReturn result, void *arg0)
 
 static int
 read_reports(IOUSBInterfaceInterface500 **iface, struct pipe *in,
-    unsigned long seconds)
+    unsigned long seconds, enum read_why why)
 {
 	CFRunLoopSourceRef src = NULL;
 	IOReturn r;
@@ -459,8 +470,15 @@ read_reports(IOUSBInterfaceInterface500 **iface, struct pipe *in,
 
 	printf("\nreading on pipe %u, endpoint 0x%02x for %lu second(s)\n",
 	    (unsigned)in->ref, (unsigned)in->addr, seconds);
-	printf("only reports that differ from the one before are shown, so\n"
-	    "work every button, the hat and the pedals while this runs\n\n");
+	if (why == READ_EFFECT)
+		printf("only reports that differ from the one before are "
+		    "shown.\n**Keep your hands off the wheel.** Anything that "
+		    "changes now is the\nwheel moving under its own power, "
+		    "which is what the effect was for\n\n");
+	else
+		printf("only reports that differ from the one before are "
+		    "shown, so\nwork every button, the hat and the pedals "
+		    "while this runs\n\n");
 
 	arm_read(&rd);
 	if (rd.failed == 0)
@@ -798,7 +816,8 @@ main(int argc, char *argv[])
 			warnx("no interrupt IN pipe on this interface");
 			goto out;
 		}
-		rc = read_reports(iface, &in, seconds) == 0 ? 0 : 1;
+		rc = read_reports(iface, &in, seconds, READ_CONTROLS) == 0 ?
+		    0 : 1;
 		goto out;
 	}
 
@@ -850,7 +869,7 @@ main(int argc, char *argv[])
 		printf("\nholding the wheel for %lu second(s) before handing "
 		    "it back\n", hold);
 		if (in.ref != 0)
-			(void)read_reports(iface, &in, hold);
+			(void)read_reports(iface, &in, hold, READ_EFFECT);
 		else
 			nap((long)hold * 1000);
 	}
