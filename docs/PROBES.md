@@ -467,7 +467,8 @@ its four 16-bit axes, so those are the ones to look at.
 | --- | --- |
 | A line for each press | The wheel is fine. The loss is in macOS, SDL or winebus, and B8 is where to look. An input problem, not a force feedback one. |
 | No line for any press, stream otherwise changing | The wheel is not reporting buttons in this mode, which would be a firmware mode property worth knowing before anything depends on it. |
-| Nothing at all | Either the wheel sends nothing while captured, or the read is wrong. Compare against boot mode, which declares a different report entirely. |
+| Nothing at all | The wheel sends nothing while captured. Check it is still attached, then compare against boot mode, which declares a different report entirely. |
+| `the read failed` | The read path itself broke, so the run says nothing either way. Rerun it before concluding anything. |
 
 The reads are asynchronous on a run loop rather than the plain synchronous
 call, because IOUSBLib rejects timeouts on an interrupt pipe and the version

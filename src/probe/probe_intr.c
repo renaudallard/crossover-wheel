@@ -488,9 +488,18 @@ read_reports(IOUSBInterfaceInterface500 **iface, struct pipe *in,
 	printf("\n%lu report(s) read, %lu of them different from the one "
 	    "before\n", rd.total, rd.shown);
 
-	if (rd.total == 0) {
-		printf("the wheel sent nothing at all, which is a result in "
-		    "itself\n");
+	/*
+	 * Only draw a conclusion from a run that worked. A read path that
+	 * failed produces no reports either, and reporting that as a silent
+	 * wheel is the one wrong answer this tool must never give.
+	 */
+	if (rd.failed) {
+		printf("the read failed, so this run says nothing about the "
+		    "wheel either way\n");
+	} else if (rd.total == 0) {
+		printf("the wheel sent nothing at all in that time, which is "
+		    "a result in itself.\nCheck it is still attached before "
+		    "believing it\n");
 	} else if (rd.shown <= 1) {
 		printf("nothing ever changed, so nothing you did reached the "
 		    "wire\n");
