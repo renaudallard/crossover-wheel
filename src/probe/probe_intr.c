@@ -14,6 +14,10 @@
  * back, and it is the experiment that says whether the bytes in
  * docs/PROTOCOL.md are right.
  *
+ * Having the device captured also allows the opposite direction: -R reads the
+ * interrupt IN pipe, which is the only way to see what the wheel reports
+ * without anything above the USB layer in the way.
+ *
  * NEEDS ROOT. Device capture is privileged, unlike everything else here.
  *
  * The wheel is handed back on every exit path, including failures. If this
@@ -49,6 +53,10 @@
 #define WAIT_TRIES	300
 #define WAIT_STEP_MS	10
 
+/* Short enough that -R still stops on time between reports. */
+#define READ_TIMEOUT_MS	100
+#define READ_SECONDS	15
+
 static void
 nap(long ms)
 {
@@ -62,6 +70,12 @@ nap(long ms)
 struct packet {
 	uint8_t	bytes[MAX_PAYLOAD];
 	size_t	len;
+};
+
+/* A pipe reference as IOUSBLib wants it, plus the endpoint it belongs to. */
+struct pipe {
+	UInt8	ref;
+	UInt8	addr;
 };
 
 /*
@@ -91,7 +105,8 @@ enum action {
 	ACT_AUTOCENTER_OFF,
 	ACT_RANGE,
 	ACT_GAIN,
-	ACT_RAW
+	ACT_RAW,
+	ACT_READ
 };
 
 static io_service_t
@@ -267,18 +282,23 @@ open_interface(IOUSBDeviceInterface500 **dev)
 	return iface;
 }
 
-/* The first interrupt OUT pipe, which is where the wheel listens. */
-static int
-find_out_pipe(IOUSBInterfaceInterface500 **iface, UInt8 *pipe, UInt8 *addr)
+/*
+ * The first interrupt pipe in each direction. OUT is where the wheel listens
+ * and IN is where it reports, and one walk of the endpoints finds both.
+ */
+static void
+find_pipes(IOUSBInterfaceInterface500 **iface, struct pipe *out,
+    struct pipe *in)
 {
 	UInt8 n = 0, i;
 
 	if ((*iface)->GetNumEndpoints(iface, &n) != kIOReturnSuccess)
-		return -1;
+		return;
 
 	for (i = 1; i <= n; i++) {
 		UInt8 dir = 0, num = 0, tt = 0, interval = 0;
 		UInt16 maxsize = 0;
+		struct pipe *p;
 
 		if ((*iface)->GetPipeProperties(iface, i, &dir, &num, &tt,
 		    &maxsize, &interval) != kIOReturnSuccess)
@@ -288,13 +308,82 @@ find_out_pipe(IOUSBInterfaceInterface500 **iface, UInt8 *pipe, UInt8 *addr)
 		    dir == kUSBOut ? "out" : dir == kUSBIn ? "in" : "?", tt,
 		    (unsigned)(num | (dir == kUSBIn ? 0x80 : 0)), maxsize);
 
-		if (dir == kUSBOut && tt == kUSBInterrupt && *pipe == 0) {
-			*pipe = i;
-			*addr = num;
-		}
+		if (tt != kUSBInterrupt)
+			continue;
+		p = dir == kUSBOut ? out : dir == kUSBIn ? in : NULL;
+		if (p == NULL || p->ref != 0)
+			continue;
+		p->ref = i;
+		p->addr = (UInt8)(num | (dir == kUSBIn ? 0x80 : 0));
+	}
+}
+
+/*
+ * Read the interrupt IN pipe and print only the reports that differ from the
+ * one before. The wheel streams its state continuously, so printing every
+ * report would bury the one thing this is for: whether pressing a button
+ * changes any bit. A press shows up as one new line.
+ */
+static int
+read_reports(IOUSBInterfaceInterface500 **iface, struct pipe *in,
+    unsigned long seconds)
+{
+	uint8_t buf[MAX_PAYLOAD], prev[MAX_PAYLOAD];
+	unsigned long total = 0, shown = 0;
+	struct timespec start, now;
+	size_t prev_len = 0;
+
+	if (clock_gettime(CLOCK_MONOTONIC, &start) != 0) {
+		warnx("clock_gettime failed");
+		return -1;
 	}
 
-	return *pipe != 0 ? 0 : -1;
+	printf("\nreading on pipe %u, endpoint 0x%02x for %lu second(s)\n",
+	    in->ref, in->addr, seconds);
+	printf("only reports that differ from the one before are shown, so\n"
+	    "work every button, the hat and the pedals while this runs\n\n");
+
+	memset(prev, 0, sizeof(prev));
+
+	for (;;) {
+		UInt32 size = (UInt32)sizeof(buf);
+		IOReturn r;
+
+		if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+			break;
+		if ((unsigned long)(now.tv_sec - start.tv_sec) >= seconds)
+			break;
+
+		r = (*iface)->ReadPipeTO(iface, in->ref, buf, &size,
+		    READ_TIMEOUT_MS, READ_TIMEOUT_MS);
+		if (r == kIOReturnTimeout || r == kIOUSBTransactionTimeout)
+			continue;
+		if (r != kIOReturnSuccess) {
+			printf("  ReadPipeTO                   %s\n",
+			    probe_ioreturn_str(r));
+			return -1;
+		}
+		if (size > sizeof(buf))
+			size = (UInt32)sizeof(buf);
+
+		total++;
+		if (size == prev_len && memcmp(buf, prev, prev_len) == 0)
+			continue;
+
+		printf("  read %2u byte(s):", (unsigned)size);
+		probe_hexdump(stdout, buf, size);
+		memcpy(prev, buf, size);
+		prev_len = size;
+		shown++;
+	}
+
+	printf("\n%lu report(s) read, %lu of them different from the one "
+	    "before\n", total, shown);
+	if (total == 0)
+		printf("the wheel sent nothing at all, which is a result in "
+		    "itself\n");
+
+	return 0;
 }
 
 /*
@@ -344,7 +433,7 @@ usage(void)
 	fprintf(stderr,
 	    "usage: probe_intr [-v vid] [-p pid] [-N pad]\n"
 	    "                  [-I | -a force | -A | -r degrees | -g gain |\n"
-	    "                   -x \"hex bytes\"]\n"
+	    "                   -R seconds | -x \"hex bytes\"]\n"
 	    "\n"
 	    "  Writes on the interrupt OUT pipe rather than through the HID\n"
 	    "  layer, which means capturing the wheel from macOS and handing\n"
@@ -364,9 +453,14 @@ usage(void)
 	    "               -a 0 for that, which is also the default\n"
 	    "  -r degrees   set rotation range (%u..%u)\n"
 	    "  -g gain      set gain (0..10000)\n"
+	    "  -R seconds   write nothing, read the interrupt IN pipe instead\n"
+	    "               and print the reports that change (default %d).\n"
+	    "               This is what says whether the buttons reach the\n"
+	    "               wire at all, independently of what Wine makes of\n"
+	    "               them\n"
 	    "  -x \"40 04 ..\"  send these raw bytes, repeatable up to %d times\n",
 	    T150_VID, T150_PID_FIRMWARE, T150_PID_BOOT, T150_RANGE_MIN,
-	    T150_RANGE_MAX, MAX_PACKETS);
+	    T150_RANGE_MAX, READ_SECONDS, MAX_PACKETS);
 	exit(2);
 }
 
@@ -376,17 +470,19 @@ main(int argc, char *argv[])
 	struct packet pkt[MAX_PACKETS];
 	IOUSBDeviceInterface500 **dev = NULL;
 	IOUSBInterfaceInterface500 **iface = NULL;
+	struct pipe out, in;
 	io_service_t svc;
-	unsigned long arg = 10000, padto = 0;
+	unsigned long arg = 10000, padto = 0, seconds = READ_SECONDS;
 	long vid = T150_VID, pid = T150_PID_FIRMWARE;
 	enum action act = ACT_NONE;
 	size_t npkt = 0, i;
-	UInt8 pipe = 0, addr = 0;
 	int ch, rc = 1, raw_len;
 
 	memset(pkt, 0, sizeof(pkt));
+	memset(&out, 0, sizeof(out));
+	memset(&in, 0, sizeof(in));
 
-	while ((ch = getopt(argc, argv, "v:p:N:Ia:Ar:g:x:")) != -1) {
+	while ((ch = getopt(argc, argv, "v:p:N:Ia:Ar:g:R:x:")) != -1) {
 		unsigned long parsed;
 
 		switch (ch) {
@@ -433,6 +529,12 @@ main(int argc, char *argv[])
 			    probe_parse_uint(optarg, T150_DI_MAX, &arg) != 0)
 				usage();
 			act = ACT_GAIN;
+			break;
+		case 'R':
+			if (act != ACT_NONE ||
+			    probe_parse_uint(optarg, 3600, &seconds) != 0)
+				usage();
+			act = ACT_READ;
 			break;
 		case 'x':
 			if (act != ACT_NONE && act != ACT_RAW)
@@ -501,6 +603,7 @@ main(int argc, char *argv[])
 		npkt = 1;
 		break;
 	case ACT_RAW:
+	case ACT_READ:
 		break;
 	case ACT_NONE:
 		usage();
@@ -540,11 +643,22 @@ main(int argc, char *argv[])
 	printf("USBInterfaceOpen               %s\n",
 	    probe_ioreturn_str((*iface)->USBInterfaceOpen(iface)));
 
-	if (find_out_pipe(iface, &pipe, &addr) != 0) {
+	find_pipes(iface, &out, &in);
+
+	if (act == ACT_READ) {
+		if (in.ref == 0) {
+			warnx("no interrupt IN pipe on this interface");
+			goto out;
+		}
+		rc = read_reports(iface, &in, seconds) == 0 ? 0 : 1;
+		goto out;
+	}
+
+	if (out.ref == 0) {
 		warnx("no interrupt OUT pipe on this interface");
 		goto out;
 	}
-	printf("\nwriting on pipe %u, endpoint 0x%02x\n", pipe, addr);
+	printf("\nwriting on pipe %u, endpoint 0x%02x\n", out.ref, out.addr);
 
 	if (act == ACT_INIT)
 		printf("sending the initialisation the Linux driver sends\n");
@@ -565,7 +679,7 @@ main(int argc, char *argv[])
 
 		printf("  send %2zu byte(s):", len);
 		probe_hexdump(stdout, pkt[i].bytes, len);
-		r = (*iface)->WritePipe(iface, pipe, pkt[i].bytes,
+		r = (*iface)->WritePipe(iface, out.ref, pkt[i].bytes,
 		    (UInt32)len);
 		printf("  WritePipe                    %s\n",
 		    probe_ioreturn_str(r));
@@ -611,6 +725,10 @@ out:
 		printf("\nThe wheel should have re-enumerated at 0x%04x, and\n"
 		    "this time it was initialised first. Check with probe_hid,\n"
 		    "then try turning it by hand.\n", T150_PID_FIRMWARE);
+	else if (rc == 0 && act == ACT_READ)
+		printf("\nA line per state change means the wheel puts buttons\n"
+		    "on the wire and anything that loses them is above the\n"
+		    "USB layer. No line for any button means the wheel.\n");
 	else if (rc == 0)
 		printf("\nEvery write was accepted on the pipe the firmware\n"
 		    "listens to. What settles this is whether the wheel\n"

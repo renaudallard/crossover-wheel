@@ -41,6 +41,7 @@
 .Fl A |
 .Fl r Ar degrees |
 .Fl g Ar gain |
+.Fl R Ar seconds |
 .Fl x Ar bytes ...
 .Oc
 .Sh DESCRIPTION
@@ -170,6 +171,11 @@ nothing has it open, which on macOS is always. Only the force releases it.
 Set the rotation range.
 .It Fl g Ar gain
 Set the gain, 0 to 10000.
+.It Fl R Ar seconds
+Write nothing. Read the interrupt IN pipe instead and print every report that
+differs from the one before, which is how to see what the wheel puts on the
+wire with nothing above the USB layer in the way. A button that produces no
+line here never left the wheel.
 .It Fl x Ar bytes
 Raw hex payload, repeatable. Every packet goes out on one capture, which
 matters for a sequence such as a force feedback upload, because the release
@@ -219,6 +225,10 @@ Release a wheel that is being held rigid, on the pipe the firmware listens
 to:
 .Pp
 .Dl $ sudo probe_intr -a 0
+.Pp
+See what the wheel reports while you work every control:
+.Pp
+.Dl $ sudo probe_intr -R 15
 .Sh SEE ALSO
 .Xr crossover-wheel 7
 .Pp
