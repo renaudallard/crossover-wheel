@@ -71,11 +71,18 @@ fault and stops every effect after half a second without traffic.
 .Sh STATUS
 The probe tools, the shared headers, the wire encoders, the wire protocol,
 the daemon's logic and the proxy exist. The macOS HID backend and the command
-line tools do not, and the proxy has never been executed. The project is
-gated on one measurement, whether an unprivileged
+line tools do not, and the proxy has never been executed.
+.Pp
+The measurement the project was gated on has been made and it succeeded: an
+unprivileged
 .Fn IOHIDDeviceSetReport
-physically moves the wheel, described in
-.Pa docs/PROBES.md .
+sets the wheel's autocenter to full and it becomes hard to turn, then
+releases it and it turns freely, with CrossOver free to keep reading the
+wheel. Force feedback effects are a different matter and still move nothing,
+on that pipe or on interrupt OUT, which makes it a question about the packet
+layout rather than about macOS. See
+.Pa docs/PROBES.md
+and RESEARCH.md A19 and A20.
 .Pp
 Everything written so far is checked by
 .Cm make test

@@ -1,4 +1,4 @@
-.Dd July 31, 2026
+.Dd August 3, 2026
 .Dt T150-PROBE 1
 .Os
 .Sh NAME
@@ -70,14 +70,15 @@ file for offline analysis.
 .El
 .Pp
 .Nm probe_setreport
-is the decisive experiment: it tries to make the wheel physically react from
-an ordinary unprivileged process using
+was the decisive experiment and it has been answered yes: it makes the wheel
+physically react from an ordinary unprivileged process using
 .Fn IOHIDDeviceSetReport .
 The device is opened without
 .Dv kIOHIDOptionsTypeSeizeDevice ,
 so a running game keeps receiving input. With no action given it sets the
-autocenter spring to full and enables it, because that reaction is
-unmistakable.
+autocenter to full, which makes the wheel hard to turn;
+.Fl a Ar 0
+releases it again. That pair is the measurement.
 .Bl -tag -width Ds
 .It Fl n Ar node
 Which matching HID node to write to. The default is 0.
@@ -135,17 +136,18 @@ The default is 0x0006, the T150 row.
 .El
 .Ss probe_intr
 .Nm probe_intr
-writes on the interrupt OUT pipe instead of through the HID layer, which is
-the pipe Thrustmaster firmware is reported to actually listen to. Reaching it
-means capturing the wheel away from macOS, so this tool
+writes on the interrupt OUT pipe instead of through the HID layer. The wheel
+obeys both, so this is the cross-check and the reader, not the only way in.
+Reaching that pipe means capturing the wheel away from macOS, so this tool
 .Em needs root ,
 unlike every other tool here. It captures, writes and hands the wheel back on
 every exit path.
 .Pp
-With no action it sets the autocenter force to zero, which is the most
-informative thing to send a wheel that is being held rigid: if the wheel
-becomes turnable the firmware was listening all along and only the pipe was
-wrong. Its packets are built by the shared encoders in
+With no action it sets the autocenter force to zero, which frees a wheel that
+is resting on its default full autocenter. The same bytes work through
+.Nm probe_setreport
+without root, so this tool is the cross-check rather than the only way in.
+Its packets are built by the shared encoders in
 .Pa src/lib/encode.c ,
 so a run exercises those too.
 .Bl -tag -width Ds
@@ -222,12 +224,16 @@ Find out whether endpoint 0 needs root:
 .Dl $ probe_ep0
 .Dl $ sudo probe_ep0
 .Pp
-Release a wheel that is being held rigid, on the pipe the firmware listens
-to:
+Release a wheel resting on its default autocenter, without root:
+.Pp
+.Dl $ probe_setreport -a 0
+.Pp
+The same on the interrupt OUT pipe, as a cross-check:
 .Pp
 .Dl $ sudo probe_intr -a 0
 .Pp
-See what the wheel reports while you work every control:
+See what the wheel reports while you work every control, which is how it was
+shown to put all thirteen of its buttons on the wire:
 .Pp
 .Dl $ sudo probe_intr -R 15
 .Sh SEE ALSO

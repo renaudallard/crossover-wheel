@@ -417,58 +417,50 @@ settles the framing, and nothing else can. That decides whether the
 finished tool needs a password once per plug-in or never. If only `-s` works,
 stop and reassess: seizing takes the wheel away from CrossOver.
 
-**A3. Write on the pipe the wheel listens to.** This needs root, because it
-captures the wheel from macOS, writes, and hands it straight back:
-
-```sh
-sudo ./build/bin/probe_intr -a 0
-```
-
-That sets the autocenter force to zero, which is the most informative thing
-to send a wheel being held rigid. **Not `-A`**: the enable flag only says
-whether the autocenter survives a process opening the wheel's input, and the
-effect is active whenever nothing has it open, which on macOS is always.
-Only the force releases it. **If the wheel becomes turnable, three questions are
-answered at once**: the wheel is healthy, the bytes in `docs/PROTOCOL.md` are
-right, and the pipe was the whole problem. On the evidence in
-[`docs/RESEARCH.md`](docs/RESEARCH.md) C7 this is more likely to move the
-wheel than A4 is, which is why it comes first.
-
-It can configure a wheel but cannot drive effects during a game: holding that
-pipe means owning the device, and CrossOver cannot read a wheel this tool
-owns.
-
-**A4. The same bytes through the HID layer**, which is what the project
-actually needs to work and so far never has. Establish a baseline first,
-because the runs so far did not. With the wheel freshly plugged in and switched, and before sending a
-single byte, turn it by hand and note what you feel. Everything below is a
-comparison against that.
-
-A measured wheel sat rigid through every write, which looks like a negative
-result and is not one: that run set the autocenter to maximum and never
-turned it off, so a wheel obeying perfectly and a wheel ignoring everything
-both ended up immovable. On a wheel that is already rigid, the most
-informative single command is the one that releases the spring, because if it
-frees up the firmware has been obeying all along:
+**A3. Write through the HID layer**, which is the path the project needs and
+which needs no root. Turn the wheel by hand first, before sending anything,
+so you have a baseline. A freshly plugged wheel holds a full autocenter and
+feels locked; that is normal, not a fault.
 
 ```sh
 ./build/bin/probe_setreport -a 0
 ```
 
-Then autocenter, because its effect is unmistakable, the wheel starts pulling
-itself to centre:
+That sets the autocenter force to zero. **Not `-A`**: the enable flag only
+says whether the autocenter survives a process opening the wheel's input, and
+the effect is active whenever nothing has it open, which on macOS is always.
+Only the force releases it. Then put it back and take it off again, because
+the change is what proves the point:
 
 ```sh
 ./build/bin/probe_setreport
 ./build/bin/probe_setreport -a 0
 ```
 
+Expect free, then hard to turn, then free. That is what was measured, and it
+answers the whole gate: the firmware obeys an unprivileged
+`IOHIDDeviceSetReport` and CrossOver keeps the wheel throughout.
+
 **A success return is not the answer.** macOS can accept a report the
-firmware then discards. What settles this is whether the wheel physically
+firmware then discards. What settles it is whether the wheel physically
 moved.
 
-**A5. If it returned success and nothing moved,** work the framings before
-concluding anything:
+**A4. The same bytes on the interrupt OUT pipe**, as the cross-check. This
+needs root, because it captures the wheel from macOS, writes, and hands it
+straight back:
+
+```sh
+sudo ./build/bin/probe_intr -a 0
+```
+
+This works too, so the two are not alternatives and the interrupt route is a
+fallback rather than the plan. It can configure a wheel but cannot drive
+effects during a game: holding that pipe means owning the device, and
+CrossOver cannot read a wheel this tool owns.
+
+**A5. Only if A3 returned success and nothing moved.** It did move on the
+wheel measured here, so this is for a wheel that behaves differently. Work
+the framings before concluding anything:
 
 ```sh
 ./build/bin/probe_setreport -i 0x0a

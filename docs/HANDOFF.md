@@ -157,28 +157,38 @@ wheel reaches `b677`, no node carries `ProtectedAccess`, and writes still
 return success with a game running. RESEARCH.md A4 to A8 has the detail and
 PROBES.md says which steps no longer need repeating.
 
-The one that decides the project is still open, and the question has
-sharpened. Three runs sent every framing through `IOHIDDeviceSetReport`; all
-were accepted and none changed anything, on a wheel that calibrates normally
-and is therefore not broken. RESEARCH.md C7 supplies the likely reason: a
-shipping macOS driver for the sibling T300RS states that Thrustmaster
-firmware acknowledges the control SET_REPORT pipe and ignores it, and writes
-on the interrupt OUT pipe instead.
+**The one that decides the project is answered yes.** `probe_setreport` set
+the autocenter to full and the wheel became hard to turn; `probe_setreport
+-a 0` released it and it turned freely. Unprivileged, no device capture, and
+CrossOver keeps the wheel throughout. `probe_intr` does the same on the
+interrupt OUT pipe, so both transports reach the firmware. RESEARCH.md A19.
 
-`probe_intr` now writes on that pipe, by capturing the wheel and handing it
-back, and running it against `probe_setreport` is the comparison that decides
-the shape of the project. If only the interrupt OUT path works then settings
-are reachable and effects during a game are not, because holding that pipe
-means owning the device. See section 8, which anticipated a version of this.
+The earlier runs that concluded the opposite were all sending `-A`, the
+autocenter enable flag, which is a no-op on macOS: the effect is active
+whenever no application has the wheel's input open, so the flag changes
+nothing observable and only the force releases the wheel. RESEARCH.md A15.
+C7, which predicted that the HID path could not work at all, is measured
+false for this wheel.
 
-Two traps:
+So there is no ownership conflict for settings, `t150ctl` needs no
+privilege, and section 8's fallbacks are not needed for that half.
+
+**What is still open is force feedback.** With the autocenter cleared and the
+gain set, an effect upload moves nothing on either pipe, for a constant force
+or a periodic. Since both transports are proven, that is a question about the
+layout in PROTOCOL.md. RESEARCH.md A20 has the untried combinations.
+
+Two traps, and the second one cost this project six sessions:
 
 - A `kIOReturnSuccess` return is **not** the answer. macOS can accept a
   report the firmware then discards. What settles it is whether the wheel
   physically reacted.
-- If the first attempt fails, work through every framing (`-i 0x0a`, `-P`,
-  `-n 1`, and the range opcode as well as the spring) before concluding the
-  HID path is closed. A wrong "no" here kills a viable project.
+- **Release the wheel with `-a 0`, never with `-A`.** The wheel rests holding
+  a full autocenter and feels locked, and `-A` only clears a flag that says
+  whether the autocenter survives an application opening the input. It does
+  nothing while nothing has the input open, which on macOS is always. Every
+  run that concluded the firmware ignores us was sending it. A wrong "no"
+  here nearly killed a viable project.
 
 ## 7. Build order after the gate
 
