@@ -386,11 +386,19 @@ return it to zero.
 
 This is the first time a parameter *value* this project sent has changed how
 the wheel feels, as distinct from A15's on-or-off result, and it confirms the
-settings transport a second way. It does not confirm that `0x03` is a spring.
-A stiffness that rises near a point and does not restore is closer to damping
-or friction than to a spring, and nothing yet explains it. `t150ctl` can
-expose the control without settling what to call it; the effect's shape is
-worth resolving before any autocenter figure appears in a user interface.
+settings transport a second way.
+
+**A later run resolved what shape it is, and it is a spring.** At full force
+the wheel is "hard to turn from position 0", which is a spring anchored at
+centre resisting movement away from it. At force 10 of 100, `40 03 0a 00`,
+there is no perceptible centring but the wheel is stiff for roughly the first
+25 degrees. That is the same spring, too weak to overcome the belt and gear
+train's own friction, so it resists leaving centre and cannot drag the wheel
+back. The earlier "does not restore" reading was the friction, not the
+opcode.
+
+So `0x03` is a spring force in hardware percent, exactly as PROTOCOL.md
+records it, and `t150ctl` can present it as one.
 
 **A18. The wheel's buttons do not reach Wine in firmware mode. Cause not yet
 established.** Superseded by A21, which established it: the wheel puts them
@@ -429,6 +437,12 @@ Free, then held, then free, with all three transitions driven through the HID
 layer and no `probe_intr` between them. The wheel had been left free by the
 preceding interrupt OUT run, so the stiffening is attributable to the HID
 write and to nothing else.
+
+**A second setting confirms it independently.** `probe_setreport -r 270` then
+`-r 1080`, again unprivileged, and the observation was that "the command for
+blocking the wheel at an angle is good and run perfectly": the wheel's end
+stops move. So the HID path carries opcode `0x11` as well as `0x03`, and this
+is not a quirk of one opcode.
 
 This is the single most valuable result the project has. It means the daemon
 can drive settings with a non-seizing `IOHIDDeviceSetReport` while CrossOver
@@ -520,16 +534,31 @@ which is also the strongest evidence available that the tool is right:
 | 13 | padding | `00` | constant, as declared |
 | 14 | hat | `0f` | four bits |
 
-Two runs cross-validate it. The first worked every button except the paddles
-and the PS button and reported buttons 3 to 12. The second added exactly
-those controls and reported buttons 1, 2 and 13 on top. So the paddles are
-buttons 1 and 2, PS is button 13, and between them the runs account for all
-thirteen.
+Three runs cross-validate it. The first worked every button except the
+paddles and the PS button and reported buttons 3 to 12. The second added
+exactly those controls and reported buttons 1, 2 and 13 on top, so the paddles
+are buttons 1 and 2 and PS is button 13. A third worked everything at once and
+returned byte 11 `ff`, byte 12 `1f`: **all thirteen buttons in a single run**,
+with byte 12's three padding bits still at zero.
 
 Meanwhile CrossOver's controller panel registers no button at all, in either
 its DirectInput or its XInput view. The wheel is therefore fine and this is
 an input path problem in macOS HID, SDL or winebus. B8 is where to look, and
 it is independent of force feedback.
+
+**And it may be worse than buttons.** The most recent report is "no button or
+axis functional in crossover game controllers menu with DInput and XInput",
+where earlier ones said the wheel was listed and its axes worked. Nothing
+here explains the difference and the wheel had been through several captures
+and a mode switch by then, so it needs a clean check before it is treated as
+a fact: replug the wheel, switch it with `probe_intr -I`, touch nothing else,
+and open the panel.
+
+**A22. Gain has no perceptible effect on its own, which is expected.**
+Measured: `43 80` and `43 00` on the interrupt OUT pipe felt the same. Gain
+scales force feedback effects, and no effect has ever rendered, so there is
+nothing for it to scale. This is not evidence that the opcode is wrong, and
+it will only become a real test once something moves the wheel.
 
 Everything below was written when the wheel was believed to be at fault, and
 is kept because the reasoning still holds if the wheel turns out not to obey

@@ -24,9 +24,9 @@ extension approval.
 > re-enumerates it, milliseconds after the upload. Both are fixed in the
 > tools now and the retest is the next thing to run.
 >
-> Separately, the wheel puts all thirteen of its buttons on the wire
-> and CrossOver registers none of them, which is an input path problem in
-> macOS HID, SDL or winebus. See [`docs/RESEARCH.md`](docs/RESEARCH.md) A15
+> Separately, the wheel puts all thirteen of its buttons on the wire and
+> CrossOver registers none of them, which is an input path problem in macOS
+> HID, SDL or winebus rather than anything the wheel does. See [`docs/RESEARCH.md`](docs/RESEARCH.md) A15
 > and A19 to A21, and [what needs doing next](#what-needs-doing-next).
 
 **Picking this up?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first. It is
@@ -186,6 +186,12 @@ the mask it printed matches the report descriptor field for field. CrossOver
 registers none of them, in either its DirectInput or its XInput view, so the
 loss is in macOS HID, SDL or winebus. That makes it an input problem rather
 than a force feedback one, and `docs/RESEARCH.md` B8 is where to start.
+
+One thing to pin down first: the latest report says the **axes** stop working
+too, where earlier ones had them working. Replug the wheel, switch it with
+`probe_intr -I`, touch nothing else, and open the controller panel, so that
+whatever is measured is measured on a wheel that has not been captured and
+released a dozen times.
 
 **3. Try the proxy in a bottle**, step by step under
 [testing it today](#testing-it-today). The DLL has never run under Wine, and
