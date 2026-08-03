@@ -14,7 +14,11 @@ Where a claim could not be verified it appears in section E, not in A to C.
 **A1. macOS enumerates the wheel as an ordinary joystick with nothing
 installed.** Its descriptor contains a Generic Desktop / Joystick application
 collection with a 16-bit X axis, 8-bit Y, Rz and slider, thirteen buttons and
-a hat. Axes, pedals, buttons and the hat therefore already reach games.
+a hat, so the steering and pedals already reach games.
+
+**The buttons do not, and A21 shows the wheel is not to blame.** They are
+declared, they change on the interrupt IN pipe when pressed, and CrossOver
+registers none of them. Something between macOS HID and winebus drops them.
 
 > Decoded from `t150_driver/traffic/old_caps/hid_report_fw35`. Corroborated
 > for Logitech by CrossWheel's troubleshooting page: "macOS recognizes the
@@ -116,7 +120,12 @@ dumped**, and doing so is now the cheapest useful measurement left:
 `probe_hid -o .` while the wheel is at `b677`.
 
 **A8. In firmware mode every write still returns success and the wheel is
-still locked.** Autocenter on and off, rotation range at both extremes, with
+still locked.** Superseded: A15 and A19 explain it. Every run described here
+released the autocenter with `-A`, which does nothing, so the wheel was still
+holding a full spring throughout and no framing could have shown a difference.
+Kept because the framing matrix itself was sound and need not be repeated.
+
+Autocenter on and off, rotation range at both extremes, with
 and without report id `0x0A`, padded and unpadded: all `kIOReturnSuccess`,
 and the wheel stayed rigid at centre throughout, unable to be turned by hand.
 
@@ -130,6 +139,11 @@ ignoring everything both ended up immovable.
 with the spring released between each variant, then both rotation range
 extremes. Every write returned `kIOReturnSuccess`. The wheel never moved and
 never became turnable.
+
+**The confound was not removed, because `-A` does not release the spring.**
+That is A15. The matrix ran with the autocenter at maximum from the first
+variant onwards, exactly as in the run before it. Substituting `-a 0` is what
+made the same tool, on the same wheel, produce A19.
 
 **A9. The wheel is healthy, and rigid is its resting state.** An earlier
 reading of this blamed power, on the strength of Thrustmaster documenting a

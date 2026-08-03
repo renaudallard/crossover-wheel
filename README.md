@@ -39,9 +39,15 @@ which half.
 
 **Already works, with nothing installed.** macOS enumerates the wheel as an
 ordinary joystick once it is in firmware mode, and CrossOver passes it into
-the bottle. Axes, pedals, buttons and the hat reach games today.
+the bottle, so the steering and pedals reach games today.
 
-**Does not work.** Force feedback. Wine's DirectInput sets
+**Does not work: the buttons.** Measured, and not the wheel's fault. It puts
+all thirteen buttons and the hat on the wire, and CrossOver's controller
+panel registers none of them in either its DirectInput or its XInput view.
+Something between macOS HID and winebus drops them. This is a separate
+problem from the one the project was built for, and it is not yet diagnosed.
+
+**Does not work: force feedback.** Wine's DirectInput sets
 `DIDC_FORCEFEEDBACK` only from a Physical Interface Device collection it
 finds in a descriptor, and nothing puts one there. On macOS the wheel arrives
 through winebus's SDL backend rather than its IOHID one, because winebus
