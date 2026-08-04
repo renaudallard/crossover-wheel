@@ -117,7 +117,13 @@ t150_effect_convert(struct t150_effect *ef, const DIEFFECT *p, DWORD flags)
 
 	if (flags & DIEP_DURATION)
 		ef->duration = p->dwDuration;
-	if (flags & DIEP_STARTDELAY)
+	/*
+	 * dwStartDelay is the one member DirectInput 6 added to DIEFFECT, so
+	 * a caller built against the older headers passes a struct that ends
+	 * before it. dwSize is how it says which it has, and reading the
+	 * member without checking reads past the end of the caller's object.
+	 */
+	if ((flags & DIEP_STARTDELAY) && p->dwSize >= sizeof(DIEFFECT))
 		ef->start_delay = p->dwStartDelay;
 	if (flags & DIEP_GAIN)
 		ef->gain = p->dwGain;
