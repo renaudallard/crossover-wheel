@@ -20,13 +20,11 @@ extension approval.
 > `t150_init()` the whole time. See [`docs/RESEARCH.md`](docs/RESEARCH.md)
 > A26 and A28.
 >
-> **What is not finished.** The force is wrong in a way that matters: a
-> constant at half the documented ceiling went to full lock rather than
-> pushing at half strength, so the direction or level scaling is off and no
-> game should be pointed at this yet. The daemon still has no macOS backend,
-> so it logs rather than drives. The proxy has never run in a bottle. And
-> CrossOver still registers none of the wheel's buttons, which is a separate
-> input-path problem (A21, A25).
+> **What is not finished.** The daemon still has no macOS backend, so it logs
+> rather than drives. The proxy has never run in a bottle. Only a constant
+> and one periodic have been played, so nothing has exercised springs,
+> dampers or envelopes on hardware. And CrossOver still registers none of the
+> wheel's buttons, which is a separate input-path problem (A21, A25).
 
 **Picking this up?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first. It is
 written for someone starting with no context: what is decided, what is
@@ -150,16 +148,14 @@ needs no privilege at all.
 What is left is three experiments, all needing the Mac and **all independent
 of each other**.
 
-**1. Get the force right.** Force feedback works, so this is no longer a
-question of whether but of how much. A constant at level `0x20`, half the
-documented `0x40` ceiling, drove the wheel to full lock and held it: that is
-not half force in a direction. The direction handling in
-`t150_enc_ff_commit` and the level scaling in `t150_enc_ff_update` are the
-suspects, and the vendor captures in [`docs/RESEARCH.md`](docs/RESEARCH.md)
-A27 are the reference to compare against. **No game should be pointed at
-this until it is fixed.**
+**1. Play the effects nobody has played yet.** A constant and one periodic
+have moved the wheel. Springs, dampers, envelopes, ramps and per-effect gain
+have never touched hardware, and every one of them is arithmetic this project
+derived from a driver rather than measured. `probe_setreport -x` plays any of
+them in a line, and the encoders' own golden vectors say what the bytes
+should be.
 
-While you are there, settle which waveform `0x4020` is. It oscillates, so it
+Settle which waveform `0x4020` is while you are there. It oscillates, so it
 is real, and PROTOCOL.md still calls it a guess; comparing it against
 `0x4021` by feel says whether square and triangle can stop being downgrades.
 

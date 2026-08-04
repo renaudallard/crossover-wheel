@@ -123,6 +123,51 @@ test_settings(void)
 	    (long)t150_enc_input_open(b, 1), 0);
 }
 
+/*
+ * The level a constant actually reaches on the wire, which is the sine
+ * projection and the magnitude scaling together. A hardware run once drove
+ * the wheel to full lock and was read here as a scaling fault; it was not,
+ * a constant force is a steady torque and a free wheel travels to its stop
+ * under one. This pins the arithmetic so the next such reading has
+ * something to check against.
+ */
+static int8_t
+const_level(int32_t magnitude, uint32_t direction)
+{
+	struct t150_effect ef;
+	uint8_t b[16];
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_CONSTANT;
+	ef.gain = T150_DI_MAX;
+	ef.direction = direction;
+	ef.u.constant.magnitude = magnitude;
+	if (t150_enc_ff_update(b, sizeof(b), &ef) != T150_FF_UPDATE_LEN_CONSTANT)
+		return 0;
+
+	return (int8_t)b[3];
+}
+
+static void
+test_constant_level(void)
+{
+	/* Direction, at full magnitude. Zero across the axis, not a fault. */
+	check_int("north is no force on one axis", const_level(10000, 0), 0);
+	check_int("east is full right", const_level(10000, 9000), 64);
+	check_int("south is no force", const_level(10000, 18000), 0);
+	check_int("west is full left", const_level(10000, 27000), -64);
+	check_int("45 degrees projects", const_level(10000, 4500), 45);
+	check_int("225 degrees projects", const_level(10000, 22500), -45);
+
+	/* Magnitude, due east, linear onto the ceiling and symmetric. */
+	check_int("full magnitude", const_level(10000, 9000), 64);
+	check_int("half magnitude", const_level(5000, 9000), 32);
+	check_int("quarter magnitude", const_level(2500, 9000), 16);
+	check_int("zero magnitude", const_level(0, 9000), 0);
+	check_int("negative magnitude mirrors", const_level(-5000, 9000), -32);
+	check_int("full negative", const_level(-10000, 9000), -64);
+}
+
 static void
 test_direction(void)
 {
@@ -362,6 +407,7 @@ main(void)
 {
 	test_settings();
 	test_direction();
+	test_constant_level();
 	test_constant();
 	test_periodic();
 	test_condition();

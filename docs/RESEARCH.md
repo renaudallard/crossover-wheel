@@ -723,14 +723,27 @@ One of them is. It oscillates. Which waveform it is, square or triangle,
 needs a run that compares it against `0x4021` by feel, and until then the
 downgrade table stays as it is.
 
-**One thing is clearly wrong and is the next thing to fix.** A constant at
-level `0x20`, half of the documented `0x40` ceiling, drove the wheel to full
-left lock and held it there. That is not half force in a direction, it is a
-position command or a saturated one. The direction handling in
-`t150_enc_ff_commit` and the level scaling in `t150_enc_ff_update` are the
-suspects, and the vendor captures in A27 are the reference: their constant
-sends `03 0e 00 3e`, level `0x3e`, against a commit of
-`01 00 00 40 c4 09 ...` where this project sends `ff ff` for the length.
+**A first reading of this entry called the force wrong, and that was a
+mistake.** It said a constant at level `0x20` driving the wheel to full left
+lock and holding it there meant the direction or level scaling was broken. It
+does not. A DirectInput constant force is a steady torque, and a free wheel
+under a steady torque travels to its stop and stays pressed against it. That
+is the effect behaving correctly.
+
+Two further reasons the reading was unfounded. The packet was typed by hand
+from the procedure, so it never went through `src/lib/encode.c` and said
+nothing about this project's arithmetic either way. And a sweep of that
+encoder afterwards produces exactly the sine projection and linear scaling it
+should: `0`, `±45`, `±64` across the compass at full magnitude, and 64, 32,
+16, 0 down the magnitude range, symmetric in sign. `tests/encode_check.c`
+`test_constant_level()` now pins all of it.
+
+**What is genuinely untested is everything except a constant and one
+periodic.** Springs, dampers, envelopes, ramps and per-effect gain have never
+reached hardware, and each is arithmetic derived from a driver rather than
+measured. The vendor captures in A27 are the reference to check against, and
+their constant sends level `0x3e` against this project's ceiling of `0x40`,
+which is the one number that has independent support.
 
 **A21. The wheel puts all thirteen buttons on the wire. Whatever loses them
 is above the USB layer.** A18 is answered, and against the wheel.
