@@ -210,6 +210,10 @@ built by CI from the tagged commit. Two archives:
 | `crossover-wheel-<v>-macos-arm64.tar.gz` | `t150ctl`, `t150boot`, `t150d`, and the four `probe_*` tools |
 | `crossover-wheel-<v>-windows-x86_64.zip` | `t150-dinput8.dll`, the in-bottle proxy |
 
+Each archive carries a short README; those are `dist/README.macos` and
+`dist/README.windows` in this repository, packaged verbatim at release time
+so they cannot drift from what is written here.
+
 Apple Silicon only, and there is no Intel build. Verify what you downloaded
 before running it:
 

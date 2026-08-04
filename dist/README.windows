@@ -1,0 +1,23 @@
+crossover-wheel, the in-bottle proxy.
+
+t150-dinput8.dll is a DirectInput 8 proxy for a CrossOver bottle. It hands
+everything to CrossOver's builtin dinput8 and wraps only the T150's force
+feedback, which it forwards to the t150d daemon on the macOS side. Other
+devices pass through untouched, and with no daemon answering it wraps
+nothing and is transparent.
+
+NO LINE OF THIS HAS EVER RUN IN A BOTTLE. It cross builds, and CI loads it
+on Windows against Microsoft's own dinput8.dll to check both entry points
+chain load, but whether a Wine bottle resolves the same way is untested.
+
+It serves 64-bit games only: a 32-bit process is redirected to syswow64 and
+never sees it.
+
+Install it as <bottle>/drive_c/windows/system32/dinput8.dll, with CrossOver's
+builtin copied alongside as dinput8_orig.dll, and set dinput8 to
+"native,builtin". Copy the builtin from CrossOver's own
+lib/wine/x86_64-windows, never the dinput8.dll already in the bottle's
+system32, which is an empty placeholder. Set T150_DEBUG=1 in the bottle to
+make it say what it is doing. The README in the repository has the exact
+commands as CrossOver 26 resolves them, and docs/PROBES.md question 8 is
+the test.

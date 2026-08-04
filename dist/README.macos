@@ -1,0 +1,44 @@
+crossover-wheel, macOS arm64 binaries.
+
+Force feedback works on a Thrustmaster T150 under macOS, from an
+unprivileged process. Nothing here needs root except probe_intr, which is a
+measurement tool rather than something you need.
+
+Start here:
+
+  ./t150boot            take the wheel out of boot mode. Run it on every
+                        plug-in; sleep and wake put the wheel back.
+  ./t150ctl status      what the wheel is
+  ./t150ctl range 270   three quarters of a turn lock to lock
+  ./t150ctl autocenter 0    let go of the wheel completely
+  ./t150d -v            the daemon a game talks to
+
+macOS will refuse to run these until you clear the quarantine flag, because
+they are unsigned:
+
+  xattr -d com.apple.quarantine ./*
+
+Sit at the machine. IOHIDDeviceSetReport is gated on being the console user
+and fails over SSH.
+
+The man pages are here too. Read one with:
+
+  man ./t150ctl.1
+
+The daemon stops every effect and closes the wheel's input the moment it
+takes the wheel. The open outlives whoever sent it, so a wheel left running
+an effect by an earlier tool would otherwise keep rendering it. If a wheel
+is ever moving on its own, starting and stopping t150d is the rescue, and a
+replug lets it re-find its centre.
+
+WHAT DOES NOT WORK YET. No game has reached the wheel through this.
+t150boot, t150ctl and t150d have all run against a real wheel and worked,
+but the in-bottle proxy has never executed in a bottle, and the daemon has
+never rendered an effect a client asked for. Only a constant force and one
+periodic have ever been played on hardware: springs, dampers, envelopes and
+per-effect gain are still derived from a Linux driver rather than measured.
+CrossOver also registers none of the wheel's buttons, which is a separate
+problem in macOS HID, SDL or winebus rather than in the wheel.
+
+docs/PROBES.md in the repository is the procedure, and what each outcome
+means.
