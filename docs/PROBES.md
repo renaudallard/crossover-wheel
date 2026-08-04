@@ -513,14 +513,19 @@ tshark -r windows_constant0.pcapng -Y usb.capdata -T fields -e usb.capdata
 
 ### While you are here: the two missing waveforms
 
-Only worth doing once something oscillates at all. The protocol has type
-codes for sine, sawtooth up and sawtooth down but none for square or
-triangle, and the codes are contiguous. So `0x4020`, `0x4021` and `0x4025`
-may be waveforms the Linux driver never implemented. Upload a periodic and
-vary only the commit type code:
+`0x4020` is real: test 13 played it through the HID pipe and the wheel swung
+left and right until it was told to stop. What is still unknown is what
+shape `0x4021` and `0x4025` are. The protocol has contiguous type codes for
+sine and both sawtooths, so those two may be the square and triangle the
+Linux driver never implemented, which this project downgrades to sine.
+
+The type code lives in the commit packet, the fifteen-byte one starting
+`01 00`. Its third and fourth bytes are the code, little endian: `20 40` is
+`0x4020`. One second period, half magnitude:
 
 ```sh
 ./build/bin/probe_setreport \
+    -x "42 04" \
     -x "40 03 00 00" \
     -x "43 60" \
     -x "02 1c 00 00 00 00 00 00 00" \
@@ -529,10 +534,18 @@ vary only the commit type code:
     -x "41 00 41 01"
 ```
 
-That is a one second period at half magnitude with type `0x4020`. Repeat with
-`21 40` and `25 40` in the commit packet, the one starting `01 00`. Anything
-that oscillates is a waveform we can stop downgrading. Stop it the same way
-as above.
+Feel it, then stop it:
+
+```sh
+./build/bin/probe_setreport -x "41 00 00 01"
+```
+
+Run it again with `21 40` as those two bytes and again with `25 40`,
+changing nothing else, stopping each one. Test 13 meant to and ran `20 40`
+twice, so nothing is known about the other two yet. Flat tops and hard flips
+is square; a steady sweep up and down is triangle; either would stop being a
+downgrade. When you are done, close the input with the cleanup line above,
+and remember the wheel may need a replug before its centre can be trusted.
 
 ---
 
