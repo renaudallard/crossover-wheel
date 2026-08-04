@@ -79,6 +79,31 @@ test_settings(void)
 	    0x40, 0x11, 0xff, 0xff);
 
 	/*
+	 * A finite duration must never land on 0xFFFF, which is the wheel's
+	 * endless marker. Anything from 65.535 seconds up used to saturate
+	 * straight onto it, so a game asking for a long effect got one that
+	 * never stopped.
+	 */
+	{
+		struct t150_effect d;
+
+		memset(&d, 0, sizeof(d));
+		d.kind = T150_EFFECT_CONSTANT;
+		d.gain = T150_DI_MAX;
+		d.duration = 70000000;		/* 70 seconds */
+		CHECK("a long finite duration stops short of endless", b,
+		    t150_enc_ff_commit(b, sizeof(b), &d),
+		    0x01, 0x00, 0x00, 0x40, 0xfe, 0xff, 0x00, 0x00, 0x00,
+		    0x0e, 0x00, 0x1c, 0x00, 0x00, 0x00);
+
+		d.duration = T150_DURATION_INFINITE;
+		CHECK("endless still says endless", b,
+		    t150_enc_ff_commit(b, sizeof(b), &d),
+		    0x01, 0x00, 0x00, 0x40, 0xff, 0xff, 0x00, 0x00, 0x00,
+		    0x0e, 0x00, 0x1c, 0x00, 0x00, 0x00);
+	}
+
+	/*
 	 * Gain is two bytes and its full scale is 0x80, so half gain is 0x40
 	 * rather than 0x80. Getting this wrong sends roughly twice the force
 	 * the caller asked for.

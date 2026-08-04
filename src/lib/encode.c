@@ -409,8 +409,20 @@ t150_enc_ff_commit(uint8_t *buf, size_t buflen, const struct t150_effect *ef)
 	if (commit_type(ef->kind, &type) != 0)
 		return 0;
 
-	length = ef->duration == T150_DURATION_INFINITE ?
-	    T150_FF_LENGTH_INFINITE : us_to_ms(ef->duration);
+	/*
+	 * 0xFFFF is the wheel's endless marker, so a finite duration must
+	 * never reach it. us_to_ms saturates there, which turned any effect
+	 * of 65.535 seconds or more into one that never stops: the game would
+	 * expect it to end on its own and the wheel would keep pushing. Cap a
+	 * finite length one millisecond short instead.
+	 */
+	if (ef->duration == T150_DURATION_INFINITE) {
+		length = T150_FF_LENGTH_INFINITE;
+	} else {
+		length = us_to_ms(ef->duration);
+		if (length == T150_FF_LENGTH_INFINITE)
+			length = T150_FF_LENGTH_INFINITE - 1;
+	}
 
 	memset(buf, 0, T150_FF_COMMIT_LEN);
 	buf[0] = T150_FF_COMMIT_F0;
