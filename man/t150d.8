@@ -6,8 +6,9 @@
 .Nd force feedback daemon for the Thrustmaster T150
 .Sh SYNOPSIS
 .Nm
-.Op Fl v
+.Op Fl nv
 .Op Fl e Ar endpoint
+.Op Fl g Ar ms
 .Sh DESCRIPTION
 .Nm
 is the macOS half of the force feedback bridge. It listens on loopback for
@@ -127,9 +128,10 @@ were measured; the procedure is in
 .Pa docs/PROBES.md .
 .Pp
 What has not been measured is this daemon driving a wheel end to end. The
-backend is written and compiles against the real frameworks, and every packet
-it sends is one a probe tool has already moved the wheel with, but no game
-has yet reached a wheel through it.
+backend has opened a real wheel unprivileged, and its shutdown packets
+visibly stopped a runaway effect, so its writes reach the firmware; but no
+client has yet asked it for an effect, so the encode and slot path has never
+rendered anything on hardware.
 .Pp
 Only a constant force and one periodic have ever been played. Springs,
 dampers, envelopes, ramps and per-effect gain are arithmetic derived from

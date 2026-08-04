@@ -34,11 +34,12 @@ unprivileged macOS daemon that owns the wheel through
 .It Xr t150d 8
 The macOS daemon. Owns the wheel, encodes effects, writes output reports.
 The protocol, the slot table, the downgrades and the watchdog work, and the
-HID backend that writes to the wheel is written and compiles but has never
-driven one.
+HID backend has opened a real wheel unprivileged; its shutdown packets
+visibly stopped a runaway effect, so its writes reach the firmware. What it
+has never done is render an effect a client asked for.
 .Fl n
-swaps it for a log, which is how the rest of the stack is exercised without
-hardware.
+swaps the backend for a log, which is how the rest of the stack is exercised
+without hardware.
 .It Nm t150-dinput8.dll
 The in-bottle proxy. Written and cross built, never yet run. It is installed
 as
@@ -68,11 +69,12 @@ is redirected to
 .Pa syswow64 .
 The README has the whole procedure.
 .It Xr t150boot 8
-One-shot boot to firmware mode switch, unprivileged. Written, never yet run
-against a wheel.
+One-shot boot to firmware mode switch, unprivileged. Has switched a real
+wheel and confirmed it back at its firmware id.
 .It Xr t150ctl 1
-Rotation range, gain and autocenter from the command line, unprivileged.
-Written, never yet run against a wheel.
+Rotation range, gain and autocenter from the command line, unprivileged. Has
+identified a real wheel and sent it settings without error; whether the
+range visibly changed went unrecorded.
 .It Xr t150-probe 1
 The four measurement tools. They are what proved the wheel obeys.
 .El
@@ -91,11 +93,15 @@ a reset on a graceful unacquire. A crashed game would therefore leave the
 last commanded force latched on the wheel. The daemon treats silence as a
 fault and stops every effect after half a second without traffic.
 .Sh STATUS
-Everything is written: the probe tools, the shared headers, the wire
-encoders, the wire protocol, the daemon with its HID backend, both command
-line tools and the proxy. What has not happened is a game reaching the wheel
-through any of it. The backend, the tools and the proxy all compile and none
-of them has been run end to end.
+Everything is written, and everything except the proxy has now touched
+hardware and worked:
+.Nm t150boot
+switched a wheel,
+.Nm t150ctl
+talked to one, and the daemon opened one unprivileged and stopped a runaway
+effect on its way out. What has not happened is a game reaching the wheel:
+the proxy has never run, and the daemon has never rendered an effect a
+client asked for.
 .Pp
 The measurement the project was gated on has been made and it succeeded: an
 unprivileged

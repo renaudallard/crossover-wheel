@@ -594,6 +594,13 @@ about.
 
 ## Question 6b: do the shipped tools work?
 
+**Mostly answered by test 13.** `t150boot` switched a real wheel and
+confirmed it back at `0xb677`, and `t150ctl status` identified it while it
+was mid-effect, through the non-seizing open. The `range` and `autocenter`
+commands ran without error, but nobody recorded whether lock to lock
+actually shortened, so the one decisive outcome below is still unobserved:
+run the range pair again and feel it. RESEARCH.md A31.
+
 Everything before this is a probe, built to answer a question. These two are
 what a user actually runs, and they take the same paths the probes proved.
 
@@ -617,9 +624,15 @@ LaunchAgent firing on every plug-in will mostly see.
 
 ## Question 7: does the daemon reach the wheel?
 
-The probes proved the packets. This asks whether `t150d` puts the same ones
-on the wire through its own backend, which is the piece everything above it
-has been waiting for.
+**Half answered by test 13.** The daemon found the wheel, opened it
+unprivileged, printed all three lines below, and on Ctrl-C its shutdown
+stopped a runaway effect the probes had left playing, which proves its
+packets reach the wheel. What it has never done is render an effect a client
+asked for, which is question 8. RESEARCH.md A31.
+
+The daemon also scrubs on acquire now: it stops every slot and closes the
+input the moment it takes the wheel, so a wheel inherited mid-runaway goes
+quiet at startup rather than at shutdown.
 
 Put the wheel in firmware mode first, as in question 2, then:
 
@@ -644,8 +657,10 @@ something else is wrong.
 | The wheel vanishes from CrossOver when the daemon starts | Stop. The non-seizing open is the assumption the whole design rests on, and it has failed. |
 
 **Nothing moves, and that is correct.** The daemon opens the wheel's input
-only when a client says hello, so with no game connected it sends nothing at
-all. Question 8 is what connects one.
+only when a client says hello, so with no game connected it prints nothing
+after those three lines and sends nothing beyond the startup scrub. Silence
+is health, not a hang. What connects a client is the proxy in a bottle:
+question 8, and the README's Test B is the step by step for it.
 
 ## Question 8: does a game reach the wheel?
 

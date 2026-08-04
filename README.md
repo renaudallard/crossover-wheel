@@ -22,14 +22,14 @@ extension approval.
 > `t150_init()` the whole time. See [`docs/RESEARCH.md`](docs/RESEARCH.md)
 > A26 and A28.
 >
-> **What is not finished.** Everything between a game and the wheel is
-> written, and none of it has been run end to end: the daemon's macOS
-> backend, `t150ctl`, `t150boot` and the in-bottle proxy all compile and none
-> has touched hardware. Only a constant force and one periodic have ever been
-> played, so springs, dampers, envelopes and per-effect gain are still
-> arithmetic derived from a Linux driver rather than measured. And CrossOver
-> registers none of the wheel's buttons, which is a separate input-path
-> problem (A21, A25).
+> **What is not finished.** No game has reached the wheel end to end.
+> `t150boot`, `t150ctl` and the daemon's macOS backend have all now touched
+> hardware and worked (A31), but the in-bottle proxy has never run, and the
+> daemon has never rendered an effect a client asked for. Only a constant
+> force and one periodic have ever been played, so springs, dampers,
+> envelopes and per-effect gain are still arithmetic derived from a Linux
+> driver rather than measured. And CrossOver registers none of the wheel's
+> buttons, which is a separate input-path problem (A21, A25).
 
 **Picking this up?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first. It is
 written for someone starting with no context: what is decided, what is
@@ -103,10 +103,10 @@ in-bottle bus driver was considered and rejected.
 | `src/lib/encode.c` wire encoders | written, golden-vector tested on Linux |
 | `src/lib/proto.c` DLL to daemon protocol | written, round-trip tested on Linux |
 | `t150d` protocol, slots, downgrades, watchdog | written and tested on Linux |
-| `t150d` macOS HID backend | written, compiles on macOS, never yet driven a wheel |
+| `t150d` macOS HID backend | working: opened a real wheel unprivileged, and its shutdown stopped a runaway effect. Has not yet rendered an effect for a client |
 | `t150-dinput8.dll` the in-bottle proxy | written, cross builds, never yet run |
 | build, CI, docs, man pages | working |
-| `t150ctl`, `t150boot` | written, macOS only, never yet run against a wheel |
+| `t150ctl`, `t150boot` | working on hardware: `t150boot` switched a wheel, `t150ctl` talked to one. The range change has run but nobody felt it yet |
 
 The encoders turn a normalized effect into the wheel's packets and are the
 only code that knows both DirectInput units and wheel units. They do no I/O,
@@ -142,22 +142,22 @@ through this project's own code.
 
 What is left needs the Mac. In order:
 
-**0. Let the wheel find its centre again.** Its end stops have been measured
-about ten degrees apart, roughly 170 degrees one way and 190 the other, after
-many capture and release cycles. Everything below is read through that, and a
-symmetric force about a displaced centre looks asymmetric. Unplug it from
-mains and USB, let it sweep, and start from there.
+**0. Let the wheel find its centre again.** Driving it into its end stops
+shifts its idea of straight ahead, which test 13 watched happen (A32), and
+everything below is read through that: a symmetric force about a displaced
+centre looks asymmetric. Unplug it from mains and USB, let it sweep, and
+start from there, and again after any run that worked against a stop.
 
-**1. Play the effects nobody has played yet.** A constant and one periodic
-have moved the wheel. Springs, dampers, envelopes, ramps and per-effect gain
-have never touched hardware, and every one of them is arithmetic this project
-derived from a driver rather than measured. `probe_setreport -x` plays any of
-them in a line, and the encoders' own golden vectors say what the bytes
-should be.
+**1. Play the effects nobody has played yet.** A constant and the `0x4020`
+periodic have moved the wheel, on both pipes. Springs, dampers, envelopes,
+ramps and per-effect gain have never touched hardware, and every one of them
+is arithmetic this project derived from a driver rather than measured.
+`probe_setreport -x` plays any of them in a line, and the encoders' own
+golden vectors say what the bytes should be.
 
-Settle which waveform `0x4020` is while you are there. It oscillates, so it
-is real, and PROTOCOL.md still calls it a guess; comparing it against
-`0x4021` by feel says whether square and triangle can stop being downgrades.
+Settle what `0x4021` and `0x4025` are while you are there; the exact bytes
+to change are in PROBES.md under the missing waveforms. Test 13 meant to and
+ran `0x4020` twice, so square and triangle are still downgrades on faith.
 
 **2. Where CrossOver loses the buttons.** Answered as far as the wheel is
 concerned: `probe_intr -R` proved all thirteen buttons reach the wire, and
