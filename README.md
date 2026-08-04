@@ -58,15 +58,17 @@ device for the proxy to wrap, so the end to end path is gated on it. The
 investigation from CrossOver 26's own source is in
 [`docs/RESEARCH.md`](docs/RESEARCH.md) B10.
 
-**Does not work: force feedback.** Wine's DirectInput sets
-`DIDC_FORCEFEEDBACK` only from a Physical Interface Device collection it
-finds in a descriptor, and nothing puts one there. On macOS the wheel arrives
-through winebus's SDL backend rather than its IOHID one, because winebus
-discards the IOHID copy of any Generic Desktop joystick that is not on its
-hidraw allow-list. The SDL backend would synthesise a PID collection, but
-only for a device SDL calls haptic, and SDL's macOS haptic backend is
-`ForceFeedback.framework`, which reaches only devices whose driver published
-a plug-in. No wheel vendor ships one.
+**Does not work: force feedback, because the T150 brings no PID
+descriptor.** Wine's DirectInput sets `DIDC_FORCEFEEDBACK` only from a
+Physical Interface Device collection it finds in a descriptor, and the
+T150's declares none. This is precise, not general: a wheelbase that does
+carry a PID collection, a Simucube or a Fanatec, gets native untranslated
+force feedback in CrossOver on macOS today through the hidraw path, which
+is why those are on CodeWeavers' allowlist (RESEARCH.md B12). The T150
+cannot ride that path. On the SDL path it arrives without a PID collection
+too: the SDL backend synthesises one only for a device SDL calls haptic,
+and SDL's macOS haptic backend is `ForceFeedback.framework`, which reaches
+only devices whose driver published a plug-in. No wheel vendor ships one.
 
 **Cannot be fixed at the macOS layer.** Presenting the wheel to macOS as a
 force feedback device is closed off for reasons unrelated to code signing.

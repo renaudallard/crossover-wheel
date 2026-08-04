@@ -67,7 +67,10 @@ the wheel
 The wheel keeps reaching the game through the normal path for input, because
 that already works (RESEARCH.md A1, B1). Only the force feedback output
 channel is missing, because the wheel's descriptor has no PID collection and
-Wine adds none of its own on macOS (RESEARCH.md B3, B4).
+Wine adds none of its own on macOS (RESEARCH.md B3, B4). A wheelbase that
+does carry a PID collection gets native force feedback through CrossOver's
+hidraw path with no help from anyone (B12); this project exists for the
+wheels that do not.
 
 Consequences worth internalising, because they are what make this design
 small: there is no synthetic HID device, no report descriptor to build or

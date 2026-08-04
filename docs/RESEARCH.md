@@ -1210,11 +1210,16 @@ driver, the same project C7 cites, instructs launching CrossOver with
 `SDL_JOYSTICK_HIDAPI=0`, "forces SDL to use IOKit so the wheel appears in
 DirectInput", and its troubleshooting entry for a missing or wrong wheel is
 that variable being forgotten. An independent project hit this exact
-mechanism on the T300RS and shipped the workaround. Their CrossOver story
-also marks this project's niche: their CrossOver mode is settings only,
-"CrossOver/Wine games have whatever FF Wine supports", which on macOS is
-none, and their force feedback needs SIP and AMFI disabled for a virtual
-device, the path D-section rejected.
+mechanism on the T300RS and shipped the workaround.
+
+Their CrossOver mode, read from `main.swift` rather than the README, sends
+exactly three packets before idling: the T300RS force feedback open
+`60 01 05`, the range and the gain, left on the wheel through the same
+persistence A30 measured on the T150. The baseline spring and damper and
+the telemetry-driven effects run only in their native capture mode, which
+needs SIP and AMFI disabled for the virtual device, the path D-section
+rejected. What force feedback their CrossOver users get from games is the
+subject of B12, which corrects an overstatement this entry briefly made.
 
 So the experiment order for the bottle, cheapest and most likely first:
 
@@ -1237,7 +1242,55 @@ So the experiment order for the bottle, cheapest and most likely first:
 > `src/joystick/darwin/SDL_iokitjoystick.c` the `HIDAPI_IsDevicePresent`
 > skip, `src/joystick/hidapi/SDL_hidapijoystick_c.h` `SDL_HIDAPI_DEFAULT`.
 > Akellacom/thrustmaster_t300rs_gt_macos_driver README, the CrossOver
-> section and its troubleshooting entry.
+> section and its troubleshooting entry; its `Sources/ThrustmasterWheel/
+> main.swift` for what the CrossOver mode actually sends.
+
+**B12. CrossOver on macOS does deliver game force feedback, for hardware
+that brings a PID descriptor, and the chain is already verified piecewise
+in this file.** An earlier draft of B11 said Wine force feedback on macOS
+"is none". That is wrong as a general statement, and the correction
+matters because it explains CodeWeavers' hidraw allowlist and strengthens
+the B10 knob.
+
+The chain, every link measured or read from CrossOver 26.3.0's source:
+
+- `bus_iohid.c` passes the device's own report descriptor into the bottle
+  unchanged (B1).
+- `bus_iohid.c` implements `set_output_report` as a straight
+  `IOHIDDeviceSetReport(kIOHIDReportTypeOutput, ...)`, verified again in
+  the 26.3.0 tree, so what a game writes reaches the hardware (B2).
+- DirectInput derives force feedback capability purely from a PID
+  descriptor and speaks PID output reports to it (B4).
+
+So a wheelbase whose firmware carries a real PID collection, routed
+through the hidraw bus, gets **native, untranslated DirectInput force
+feedback** in CrossOver on macOS: dinput builds PID reports, hidclass
+hands them to winebus, `bus_iohid` writes them with the same call this
+project's daemon uses. That is why `is_hidraw_enabled()`'s allowlist reads
+like a sim rig catalogue, four Simucube models, Fanatec ClubSport pedals,
+VKB sticks: those are PID devices, and hidraw is CodeWeavers' supported
+path for them.
+
+Three consequences:
+
+- **"Whatever FF Wine supports" on macOS means: full pass-through for PID
+  hardware, nothing for descriptor-less wheels.** The T150 declares no PID
+  collection, which is this project's founding measurement, so it can
+  never ride that path, and neither can the T300RS. The proxy and daemon
+  remain the only route for them, and the niche is real but narrower than
+  "no force feedback in CrossOver on macOS": it is force feedback for
+  wheels PID left behind.
+- **The B10 `Hidraw` knob is not a hack but CodeWeavers' own wheel path**,
+  missing only the allowlist entry for `044f:b677`. Which also suggests
+  the durable fix to offer upstream: CodeWeavers adding the T150 to the
+  same list its T-Rudder and T.16000M siblings are already on.
+- **If Thrustmaster firmware ever exposed a PID mode, this project would
+  be obsolete for it.** It does not; that is D6 and C5's territory and
+  nothing new.
+
+> `sources/wine/dlls/winebus.sys/bus_iohid.c`,
+> `iohid_device_set_output_report()`; B1, B2, B4 for the measured links;
+> `main.c` `is_hidraw_enabled()` for the allowlist.
 
 ---
 
