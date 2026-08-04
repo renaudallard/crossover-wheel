@@ -422,7 +422,20 @@ dev_SendForceFeedbackCommand(IDirectInputDevice8W *self, DWORD flags)
 			return DIERR_INPUTLOST;
 	}
 
-	/* Pause, continue and the actuator switches have no wire opcode. */
+	/*
+	 * Pause and actuators-off have no wire opcode of their own, and
+	 * answering DI_OK while the wheel carried on pulling was the wrong
+	 * way to be wrong: a game that pauses believes the wheel went quiet.
+	 * Stop everything instead, which is the closest honest thing the
+	 * protocol can do and errs towards a still wheel. The effects stay
+	 * downloaded, so a continue only has to start them again.
+	 */
+	if (flags & (DISFFC_PAUSE | DISFFC_SETACTUATORSOFF)) {
+		if (t150_client_call(T150_OP_STOP_ALL, NULL, 0) != 0)
+			return DIERR_INPUTLOST;
+	}
+
+	/* Continue and actuators-on need nothing: the slots are still there. */
 	return DI_OK;
 }
 
