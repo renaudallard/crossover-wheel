@@ -7,9 +7,11 @@ extension approval.
 
 > **Status: the wheel pushes back.** Force feedback works on a T150 under
 > macOS, from an unprivileged process, which is what this project exists for.
-> A constant force drove the wheel hard to one lock and held it there; a
-> periodic made it oscillate. Both transports carry effects: the interrupt
-> OUT pipe and, with no root and no device capture, `IOHIDDeviceSetReport`.
+> A constant force drives the wheel steadily to one side and holds it, firmly
+> enough to feel and lightly enough to turn back by hand; a periodic makes it
+> oscillate. Both transports carry effects: the interrupt OUT pipe and, with
+> no root and no device capture, `IOHIDDeviceSetReport`. Replicated across two
+> sessions, four runs, with and without the open packet each time.
 >
 > **The missing piece was one two-byte packet, `42 04`.** The firmware
 > renders nothing until something opens the wheel's input, and nothing on
@@ -147,6 +149,12 @@ needs no privilege at all.
 
 What is left is three experiments, all needing the Mac and **all independent
 of each other**.
+
+**0. Let the wheel find its centre again.** Its end stops have been measured
+about ten degrees apart, roughly 170 degrees one way and 190 the other, after
+many capture and release cycles. Everything below is read through that, and a
+symmetric force about a displaced centre looks asymmetric. Unplug it from
+mains and USB, let it sweep, and start from there.
 
 **1. Play the effects nobody has played yet.** A constant and one periodic
 have moved the wheel. Springs, dampers, envelopes, ramps and per-effect gain

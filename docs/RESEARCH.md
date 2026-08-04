@@ -745,6 +745,53 @@ measured. The vendor captures in A27 are the reference to check against, and
 their constant sends level `0x3e` against this project's ceiling of `0x40`,
 which is the one number that has independent support.
 
+**A29. A28 replicated, two for two, and the force is a force rather than a
+lock.** A single session ran the same upload four times, twice without the
+open packet and twice with it:
+
+| run | transport | `42 04` | observed |
+| --- | --- | --- | --- |
+| 1 | HID | no | nothing |
+| 2 | interrupt OUT, held | no | nothing; "i've only turn the wheel" |
+| 3 | interrupt OUT, held | **yes** | "turn to max left automatically and make force to stay in this position" |
+| 4 | interrupt OUT, held | **yes** | "it turn with force to max left" |
+
+That is the cleanest evidence the project has. The `-H` reads back it up: all
+three held runs changed only the steering bytes, `00 ff ff 00 ...`, but in run
+2 the person was moving the wheel and in runs 3 and 4 it moved itself.
+
+**The force is moderate and a person overpowers it.** "I've turn it to max
+right with hands", and on the next run three full turns of it. So level
+`0x20`, half the documented ceiling, is a real half-scale torque. This is what
+settles the claim withdrawn above: a constant force reaching the stop is the
+effect working, and the wheel is not being commanded to a position.
+
+**The stop packet releases it.** `41 00 00 01` gave "unlock the force that
+force to stay max anti-clockwise".
+
+**A periodic oscillates and drifts.** `04 0e 00 40 00 00 e8 03` committed as
+type `0x4020`, so magnitude 64 of a possible 127, no offset, no phase, a one
+second period. The wheel swung through roughly 90 degrees and kept going
+indefinitely, but travelled further anticlockwise than clockwise each cycle.
+
+**Do not read that drift as a protocol fault yet, because the wheel's centre
+has moved.** The same session reports the end stops at about 170 degrees left
+and 190 degrees right from one position, which puts the sensor's idea of
+centre roughly ten degrees off. A symmetric torque about a centre that is
+itself displaced looks exactly like a drifting one. Re-seat the wheel by
+unplugging it from mains and USB, let it calibrate, and repeat before
+suspecting the waveform.
+
+**Autocenter returns the wheel in steps.** "Perfect center, but the steering
+wheel returns in several stages, gradually, with more stages depending on the
+angle." That fits A17's progressive spring: the restoring torque grows with
+displacement, so from far out it moves, stalls against friction, and moves
+again, more times the further it started.
+
+**CrossOver still sees no button and no axis**, in either its DirectInput or
+its XInput view, on a wheel that is at that moment being driven by this
+project. A21 and A25 stand.
+
 **A21. The wheel puts all thirteen buttons on the wire. Whatever loses them
 is above the USB layer.** A18 is answered, and against the wheel.
 
