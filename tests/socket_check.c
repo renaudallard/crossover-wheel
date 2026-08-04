@@ -176,7 +176,7 @@ expect_ok(int fd, const char *what)
  * the next thing without losing what already arrived.
  */
 static int
-wait_for(int fd, const char *want)
+wait_for_after(int fd, const char *want, size_t from)
 {
 	uint64_t deadline = now_ms() + OUTPUT_MS;
 
@@ -185,7 +185,13 @@ wait_for(int fd, const char *want)
 		uint64_t left;
 		ssize_t r;
 
-		if (strstr(logbuf, want) != NULL)
+		/*
+		 * From an offset, because the daemon repeats itself: waiting
+		 * for a packet the log already contains from an earlier step
+		 * returns at once without reading anything, and a test built
+		 * on that measures nothing.
+		 */
+		if (from <= loghave && strstr(logbuf + from, want) != NULL)
 			return 0;
 		if (loghave + 1 >= sizeof(logbuf))
 			return -1;
@@ -205,6 +211,12 @@ wait_for(int fd, const char *want)
 		loghave += (size_t)r;
 		logbuf[loghave] = '\0';
 	}
+}
+
+static int
+wait_for(int fd, const char *want)
+{
+	return wait_for_after(fd, want, 0);
 }
 
 static void
@@ -364,6 +376,56 @@ main(void)
 			fail("the original client stopped reaching the wheel");
 
 		(void)close(bad);
+	}
+
+	/*
+	 * A newcomer with the right token does take over, and the wheel's
+	 * input has to survive the handover. The newcomer opens it as part of
+	 * proving itself, so a daemon that then closed the outgoing session's
+	 * input would hand the replacement a wheel that renders nothing.
+	 */
+	{
+		struct timespec settle = { 0, 300 * 1000 * 1000 };
+		int good;
+		size_t mark;
+
+		/*
+		 * Only one newcomer may be pending at a time, and the one
+		 * above has only just been closed. Let the daemon see that
+		 * before connecting, or this one is refused the slot and the
+		 * handover never happens.
+		 */
+		(void)nanosleep(&settle, NULL);
+
+		if ((good = connect_to(port)) == -1)
+			fail("cannot open a third connection");
+
+		mark = strlen(logbuf);
+		if (send_frame(good, T150_OP_HELLO, (const uint8_t *)token,
+		    T150_TOKEN_LEN) != 0)
+			fail("cannot send the token on the new connection");
+		expect_ok(good, "the newcomer's token was refused");
+
+		if (wait_for_after(pipefd[0], "write 2: 42 04\n", mark) != 0)
+			fail("the newcomer did not open the wheel's input");
+
+		/*
+		 * Drive something through the new session before judging the
+		 * input. Its packet lands after everything the handover
+		 * emits, so reaching it means any stray close has arrived
+		 * too and the absence below is real rather than early.
+		 */
+		put_u32(buf, 10000);
+		if (send_frame(good, T150_OP_SET_GAIN, buf, 4) != 0)
+			fail("the newcomer lost its socket");
+		expect_ok(good, "the newcomer could not set the gain");
+		if (wait_for_after(pipefd[0], "write 2: 43 80\n", mark) != 0)
+			fail("the newcomer's gain did not reach the wheel");
+
+		if (strstr(logbuf + mark, "write 2: 42 00\n") != NULL)
+			fail("the handover closed the wheel's input");
+
+		(void)close(good);
 	}
 
 	(void)close(fd);

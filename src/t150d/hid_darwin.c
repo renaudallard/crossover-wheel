@@ -12,9 +12,10 @@
  * RESEARCH.md A19 for the run that settled it and PROTOCOL.md for why the
  * declared id 0x0A report is a red herring.
  *
- * This does not open the wheel's input. That is protocol, session.c sends it
- * on hello, and it matters: the wheel renders no effect while no input is
- * open.
+ * Opening the wheel's input is protocol and session.c owns it: the wheel
+ * renders no effect while no input is open. This file only remembers the last
+ * such packet and replays it after re-acquiring a device, because a replugged
+ * wheel forgets and the session has no way to know that happened.
  *
  * NOT reentrant and not thread safe, which suits the single threaded daemon
  * that owns it.
@@ -46,6 +47,15 @@ struct hid_be {
 	IOHIDDeviceRef	 dev;		/* borrowed from the manager */
 	CFSetRef	 devices;	/* owns dev, released with it */
 	uint64_t	 next_scan_ms;
+	/*
+	 * The last input open or close that passed through, replayed after a
+	 * re-acquire. A wheel that is unplugged and replugged comes back with
+	 * its input shut, and only this layer knows that happened: the
+	 * session sends 42 04 once, on hello, and would never send it again.
+	 * Without this a mid-game replug leaves the wheel silently deaf to
+	 * every effect. 0 means nothing has been sent yet.
+	 */
+	uint8_t		 input_state;
 	long		 vid;
 	long		 pid;
 	unsigned int	 gap_ms;
@@ -82,6 +92,7 @@ match_dict(long vid, long pid)
 	CFMutableDictionaryRef d;
 	CFNumberRef n;
 	int v = (int)vid, p = (int)pid;
+	int up = 0x01, us = 0x04;	/* generic desktop, joystick */
 
 	d = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
 	    &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
@@ -94,6 +105,20 @@ match_dict(long vid, long pid)
 	}
 	if ((n = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &p))) {
 		CFDictionarySetValue(d, CFSTR(kIOHIDProductIDKey), n);
+		CFRelease(n);
+	}
+
+	/*
+	 * Narrow it to the joystick node the wheel publishes in firmware
+	 * mode, so that a device with more than one HID node cannot leave the
+	 * choice to whatever order an unordered set happens to yield.
+	 */
+	if ((n = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &up))) {
+		CFDictionarySetValue(d, CFSTR(kIOHIDPrimaryUsagePageKey), n);
+		CFRelease(n);
+	}
+	if ((n = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &us))) {
+		CFDictionarySetValue(d, CFSTR(kIOHIDPrimaryUsageKey), n);
 		CFRelease(n);
 	}
 
@@ -112,6 +137,28 @@ drop_device(struct hid_be *h)
 		CFRelease(h->devices);
 		h->devices = NULL;
 	}
+}
+
+/* Errors that mean the wheel is gone rather than that one packet was bad. */
+static int
+means_removed(IOReturn r)
+{
+	return r == kIOReturnNoDevice || r == kIOReturnNotOpen ||
+	    r == kIOReturnOffline || r == kIOReturnNotAttached ||
+	    r == kIOReturnNotResponding;
+}
+
+static IOReturn
+raw_write(struct hid_be *h, const uint8_t *buf, size_t len)
+{
+	/*
+	 * Report id 0 and the payload raw. The wheel's descriptor declares an
+	 * output report with id 0x0A, and that is not what it listens to:
+	 * every packet this project has ever moved the wheel with was sent
+	 * unnumbered. RESEARCH.md A19.
+	 */
+	return IOHIDDeviceSetReport(h->dev, kIOHIDReportTypeOutput, 0, buf,
+	    (CFIndex)len);
 }
 
 /*
@@ -178,6 +225,21 @@ acquire(struct hid_be *h)
 	}
 	h->opened = 1;
 
+	/*
+	 * Put the wheel back where the session believes it is. A replugged
+	 * wheel has forgotten that its input was open, and the session will
+	 * not say so again, so replay it here or every effect after a replug
+	 * is accepted and ignored.
+	 */
+	if (h->input_state == T150_INPUT_OPEN) {
+		uint8_t pkt[2] = { T150_OP_INPUT, T150_INPUT_OPEN };
+
+		if (raw_write(h, pkt, sizeof(pkt)) != kIOReturnSuccess &&
+		    h->verbose)
+			fprintf(stderr, "t150d: could not reopen the wheel's "
+			    "input\n");
+	}
+
 	if (h->verbose)
 		fprintf(stderr, "t150d: wheel %04lx:%04lx open\n", h->vid,
 		    h->pid);
@@ -205,28 +267,29 @@ hid_write(void *priv, const uint8_t *buf, size_t len)
 			return -1;
 	}
 
-	/*
-	 * Report id 0 and the payload raw. The wheel's descriptor declares an
-	 * output report with id 0x0A, and that is not what it listens to:
-	 * every packet this project has ever moved the wheel with was sent
-	 * unnumbered. RESEARCH.md A19.
-	 */
-	r = IOHIDDeviceSetReport(h->dev, kIOHIDReportTypeOutput, 0, buf,
-	    (CFIndex)len);
+	r = raw_write(h, buf, len);
 	if (r != kIOReturnSuccess) {
 		if (h->verbose)
 			fprintf(stderr, "t150d: SetReport failed: 0x%08x\n",
 			    (unsigned int)r);
 		/*
-		 * Assume the wheel has gone rather than that one packet was
-		 * bad. Unplugging is the common cause and the next write
-		 * re-acquires; a genuinely bad packet would fail again and
-		 * cost only a scan interval.
+		 * Only let go of the wheel when the error says it has gone.
+		 * Dropping on any failure meant one transient refusal took
+		 * the device away, and every packet after it in the same
+		 * burst then failed on the rescan timer without being tried:
+		 * a safe state that lost its first packet lost all of them,
+		 * on a wheel that was still attached and still pushing.
 		 */
-		drop_device(h);
-		h->next_scan_ms = mono_ms() + RESCAN_MS;
+		if (means_removed(r)) {
+			drop_device(h);
+			h->next_scan_ms = mono_ms() + RESCAN_MS;
+		}
 		return -1;
 	}
+
+	/* Remember it so a re-acquired wheel can be put back in this state. */
+	if (len == 2 && buf[0] == T150_OP_INPUT)
+		h->input_state = buf[1];
 
 	/*
 	 * An optional pause between packets. probe_setreport has always left

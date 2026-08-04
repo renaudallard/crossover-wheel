@@ -370,7 +370,7 @@ parse_ms(const char *s, unsigned int *out)
 
 	errno = 0;
 	v = strtoul(s, &end, 10);
-	if (errno != 0 || end == s || *end != '\0' || v > 1000)
+	if (errno != 0 || end == s || *end != '\0' || v > 50)
 		return -1;
 	*out = (unsigned int)v;
 
@@ -385,8 +385,9 @@ usage(void)
 	    "\n"
 	    "  -e endpoint  where to publish the port and token\n"
 	    "               (default $HOME%s)\n"
-	    "  -g ms        pause this long after each packet. Off by\n"
-	    "               default, see hid_darwin.c\n"
+	    "  -g ms        pause this long after each packet, 0 to 50. Off\n"
+	    "               by default, see hid_darwin.c. A safe state is up\n"
+	    "               to eighteen packets, so this delays it\n"
 	    "  -n           drive nothing, log the packets instead\n"
 	    "  -v           log effects, downgrades and safe states\n",
 	    ENDPOINT_REL);
@@ -577,7 +578,16 @@ main(int argc, char *argv[])
 					fprintf(stderr, "t150d: a new client "
 					    "proved the token, displacing the "
 					    "old one\n");
-				t150_session_end(&sess,
+				/*
+				 * Panic, not end. The newcomer has already
+				 * opened the wheel's input as part of
+				 * proving its token, so closing it here
+				 * would undo that and hand the replacement
+				 * a wheel that renders nothing. This is a
+				 * handover: the input stays open, only the
+				 * effects go.
+				 */
+				t150_session_panic(&sess,
 				    "displaced by a new client");
 				(void)close(cfd);
 				sess = psess;
@@ -589,6 +599,28 @@ main(int argc, char *argv[])
 				pfd_pend = -1;
 				phave = 0;
 				drop = 0;
+
+				/*
+				 * Act on it now. Waiting for the next read
+				 * would stall a client that sent its whole
+				 * opening burst at once and then listened.
+				 */
+				if (have > 0) {
+					int done = 0;
+					ssize_t used = consume(&sess, cfd, rx,
+					    have, &done);
+
+					if (used < 0 || done) {
+						t150_session_end(&sess,
+						    "client went away");
+						(void)close(cfd);
+						cfd = -1;
+						have = 0;
+					} else {
+						have -= (size_t)used;
+						memmove(rx, rx + used, have);
+					}
+				}
 			}
 
 			if (drop && pfd_pend != -1) {
@@ -637,6 +669,8 @@ main(int argc, char *argv[])
 		(void)close(pfd_pend);
 	(void)close(lfd);
 	unlink_endpoint(endpoint, &epstat);
+	if (be.close != NULL)
+		be.close(be.priv);
 
 	return 0;
 }

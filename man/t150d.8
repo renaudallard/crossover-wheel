@@ -39,6 +39,10 @@ saying the wheel drops back to back packets, but nothing has ever tested
 whether that is needed and the interrupt OUT route works with none. A floor
 on the write rate would cap effect updates well below what force feedback
 wants, so this exists to put the pause back if a real wheel asks for it.
+.Pp
+It is capped at 50 milliseconds because it delays the safe state, which is up
+to eighteen packets, and the watchdog is meant to have the wheel limp within
+half a second of a game going quiet.
 .It Fl n
 Drive nothing. Print every packet that would have gone to the wheel instead,
 in the form
