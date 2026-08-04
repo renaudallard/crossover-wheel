@@ -13,9 +13,12 @@
  * declared id 0x0A report is a red herring.
  *
  * Opening the wheel's input is protocol and session.c owns it: the wheel
- * renders no effect while no input is open. This file only remembers the last
- * such packet and replays it after re-acquiring a device, because a replugged
- * wheel forgets and the session has no way to know that happened.
+ * renders no effect while no input is open. This file remembers the last such
+ * packet and replays it after re-acquiring a device, because a replugged
+ * wheel forgets and the session has no way to know that happened. It also
+ * scrubs every slot on acquire, because the open outlives whoever sent it
+ * and a wheel inherited from a dead process can still be rendering that
+ * process's last effect. RESEARCH.md A30.
  *
  * NOT reentrant and not thread safe, which suits the single threaded daemon
  * that owns it.
@@ -32,6 +35,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "t150/encode.h"
 #include "t150/t150.h"
 #include "t150d.h"
 
@@ -176,6 +180,8 @@ acquire(struct hid_be *h)
 	const void **items;
 	CFIndex n;
 	IOReturn r;
+	uint8_t pkt[T150_FF_CONTROL_LEN];
+	size_t i, len;
 
 	drop_device(h);
 
@@ -229,19 +235,36 @@ acquire(struct hid_be *h)
 	h->opened = 1;
 
 	/*
-	 * Put the wheel back where the session believes it is. A replugged
+	 * The wheel keeps whatever it was last told, and the input open
+	 * outlives whoever sent it (RESEARCH.md A30), so the wheel taken here
+	 * may arrive with an effect still playing and its input still open,
+	 * left by a probe or by a daemon that died. Stop every slot, so what
+	 * follows starts from a wheel whose state is known. Failures are
+	 * ignored: if the wheel vanished mid-scrub the next write finds out.
+	 */
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		if ((len = t150_enc_control(pkt, sizeof(pkt), (uint8_t)i, 0,
+		    0)) > 0)
+			(void)raw_write(h, pkt, len);
+		nap_ms(h->gap_ms);
+	}
+
+	/*
+	 * Then put the input where the session believes it is. A replugged
 	 * wheel has forgotten that its input was open, and the session will
 	 * not say so again, so replay it here or every effect after a replug
-	 * is accepted and ignored.
+	 * is accepted and ignored. With no session wanting it open, close it,
+	 * which is what ends the rendering of anything the scrub above could
+	 * not reach and returns an inherited wheel to its idle state.
 	 */
-	if (h->input_state == T150_INPUT_OPEN) {
-		uint8_t pkt[2] = { T150_OP_INPUT, T150_INPUT_OPEN };
-
-		if (raw_write(h, pkt, sizeof(pkt)) != kIOReturnSuccess &&
-		    h->verbose)
-			fprintf(stderr, "t150d: could not reopen the wheel's "
-			    "input\n");
-	}
+	if (h->input_state == T150_INPUT_OPEN)
+		len = t150_enc_input_open(pkt, sizeof(pkt));
+	else
+		len = t150_enc_input_close(pkt, sizeof(pkt));
+	if (len > 0 && raw_write(h, pkt, len) != kIOReturnSuccess &&
+	    h->verbose)
+		fprintf(stderr, "t150d: could not set the wheel's input "
+		    "state\n");
 
 	if (h->verbose)
 		fprintf(stderr, "t150d: wheel %04lx:%04lx open\n", h->vid,
