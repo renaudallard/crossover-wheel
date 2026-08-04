@@ -792,6 +792,74 @@ again, more times the further it started.
 its XInput view, on a wheel that is at that moment being driven by this
 project. A21 and A25 stand.
 
+**A30. The input open outlives everything except the close.** Test 13
+settled how long `42 04` lasts: until something sends `42 00`, and nothing
+else ends it. Not the exit of the process that sent it, not the device being
+captured and released, not another process opening and closing the wheel's
+HID node.
+
+The evidence is a chain with no other explanation:
+
+- The question 5 HID sequence, sent before any open had ever been sent, did
+  nothing: "i've see no change". A28, as expected.
+- Two interrupt sessions then sent `42 04`, held the wheel, released it and
+  exited.
+- The same upload as a periodic, through `probe_setreport`, from a fresh
+  process, with no `42 04` of its own, swung the wheel left and right
+  indefinitely. The only open it could have been riding was one a dead
+  process had sent, across the other pipe.
+- The oscillation survived that tool's own close of the HID node, two further
+  capture and release cycles, and the rest of the session, until `t150d` was
+  interrupted. Its shutdown sends `42 00`; the rendering stopped there.
+
+Three consequences. Every sequence that opens the input must close it, or it
+leaves a wheel rendering whatever was last started, indefinitely, with
+nothing visibly attached to it; PROBES.md question 5 now ends with a cleanup
+block. The daemon cannot assume a fresh wheel, since it may inherit one whose
+input a dead process left open with an effect still playing, so it stops
+every slot and closes the input when it takes the wheel. And the earlier
+claim that the open "lasts only as long as the session" is withdrawn: it was
+an inference, never a measurement, and the measurement says otherwise.
+
+**A31. `t150boot`, `t150ctl` and `t150d` all touched hardware for the first
+time, and all worked.** Test 13 again.
+
+- `t150boot` switched the wheel out of boot mode and confirmed it back at
+  `0xb677`. Question 2 is now closed by the tool a user would actually run,
+  not just by the probe.
+- `t150ctl status` identified the wheel correctly, through a non-seizing open
+  taken while the wheel was mid-runaway. `range 270`, `range 1080` and
+  `autocenter 0` all ran without error, but nobody recorded whether lock to
+  lock actually shortened, so question 6b's decisive outcome is still
+  unobserved.
+- `t150d -v` found the wheel, opened it unprivileged and printed its three
+  startup lines. On interrupt, its safe state did something better than any
+  staged test: it ended a runaway effect it had never been told about. The
+  panic only stops slots in the daemon's own table and this sine was in none
+  of them, so what stopped the rendering was the `42 00` its session end
+  sends. A rescue by close, on hardware, of exactly the failure A30
+  describes.
+
+The periodic also rendered through the HID pipe, the same `0x4020` upload as
+A29's. `0x4021` and `0x4025` remain untried: the session ran the `20 40`
+commit twice rather than editing it, so square and triangle are still open.
+
+**A32. Driving the wheel into its stops moves its idea of centre.** After
+the runaway sine had worked against the left stop for a long stretch, the
+wheel came to rest "not at position 0... only the more nearby from the max
+left": it straightened itself to a centre that was visibly wrong. The T150
+has no absolute reference, it calibrates by sweeping its end stops at
+power-on, so lost steps accumulate into a shifted zero and every angle after
+that is read through the shift. Unplug the wheel from USB, plug it back and
+let it sweep before trusting any measurement that involves position. A29's
+drift note already suspected this; test 13 watched it happen.
+
+One loose end from the same moment, recorded rather than concluded: the
+daemon's panic zeroes the autocenter force before its close, yet the wheel
+straightened itself after the close, which reads as the firmware restoring
+its own autocenter once the input shuts. Whether `42 00` resets the
+commanded force is unmeasured, and nothing yet depends on it.
+
 **A21. The wheel puts all thirteen buttons on the wire. Whatever loses them
 is above the USB layer.** A18 is answered, and against the wheel.
 
