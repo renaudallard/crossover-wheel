@@ -324,6 +324,48 @@ main(void)
 	    "write 4: 40 04 00 00\n") != 0)
 		fail("the watchdog did not release the wheel");
 
+	/*
+	 * A second connection that never proves the token must not take the
+	 * wheel. Anything on this machine can reach loopback, and displacing
+	 * on the connection alone let any local process kill a game's force
+	 * feedback whenever it liked.
+	 */
+	{
+		int bad = connect_to(port);
+		uint8_t g[4];
+		struct timespec nap = { 0, 200 * 1000 * 1000 };
+
+		if (bad == -1)
+			fail("cannot open a second connection");
+
+		/*
+		 * Give the daemon a poll cycle to accept it, or the checks
+		 * below race the accept and pass whatever the daemon does.
+		 */
+		(void)nanosleep(&nap, NULL);
+
+		/* Say nothing at all, then check the first client still works. */
+		put_u32(g, 5000);
+		if (send_frame(fd, T150_OP_SET_GAIN, g, 4) != 0)
+			fail("the original client lost its socket");
+		expect_ok(fd, "the original client was displaced by a silent peer");
+		if (wait_for(pipefd[0], "write 2: 43 40\n") != 0)
+			fail("the original client's gain did not reach the wheel");
+
+		/* A wrong token is refused and buys nothing either. */
+		if (send_frame(bad, T150_OP_HELLO, (const uint8_t *)
+		    "ffffffffffffffffffffffffffffffff", T150_TOKEN_LEN) != 0)
+			fail("cannot send a bad token");
+		put_u32(g, 10000);
+		if (send_frame(fd, T150_OP_SET_GAIN, g, 4) != 0)
+			fail("the original client lost its socket");
+		expect_ok(fd, "a bad token displaced the original client");
+		if (wait_for(pipefd[0], "write 2: 43 80\n") != 0)
+			fail("the original client stopped reaching the wheel");
+
+		(void)close(bad);
+	}
+
 	(void)close(fd);
 
 out:

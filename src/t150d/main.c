@@ -7,8 +7,12 @@
  * logging one, so this drives nothing yet and says so at startup.
  *
  * One client at a time. A second connection displaces the first, but only
- * after the first has been put back into a safe state, because the common
- * case for a second connection is a game that crashed and was restarted.
+ * after it has proved the token and only after the first has been put back
+ * into a safe state, because the common case for a second connection is a
+ * game that crashed and was restarted. Requiring the token first matters:
+ * anything that can reach loopback can connect, and displacing on the
+ * connection alone let any local process kill a game's force feedback at
+ * will.
  *
  * Copyright (c) 2026 Renaud Allard
  * SPDX-License-Identifier: BSD-2-Clause
@@ -38,6 +42,13 @@
 
 #define RXBUF	1024
 #define ENDPOINT_REL	"/Library/Application Support/t150ffb/endpoint"
+
+/*
+ * How long a newcomer has to prove the token before it is dropped. It only
+ * has to send one frame, so this is generous, and it bounds how long a
+ * process that connects and says nothing can occupy the pending slot.
+ */
+#define PEND_MS	2000
 
 static volatile sig_atomic_t quit;
 
@@ -254,6 +265,50 @@ send_reply(int fd, const struct t150_reply *rep)
 }
 
 /*
+ * A pending client may send exactly one kind of frame: HELLO with the token.
+ * Returns 1 when it has proved itself, 0 when the frame has not fully
+ * arrived, and -1 when it should be dropped.
+ *
+ * Nothing here can reach the wheel. The scratch session is fed only HELLO,
+ * so even a correct token buys nothing until the caller promotes it, and a
+ * wrong one is answered and then dropped.
+ */
+static int
+pend_hello(struct t150_session *ps, int fd, uint8_t *buf, size_t *have)
+{
+	struct t150_proto_hdr hdr;
+	struct t150_reply rep;
+	size_t total;
+
+	if (*have < T150_PROTO_HDR_LEN)
+		return 0;
+	if (t150_proto_unpack_hdr(buf, *have, &hdr) != 0)
+		return -1;
+	if (hdr.version != T150_PROTO_VERSION || hdr.op != T150_OP_HELLO)
+		return -1;
+
+	total = T150_PROTO_HDR_LEN + hdr.length;
+	if (total > T150_PROTO_HDR_LEN + T150_PROTO_MAX_PAYLOAD)
+		return -1;
+	if (*have < total)
+		return 0;
+
+	memset(&rep, 0, sizeof(rep));
+	(void)t150_session_frame(ps, hdr.op, buf + T150_PROTO_HDR_LEN,
+	    hdr.length, now_ms(), &rep);
+	(void)send_reply(fd, &rep);
+
+	if (!ps->hello)
+		return -1;
+
+	/* Anything sent after the HELLO waits for the promoted session. */
+	*have -= total;
+	memmove(buf, buf + total, *have);
+
+	return 1;
+}
+
+/*
  * Consume whole frames from the read buffer. Returns the number of bytes
  * used, or -1 when the connection has to go: a desynchronised stream cannot
  * be recovered by guessing where the next header starts.
@@ -324,13 +379,14 @@ main(int argc, char *argv[])
 	char endpoint[PATH_MAX], token[T150_TOKEN_LEN + 1];
 	struct stat epstat;
 	struct t150_backend be;
-	struct t150_session sess;
-	struct pollfd pfd[2];
+	struct t150_session sess, psess;
+	struct pollfd pfd[3];
 	const char *epopt = NULL, *home;
-	uint8_t rx[RXBUF];
-	size_t have = 0;
+	uint8_t rx[RXBUF], prx[RXBUF];
+	uint64_t pend_deadline = 0;
+	size_t have = 0, phave = 0;
 	unsigned short port;
-	int ch, lfd, cfd = -1, verbose = 0;
+	int ch, lfd, cfd = -1, pfd_pend = -1, verbose = 0;
 
 	while ((ch = getopt(argc, argv, "e:v")) != -1) {
 		switch (ch) {
@@ -381,15 +437,30 @@ main(int argc, char *argv[])
 
 	while (!quit) {
 		unsigned int wait_ms = t150_session_tick(&sess, now_ms());
-		int nfd = 0, n;
+		int nfd = 0, n, ilisten, iclient = -1, ipend = -1;
 
+		ilisten = nfd;
 		pfd[nfd].fd = lfd;
 		pfd[nfd].events = POLLIN;
 		nfd++;
 		if (cfd != -1) {
+			iclient = nfd;
 			pfd[nfd].fd = cfd;
 			pfd[nfd].events = POLLIN;
 			nfd++;
+		}
+		if (pfd_pend != -1) {
+			uint64_t left;
+
+			ipend = nfd;
+			pfd[nfd].fd = pfd_pend;
+			pfd[nfd].events = POLLIN;
+			nfd++;
+			/* Do not sleep past a pending client's deadline. */
+			left = pend_deadline > now_ms() ?
+			    pend_deadline - now_ms() : 0;
+			if ((uint64_t)wait_ms > left)
+				wait_ms = (unsigned int)left;
 		}
 
 		n = poll(pfd, (nfds_t)nfd, (int)wait_ms);
@@ -398,10 +469,18 @@ main(int argc, char *argv[])
 				continue;
 			err(1, "poll");
 		}
+
+		/* A newcomer that never proves the token does not linger. */
+		if (pfd_pend != -1 && now_ms() >= pend_deadline) {
+			(void)close(pfd_pend);
+			pfd_pend = -1;
+			phave = 0;
+		}
 		if (n == 0)
 			continue;
 
-		if (cfd != -1 && (pfd[1].revents & (POLLIN | POLLHUP | POLLERR))) {
+		if (iclient != -1 &&
+		    (pfd[iclient].revents & (POLLIN | POLLHUP | POLLERR))) {
 			ssize_t r = read(cfd, rx + have, sizeof(rx) - have);
 			int done = 0;
 
@@ -431,29 +510,89 @@ main(int argc, char *argv[])
 			}
 		}
 
-		if (pfd[0].revents & POLLIN) {
+		/*
+		 * A pending client is allowed exactly one thing: prove the
+		 * token. Anything else and it is dropped, so it can neither
+		 * reach the wheel nor displace whoever holds it.
+		 */
+		if (ipend != -1 && pfd_pend != -1 &&
+		    (pfd[ipend].revents & (POLLIN | POLLHUP | POLLERR))) {
+			ssize_t r = read(pfd_pend, prx + phave,
+			    sizeof(prx) - phave);
+			int drop = 1, hi = -1;
+
+			if (r > 0) {
+				phave += (size_t)r;
+				hi = pend_hello(&psess, pfd_pend, prx, &phave);
+				/* 0 means the frame is still arriving, and
+				 * only a full buffer ends that patience. */
+				if (hi == 0 && phave < sizeof(prx))
+					drop = 0;
+			}
+
+			if (hi > 0) {
+				if (verbose)
+					fprintf(stderr, "t150d: a new client "
+					    "proved the token, displacing the "
+					    "old one\n");
+				t150_session_panic(&sess,
+				    "displaced by a new client");
+				(void)close(cfd);
+				sess = psess;
+				sess.verbose = verbose;
+				cfd = pfd_pend;
+				/* Carry anything it sent after the HELLO. */
+				memcpy(rx, prx, phave);
+				have = phave;
+				pfd_pend = -1;
+				phave = 0;
+				drop = 0;
+			}
+
+			if (drop && pfd_pend != -1) {
+				(void)close(pfd_pend);
+				pfd_pend = -1;
+				phave = 0;
+			}
+		}
+
+		if (pfd[ilisten].revents & POLLIN) {
 			int nfd2 = accept(lfd, NULL, NULL);
 
 			if (nfd2 == -1)
 				continue;
-			if (cfd != -1) {
-				/* Safe state first, then hand the wheel over. */
-				t150_session_panic(&sess, "displaced by a new client");
-				(void)close(cfd);
-			}
 			set_send_timeout(nfd2);
-			t150_session_init(&sess, &be, token);
-			sess.verbose = verbose;
-			cfd = nfd2;
-			have = 0;
-			if (verbose)
-				fprintf(stderr, "t150d: client connected\n");
+
+			if (cfd == -1) {
+				/*
+				 * Nobody to displace, so it takes the slot
+				 * straight away. It still has to say HELLO
+				 * before the session will do anything.
+				 */
+				t150_session_init(&sess, &be, token);
+				sess.verbose = verbose;
+				cfd = nfd2;
+				have = 0;
+				if (verbose)
+					fprintf(stderr,
+					    "t150d: client connected\n");
+			} else if (pfd_pend == -1) {
+				pfd_pend = nfd2;
+				phave = 0;
+				pend_deadline = now_ms() + PEND_MS;
+				t150_session_init(&psess, &be, token);
+			} else {
+				(void)close(nfd2);
+			}
 		}
 	}
+
 
 	t150_session_panic(&sess, "shutting down");
 	if (cfd != -1)
 		(void)close(cfd);
+	if (pfd_pend != -1)
+		(void)close(pfd_pend);
 	(void)close(lfd);
 	unlink_endpoint(endpoint, &epstat);
 
