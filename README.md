@@ -379,16 +379,20 @@ in place of `build/bin/t150-dinput8.dll`. A bottle can move the builtin
 directory with `DllPath` in its `cxbottle.conf`, and
 `find "$CX_ROOT" -name dinput8.dll` says where it went.
 
-**Copy CrossOver's builtin, not the bottle's own `dinput8.dll`.** The file
-already in `system32` is a placeholder carrying no implementation, and Wine
-will not fall back to one, so the proxy would find nothing to chain-load and
-every game would come back without force feedback. Check what you copied:
+**Copy CrossOver's builtin, and only that, as `dinput8_orig.dll`.** The
+`dinput8.dll` already in `system32` is a placeholder carrying no
+implementation, and Wine will not fall back to one; copying the proxy twice
+is the other measured mistake, and it fails later and more confusingly.
+Check what you copied:
 
 ```sh
-head -c 64 "$SYS32/dinput8_orig.dll" | strings | head -1
+head -c 128 "$SYS32/dinput8_orig.dll" | strings | head -1
 ```
 
-`Wine builtin DLL` is right and `Wine placeholder DLL` is the mistake.
+`Wine builtin DLL` is right; `Wine placeholder DLL` or a fragment of
+`This program cannot be run in DOS mode` is the mistake. It has to be
+`-c 128`: the signature starts at byte 64, so `-c 64` shows nothing on any
+file, right or wrong.
 
 **Override `dinput8` and nothing else.** The copy still carries the builtin
 signature, and Wine refuses a builtin file whose load order says native only,
@@ -420,7 +424,16 @@ put them in the bottle's `cxbottle.conf`, which every launch reads:
 `regsvr32` calls `DllRegisterServer`, which the proxy forwards, so this loads
 the whole chain and nothing else. Two lines say it worked: `dinput8.dll` as
 `native`, which is the proxy, and `dinput8_orig.dll` as `builtin`, which is
-the implementation behind it.
+the implementation behind it, with the builtin's own imports (`hid.dll`,
+`setupapi.dll`, `comctl32.dll`) loading between the two. That is exactly
+what a passing run printed on real hardware in test 14.
+
+The failure signature is `dinput8_orig.dll` loading as `native`: the tag
+comes from the file's own bytes, so `native` there means the wrong file is
+beside the proxy, whatever the file listing claims. And a
+`Failed to register` from regsvr32 with both lines present would be a
+registration problem, not a chain-load one; without the `dinput8_orig.dll`
+line it is the chain-load, and `T150_DEBUG=1` names it on stderr.
 
 Exporting `WINEDEBUG` does nothing either. The wrapper sets `WINEDEBUG=-all`
 unless it is given `--debugmsg` or finds `CX_DEBUGMSG` in the environment, so
@@ -764,8 +777,10 @@ broken install from a broken game:
 ```
 
 `dinput8.dll` as `native` and `dinput8_orig.dll` as `builtin` in the output
-means the proxy loads and reaches the implementation behind it. Nothing else
-below can work until this does.
+means the proxy loads and reaches the implementation behind it. Test 14 ran
+this against a real bottle and it passed. `dinput8_orig.dll` as `native`
+means the wrong file is beside the proxy; go back to B1. Nothing else below
+can work until this passes.
 
 **B3. Start the daemon** and leave it running where you can see it:
 
