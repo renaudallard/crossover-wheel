@@ -16,6 +16,7 @@
 
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 
 #include <netinet/in.h>
@@ -180,6 +181,23 @@ listen_loopback(unsigned short *port)
 	return fd;
 }
 
+/*
+ * A reply is at most a header and eight bytes, so a peer whose receive
+ * window has not opened within a second is not reading at all. Without this
+ * the write below blocks forever, and it blocks the single loop that also
+ * runs the watchdog, so any local process that connected and then stopped
+ * reading could leave the wheel holding a force indefinitely.
+ */
+static void
+set_send_timeout(int fd)
+{
+	struct timeval tv;
+
+	tv.tv_sec = 1;
+	tv.tv_usec = 0;
+	(void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+}
+
 static int
 send_reply(int fd, const struct t150_reply *rep)
 {
@@ -203,6 +221,7 @@ send_reply(int fd, const struct t150_reply *rep)
 		if (w == -1) {
 			if (errno == EINTR)
 				continue;
+			/* EAGAIN here is the send timeout above expiring. */
 			return -1;
 		}
 		off += (size_t)w;
@@ -398,6 +417,7 @@ main(int argc, char *argv[])
 				t150_session_panic(&sess, "displaced by a new client");
 				(void)close(cfd);
 			}
+			set_send_timeout(nfd2);
 			t150_session_init(&sess, &be, token);
 			sess.verbose = verbose;
 			cfd = nfd2;
