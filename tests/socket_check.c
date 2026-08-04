@@ -255,7 +255,13 @@ main(void)
 		if (dup2(pipefd[1], STDOUT_FILENO) == -1)
 			_exit(127);
 		(void)close(pipefd[1]);
-		execl(DAEMON, "t150d", "-e", ENDPOINT, (char *)NULL);
+		/*
+		 * -n, because this test reads the packets out of the daemon's
+		 * log. On macOS the daemon defaults to driving a real wheel
+		 * and prints nothing, so without this every expectation below
+		 * fails on a Mac and passes everywhere else.
+		 */
+		execl(DAEMON, "t150d", "-n", "-e", ENDPOINT, (char *)NULL);
 		_exit(127);
 	}
 	(void)close(pipefd[1]);
