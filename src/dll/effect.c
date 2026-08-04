@@ -287,6 +287,37 @@ eff_GetParameters(IDirectInputEffect *self, DIEFFECT *p, DWORD flags)
 		p->dwStartDelay = e->ef.start_delay;
 	if (flags & DIEP_GAIN)
 		p->dwGain = e->ef.gain;
+	if (flags & DIEP_SAMPLEPERIOD)
+		p->dwSamplePeriod = 0;
+	if (flags & DIEP_TRIGGERBUTTON) {
+		p->dwTriggerButton = DIEB_NOTRIGGER;
+		p->dwTriggerRepeatInterval = 0;
+	}
+
+	/*
+	 * Direction goes back the way it came in, in polar hundredths of a
+	 * degree, which is the form direction_of() normalised it to.
+	 */
+	if ((flags & DIEP_DIRECTION) && p->rglDirection != NULL &&
+	    p->cAxes >= 1) {
+		p->dwFlags = (p->dwFlags & ~(DWORD)(DIEFF_CARTESIAN |
+		    DIEFF_SPHERICAL)) | DIEFF_POLAR;
+		p->rglDirection[0] = (LONG)e->ef.direction;
+	}
+
+	if ((flags & DIEP_ENVELOPE) && p->lpEnvelope != NULL &&
+	    p->lpEnvelope->dwSize >= sizeof(DIENVELOPE)) {
+		if (e->ef.envelope.present) {
+			p->lpEnvelope->dwAttackLevel =
+			    (DWORD)e->ef.envelope.attack_level;
+			p->lpEnvelope->dwAttackTime = e->ef.envelope.attack_time;
+			p->lpEnvelope->dwFadeLevel =
+			    (DWORD)e->ef.envelope.fade_level;
+			p->lpEnvelope->dwFadeTime = e->ef.envelope.fade_time;
+		} else {
+			p->lpEnvelope = NULL;	/* the effect has none */
+		}
+	}
 
 	if ((flags & DIEP_TYPESPECIFICPARAMS) && p->lpvTypeSpecificParams != NULL) {
 		switch (e->ef.kind) {
@@ -303,6 +334,41 @@ eff_GetParameters(IDirectInputEffect *self, DIEFFECT *p, DWORD flags)
 
 				r->lStart = e->ef.u.ramp.start;
 				r->lEnd = e->ef.u.ramp.end;
+			}
+			break;
+		case T150_EFFECT_SQUARE:
+		case T150_EFFECT_SINE:
+		case T150_EFFECT_TRIANGLE:
+		case T150_EFFECT_SAWTOOTH_UP:
+		case T150_EFFECT_SAWTOOTH_DOWN:
+			if (p->cbTypeSpecificParams >= sizeof(DIPERIODIC)) {
+				DIPERIODIC *pe = p->lpvTypeSpecificParams;
+
+				pe->dwMagnitude =
+				    (DWORD)e->ef.u.periodic.magnitude;
+				pe->lOffset = e->ef.u.periodic.offset;
+				pe->dwPhase = e->ef.u.periodic.phase;
+				pe->dwPeriod = e->ef.u.periodic.period;
+			}
+			break;
+		case T150_EFFECT_SPRING:
+		case T150_EFFECT_DAMPER:
+		case T150_EFFECT_FRICTION:
+		case T150_EFFECT_INERTIA:
+			if (p->cbTypeSpecificParams >= sizeof(DICONDITION)) {
+				DICONDITION *c = p->lpvTypeSpecificParams;
+
+				c->lOffset = e->ef.u.condition.center;
+				c->lPositiveCoefficient =
+				    e->ef.u.condition.pos_coeff;
+				c->lNegativeCoefficient =
+				    e->ef.u.condition.neg_coeff;
+				c->dwPositiveSaturation =
+				    (DWORD)e->ef.u.condition.pos_saturation;
+				c->dwNegativeSaturation =
+				    (DWORD)e->ef.u.condition.neg_saturation;
+				c->lDeadBand = e->ef.u.condition.deadband;
+				p->cbTypeSpecificParams = sizeof(DICONDITION);
 			}
 			break;
 		default:
