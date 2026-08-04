@@ -3,10 +3,11 @@
 Nothing else in this repository is worth writing until these questions are
 answered on real hardware. Half an hour with the wheel plugged into the Mac.
 
-**The question that decides the project is answered yes.** The wheel obeys
+**The questions that decide the project are answered yes.** The wheel obeys
 settings sent through `IOHIDDeviceSetReport`, unprivileged and without taking
-the device from CrossOver. What is left open is force feedback, question 5,
-which works on neither pipe.
+the device from CrossOver, and it renders force feedback the same way once
+`42 04` has opened its input. What is left is whether a game can reach it,
+which is questions 7 and 8.
 [What is already settled](#what-is-already-settled) says which is which, so
 nothing here has to be run twice.
 
@@ -99,7 +100,7 @@ Measured on a T150 on macOS 26, so these do not need redoing. Full detail in
 | **`IOHIDDeviceSetReport` moves the wheel** | unprivileged, no capture, `40 03 64 00` holds it and `40 03 00 00` frees it |
 | **The interrupt OUT pipe moves it too** | the same bytes through `probe_intr`, so both transports reach the firmware |
 | The wheel puts all thirteen buttons on the wire | `probe_intr -R`, and the change mask matches the report descriptor field for field |
-| Force feedback does not work on either pipe | autocenter cleared, gain set, constant and periodic, every write accepted, no movement |
+| **Force feedback works** | with `42 04` ahead of it to open the wheel's input, on either pipe. Without it nothing renders at all |
 
 **What made this look hopeless for six sessions** was `-A`. The autocenter
 enable flag decides only whether the effect survives an application opening
@@ -119,13 +120,19 @@ false for this wheel**, and A19 is the measurement.
    which is now known to work. It needs no root, so it comes first.
 4. **Question 3**, the interrupt OUT write, as the cross-check. It answers
    the same question with the device captured.
-5. **Question 5**, the force feedback packets. This is the one that still
-   fails, and the only open question about the wheel itself.
-6. **Question 6**, the buttons, if you are chasing why CrossOver sees none.
+5. **Question 5**, the force feedback packets, which work as long as `42 04`
+   opens the wheel's input first.
+6. **Question 7**, the daemon on its own backend. One command, and it is the
+   precondition for question 8.
+7. **Question 8**, a game reaching the wheel. The end to end path, and the
+   one nobody has run.
+8. **Question 6**, the buttons, if you are chasing why CrossOver sees none.
+   Independent of everything else.
 
 Questions 3 and 4 send the same bytes down different pipes, and both work.
-Keeping both is what makes question 5's failure interpretable: an effect that
-moves nothing on either pipe is a layout problem, not a transport one.
+Keeping both is what made question 5 interpretable when it was failing: an
+effect that moves nothing on either pipe is a layout problem rather than a
+transport one. It turned out to be neither, and to be a missing open.
 
 ---
 
@@ -376,31 +383,18 @@ important.
 
 ## Question 5: does the force feedback protocol work too?
 
-The settings opcodes prove the transport, on both pipes, and A19 settled
-that. This is the part the daemon will actually spend its time on, and it is
-the one thing that has never worked.
-
 **Answered: it works, and `42 04` was the missing packet.** The same upload
-moves the wheel with the open ahead of it and does nothing without. Both
-pipes carry effects. RESEARCH.md A28. What follows is the procedure that
-established it, and it is worth rerunning after any change to the encoders.
+moves the wheel with the open ahead of it and does nothing without, on either
+pipe, replicated across two sessions and four runs. RESEARCH.md A28 and A29.
 
-Everything below about the two runs being unreadable describes how it looked
-before that, and is kept because the reasoning is what found the answer.
+What follows is the procedure that established it. It is worth rerunning
+after any change to `src/lib/encode.c`, because it is the only thing that
+checks those bytes against hardware rather than against golden vectors.
 
-**Where this stood: one clean negative, on the HID path.** All six packets
-on one handle, autocenter cleared, gain set, and the wheel did not move
-(RESEARCH.md A24). The interrupt OUT equivalent has still not produced a
-readable run: `-H` was telling the tester to work every button while it held
-the wheel, so self-movement could not be seen. That is fixed and the retest is
-one command.
-
-**The leading suspect is now a missing open command**, not the packet layout.
-Akellacom's T300RS driver sends `60 01 05` before range, gain or any effect,
-and the T150's own equivalent is `42 04`, recovered from the same driver in
-RESEARCH.md A26. No run here has ever sent it. `probe_intr -O` sends it, and
-it needs `-H` beside it because nothing holds the input open once the tool
-exits.
+**The open is not optional and it does not persist.** Nothing on macOS opens
+the wheel's input, so `42 04` has to lead every sequence here, and
+`probe_intr` needs `-H` beside it because the open lasts only as long as the
+tool holds the device. `probe_intr -O` sends the open on its own.
 
 An effect uploads as three packets that correlate through slot keys, then a
 fourth starts it. `-x` is repeatable and every packet goes out on one open
@@ -595,6 +589,59 @@ about.
 
 ---
 
+## Question 7: does the daemon reach the wheel?
+
+The probes proved the packets. This asks whether `t150d` puts the same ones
+on the wire through its own backend, which is the piece everything above it
+has been waiting for.
+
+Put the wheel in firmware mode first, as in question 2, then:
+
+```sh
+./build/bin/t150d -v
+```
+
+```
+t150d: wheel 044f:b677 open
+t150d: listening on 127.0.0.1:<port>, endpoint .../t150ffb/endpoint
+t150d: backend macOS HID
+```
+
+**No `sudo`.** This path needs no privilege, and being asked for one means
+something else is wrong.
+
+| Outcome | Meaning |
+| --- | --- |
+| The three lines above | The backend found the wheel and opened it. |
+| `no wheel yet, will keep looking` | Not an error. It is absent, or still at the boot id. Run `probe_intr -I` and it is picked up within half a second. |
+| `cannot open the wheel: ...` with `something has seized it` | Another process holds the wheel exclusively. Nothing in this project does that; find what does. |
+| The wheel vanishes from CrossOver when the daemon starts | Stop. The non-seizing open is the assumption the whole design rests on, and it has failed. |
+
+**Nothing moves, and that is correct.** The daemon opens the wheel's input
+only when a client says hello, so with no game connected it sends nothing at
+all. Question 8 is what connects one.
+
+## Question 8: does a game reach the wheel?
+
+The end to end path, and the one nobody has run. It needs the proxy installed
+in a bottle, which is the procedure in the README under testing it today.
+
+Run it twice. First with `t150d -n`, which prints every packet instead of
+sending it, so a fault in the proxy cannot be confused with a fault at the
+wheel. Then without, which is the real thing.
+
+**Hold the wheel or keep a hand on the plug on the second pass.** A game
+asking for a strong constant force will get one, and a constant force does
+not stop on its own.
+
+| Outcome | Meaning |
+| --- | --- |
+| `write ...` lines appear as the game's force feedback starts, with `-n` | Every layer above the wheel works. |
+| The wheel moves, without `-n` | The project does what it was built to do. |
+| Packets appear but the wheel does nothing | Compare them against question 5's, which are known to move it. The difference is the bug. |
+
+---
+
 ## What the answers decide
 
 Struck through where the wheel has already answered.
@@ -610,5 +657,7 @@ Struck through where the wheel has already answered.
 | Settings work but the force feedback packets do nothing | The transport is fine and the packet layout is wrong. Recoverable, and much the better failure. | **measured, on both pipes** |
 | A contiguous type code plays a waveform | Square or triangle stops being a downgrade. Record which code. | nothing played at all yet |
 | Buttons change on the IN pipe but CrossOver sees none | An input path problem above USB, in macOS HID, SDL or winebus. Not a force feedback problem. | **measured** |
+| The daemon opens the wheel and CrossOver keeps it | The non-seizing open holds, which is the assumption the whole design rests on. | untested |
+| A game's effects reach the wheel and it moves | The project does what it was built for. | untested, and the only thing left |
 | the switch needs root | One `sudo` per plug-in, and sleep, wake or a replug drops the wheel back to boot mode, so it is a mid-race failure too. | not needed |
 | the switch needs `-s` | Reconsider the design before writing more code. | not needed |

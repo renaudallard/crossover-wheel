@@ -111,7 +111,8 @@ Implemented and working:
   See section 7's M4 for what is and is not checked.
 - `Makefile`, CI, `README.md`, man pages, docs.
 
-Not started: the daemon's macOS HID backend, `t150boot`, `t150ctl`. Until the
+Not started: `t150boot`, `t150ctl`. The daemon's macOS HID backend is written
+and compiles on macOS, though nothing has driven a wheel through it. Until the
 backend exists `t150d` logs its packets instead of sending them, and says so
 at startup.
 
@@ -230,12 +231,15 @@ golden vectors, and `socket_check` runs the real daemon, speaks the protocol
 over loopback, then goes quiet with the socket still open and watches the
 wheel get released.
 
-**M3. macOS HID backend.** Device matching, non-seizing open, output writes,
-hot plug. Plus `t150ctl`, and `t150boot` if the gate says the mode switch is
-needed. Promote `src/probe/common.c` to `src/lib/` and reuse it rather than
-writing a second enumerator: it is already the non-seizing matching the
-daemon wants. Make `probe_ioreturn_str()` caller-buffered first, because it
-returns a static buffer. For `t150boot`, lift `model_query()` and
+**M3. macOS HID backend. Written.** `src/t150d/hid_darwin.c` does the device
+matching, the non-seizing open, the output writes and the hot plug, and
+replays the wheel's input open after a re-acquire because a replugged wheel
+forgets. `src/probe/common.c` was left where it is rather than promoted: the
+probes enumerate, read and drop, while the daemon has to hold a device across
+a replug, so sharing the code would have meant sharing the wrong lifecycle.
+
+What is left of this milestone is `t150ctl`, and `t150boot` if the mode
+switch is wanted without root. For `t150boot`, lift `model_query()` and
 `mode_switch()` from `probe_ep0.c` as they stand, and never claim a USB
 interface: an endpoint 0 device request needs no claim, and claiming one on a
 HID-owned interface is both refused and currently reported to panic macOS 26.

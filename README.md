@@ -100,7 +100,7 @@ in-bottle bus driver was considered and rejected.
 | `src/lib/encode.c` wire encoders | written, golden-vector tested on Linux |
 | `src/lib/proto.c` DLL to daemon protocol | written, round-trip tested on Linux |
 | `t150d` protocol, slots, downgrades, watchdog | written and tested on Linux |
-| `t150d` macOS HID backend | not started |
+| `t150d` macOS HID backend | written, compiles on macOS, never yet driven a wheel |
 | `t150-dinput8.dll` the in-bottle proxy | written, cross builds, never yet run |
 | build, CI, docs, man pages | working |
 | `t150boot`, `t150ctl` | not started |
@@ -357,12 +357,12 @@ resolve, the fallbacks are in [`docs/HANDOFF.md`](docs/HANDOFF.md) under M4.
 
 ## Testing it today
 
-Every step, in order, for the two things that can be tested right now.
+Every step, in order, for the three things that can be tested right now.
 [`docs/PROBES.md`](docs/PROBES.md) is the authority on what each outcome
 means; this is the sequence to type.
 
-Both need the Mac. Three things first, each of which otherwise costs a whole
-session:
+All of them need the Mac. Four things first, each of which otherwise costs a
+whole session:
 
 - **Watch it calibrate.** A healthy T150 sweeps counterclockwise, then
   clockwise, then back to centre as soon as it has mains power. If it does
@@ -608,19 +608,64 @@ A line for each press is what happened, so the wheel is fine and whatever
 loses them is above the USB layer, in macOS, SDL or winebus. No line for any
 press, on a stream that is otherwise changing, would mean the wheel.
 
+### Test C: does the daemon reach the wheel
+
+New, and the shortest of the three. `t150d` now writes to the wheel itself
+rather than to a log.
+
+**C1. Put the wheel in firmware mode**, as in A2, then start the daemon:
+
+```sh
+./build/bin/t150d -v
+```
+
+Expect three lines, in this order:
+
+```
+t150d: wheel 044f:b677 open
+t150d: listening on 127.0.0.1:<port>, endpoint .../t150ffb/endpoint
+t150d: backend macOS HID
+```
+
+**No `sudo`.** If it asks for one, something is wrong: this path needs no
+privilege at all. `cannot open the wheel: 0x...` with `something has seized
+it` means another process took the wheel exclusively; nothing in this project
+does that.
+
+If the wheel is not plugged in, or is still at the boot id, the daemon says
+so and keeps looking rather than exiting. Plug it in, or run `probe_intr -I`,
+and it picks it up within half a second.
+
+**C2. Check CrossOver still sees the wheel** with the daemon running. It
+should, because the daemon opens the device without seizing it, and that is
+the single assumption the whole design rests on. If the wheel disappears from
+CrossOver's controller panel the moment the daemon starts, stop and say so.
+
+**C3. Nothing moves yet, and that is correct.** The daemon opens the wheel's
+input only when a client says hello, so with no game connected it sends
+nothing. Test B is what connects one.
+
 ### Test B: does the proxy load in a bottle
 
 Independent of test A, and worth running even if A fails. Needs CrossOver and
-any DirectInput 8 or SDL game with force feedback settings. No working force
-feedback is required, because the daemon logs rather than drives.
+any DirectInput 8 or SDL game with force feedback settings.
+
+**Run it twice.** First with `-n`, which drives nothing and prints every
+packet, so a fault in the proxy cannot be confused with a fault at the wheel.
+Then without, which is the whole path end to end and where the wheel should
+actually move.
 
 **B1. Install the proxy** as [above](#installing-the-proxy-into-a-bottle).
 
 **B2. Start the daemon** and leave it running where you can see it:
 
 ```sh
-./build/bin/t150d -v
+./build/bin/t150d -n -v          # first pass: log only
+./build/bin/t150d -v             # second pass: drive the wheel
 ```
+
+**Hold the wheel or keep a hand on the plug during the second pass.** A game
+that asks for a strong constant force will get one.
 
 **B3. Start the game** from a terminal so the loader talks:
 
@@ -643,7 +688,10 @@ whole class of failure:
 4. `write ...` lines in the daemon's output as the game's force feedback
    starts. Those are the packets a wheel would have received.
 
-Getting to 4 means every layer above the missing HID backend works.
+Getting to 4 with `t150d -n` means every layer works as far as the log.
+Getting to 4 with the daemon on its real backend means **the wheel should
+move**, and that is the end to end path this project was built for. Nobody
+has run it yet.
 
 ## Scope
 
