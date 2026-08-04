@@ -1148,8 +1148,8 @@ Wine tree, and 26.3.0's `dlls/winebus.sys/` says the following.
   own `lib64/libSDL2-2.0.0.dylib`, `SDL_Init`, or SDL's macOS HID
   enumeration inside the bottle's processes, which carry CrossOver.app's
   TCC identity rather than Terminal's, where every working tool in this
-  project runs. Which link is broken cannot be read from source; the bottle
-  has to say.
+  project runs. B11 names the leading suspect inside that chain, read out
+  of the exact SDL version CrossOver ships.
 
 Two experiments decide it, both cheap:
 
@@ -1175,6 +1175,69 @@ Two experiments decide it, both cheap:
 > buses; `bus_sdl.c` `sdl_bus_init()`, `sdl_add_device()`;
 > `bus_xbox360.c`. The shipped Mac package carries
 > `lib64/libSDL2-2.0.0.dylib` and the winebus allowlists verbatim.
+
+**B11. The leading suspect, verified in the shipped bits: SDL 2.30.12's
+HIDAPI layer claims Thrustmaster devices and the IOKit backend then skips
+them.** CrossOver 26.3.0's `libSDL2-2.0.0.dylib` identifies itself as
+`SDL-release-2.30.12`, extracted from CodeWeavers' own Mac package and read
+directly. In that exact release, every link of the following chain is in
+the source:
+
+- `SDL_HIDAPI_DEFAULT` is `SDL_TRUE` on macOS, and winebus sets no hint
+  against it, so SDL's HIDAPI joystick drivers are active inside the
+  bottle.
+- `HIDAPI_SupportsPlaystationDetection()` in 2.30.12 has
+  `case USB_VENDOR_THRUSTMASTER: return SDL_TRUE;`. The exclusion for
+  Thrustmaster, with its comment "Most of these are wheels", exists only in
+  SDL releases after 2.30.12. CrossOver ships the last version that still
+  probes them.
+- The PS3 third-party HIDAPI driver therefore claims a T150 at enumeration,
+  "might be supported by this driver, enumerate and find out", and probes
+  it with a Sony third-party feature report query, against a wheel whose
+  descriptor declares a one-byte feature report.
+- Meanwhile the IOKit joystick backend's device-arrival callback finds
+  `HIDAPI_IsDevicePresent()` true, comments "The HIDAPI driver is taking
+  care of this device", and returns without adding it. When HIDAPI's probe
+  then rejects the wheel, no new arrival event replays, so the wheel ends
+  on no SDL path at all, which is what winebus sees and what A34 measured.
+
+The static links are all read from source; the dynamic ordering, HIDAPI's
+claim landing before IOKit's callback, is the one inferred step, and the
+env-var test below settles it on hardware.
+
+**The sibling wheel confirms it from the outside.** Akellacom's T300RS
+driver, the same project C7 cites, instructs launching CrossOver with
+`SDL_JOYSTICK_HIDAPI=0`, "forces SDL to use IOKit so the wheel appears in
+DirectInput", and its troubleshooting entry for a missing or wrong wheel is
+that variable being forgotten. An independent project hit this exact
+mechanism on the T300RS and shipped the workaround. Their CrossOver story
+also marks this project's niche: their CrossOver mode is settings only,
+"CrossOver/Wine games have whatever FF Wine supports", which on macOS is
+none, and their force feedback needs SIP and AMFI disabled for a virtual
+device, the path D-section rejected.
+
+So the experiment order for the bottle, cheapest and most likely first:
+
+1. `SDL_JOYSTICK_HIDAPI=0` in the bottle's environment. Proven on the
+   sibling wheel. It costs HIDAPI-based Bluetooth pad rumble in that
+   bottle, which is why winebus set the PS4 and PS5 rumble hints; the
+   narrower `SDL_JOYSTICK_HIDAPI_PS3=0` would spare those and is the
+   refinement to try once the broad form is proven.
+2. The `Hidraw` knob from B10, which bypasses SDL entirely and carries the
+   wheel's own descriptor, buttons included, so it may fix A21 too.
+3. The `+winebus` trace, if neither works, to see what the bus actually
+   said.
+
+> The dylib: `lib64/libSDL2-2.0.0.dylib` in `crossover-26.3.0.zip`, string
+> `SDL-release-2.30.12-0-g8236e01a9`. SDL 2.30.12:
+> `src/joystick/hidapi/SDL_hidapijoystick.c`
+> `HIDAPI_SupportsPlaystationDetection()`,
+> `src/joystick/hidapi/SDL_hidapi_ps3.c`
+> `HIDAPI_DriverPS3ThirdParty_IsSupportedDevice()`,
+> `src/joystick/darwin/SDL_iokitjoystick.c` the `HIDAPI_IsDevicePresent`
+> skip, `src/joystick/hidapi/SDL_hidapijoystick_c.h` `SDL_HIDAPI_DEFAULT`.
+> Akellacom/thrustmaster_t300rs_gt_macos_driver README, the CrossOver
+> section and its troubleshooting entry.
 
 ---
 

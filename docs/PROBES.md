@@ -125,7 +125,7 @@ most of a session re-proving what was already proven.
    one command, no root.
 3. **The input path**, which test 15 promoted from side quest to the gate:
    the wheel does not appear inside the bottle at all, so nothing below it
-   in this list can run. RESEARCH.md A34 and B10.
+   in this list can run. RESEARCH.md A34, B10 and B11.
 4. **Question 7**, the daemon on its own backend. Half answered, and the
    precondition for question 8.
 5. **Question 8**, a game reaching the wheel. The end to end path, the one

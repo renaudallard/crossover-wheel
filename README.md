@@ -161,10 +161,13 @@ early sessions had steering and pedals working. The wheel is innocent:
 `probe_intr -R` proved every axis and all thirteen buttons reach the wire.
 CrossOver 26's own source narrows the rest: pads survive through
 CodeWeavers' own Xbox bus and the hidraw allowlist, so a broken SDL chain
-blanks exactly the generic-joystick class the T150 is in, and a per-device
-registry knob can reroute the wheel around SDL entirely.
-[`docs/RESEARCH.md`](docs/RESEARCH.md) B10 has the analysis and the two
-experiments that decide it.
+blanks exactly the generic-joystick class the T150 is in. And the SDL that
+CrossOver ships, 2.30.12, still has the HIDAPI layer claim Thrustmaster
+devices as possible PlayStation pads and skip them on the normal path, a
+bug SDL fixed only after that release, and the one the sibling T300RS's
+macOS driver works around with `SDL_JOYSTICK_HIDAPI=0`.
+[`docs/RESEARCH.md`](docs/RESEARCH.md) B10 and B11 have the analysis and
+the three experiments, cheapest first, that decide it.
 
 **2. A game through the proxy**, step by step under
 [testing it today](#testing-it-today), the moment the wheel is back in the
