@@ -218,6 +218,21 @@ test_condition(void)
 	/* A condition does carry the trailer, and a spring's is 46 54. */
 	CHECK("spring first", b, t150_enc_ff_first(b, sizeof(b), &ef),
 	    0x05, 0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46, 0x54);
+
+	/*
+	 * And an envelope on a condition is dropped, not encoded. DirectInput
+	 * lets a game attach one to a spring; the wheel is only ever seen
+	 * receiving zeros in those fields.
+	 */
+	ef.envelope.present = 1;
+	ef.envelope.attack_time = 100000;
+	ef.envelope.attack_level = 10000;
+	ef.envelope.fade_time = 250000;
+	ef.envelope.fade_level = 10000;
+	CHECK("a condition ignores its envelope", b,
+	    t150_enc_ff_first(b, sizeof(b), &ef),
+	    0x05, 0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46, 0x54);
+	memset(&ef.envelope, 0, sizeof(ef.envelope));
 	/* A spring saturates at 0x54, a damper at 0x64. */
 	CHECK("spring update", b, t150_enc_ff_update(b, sizeof(b), &ef),
 	    0x05, 0x46, 0x00, 0x64, 0x9c, 0x00, 0x00, 0x00, 0x00, 0x54, 0x54);

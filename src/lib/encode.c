@@ -264,12 +264,18 @@ t150_enc_ff_first(uint8_t *buf, size_t buflen, const struct t150_effect *ef)
 		return 0;
 
 	/*
-	 * Conditions carry no envelope, and a game need not supply one for
-	 * anything else either. The driver this is transcribed from fills the
-	 * fade length from the attack length, which is a plain bug and is not
-	 * reproduced here.
+	 * Conditions carry no envelope, and this enforces it rather than
+	 * trusting the caller: DirectInput lets a game attach one to a spring,
+	 * and the wheel is only ever observed receiving zeros there. The
+	 * driver this is transcribed from arrives at the same wire bytes by
+	 * accident, clearing its envelope pointer for conditions and then
+	 * leaving the fields uninitialised.
+	 *
+	 * A game need not supply an envelope for anything else either. The
+	 * same driver fills the fade length from the attack length, which is a
+	 * plain bug and is not reproduced here.
 	 */
-	if (ef->envelope.present) {
+	if (ef->envelope.present && cls != T150_FF_FIRST_CONDITION) {
 		attack_ms = us_to_ms(ef->envelope.attack_time);
 		fade_ms = us_to_ms(ef->envelope.fade_time);
 		if (ef->envelope.attack_level > 0)
