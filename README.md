@@ -295,18 +295,32 @@ Mac is not needed to get a binary either.
 
 ## Running the daemon
 
-`make` builds `build/bin/t150d`. It drives nothing yet and says so:
+`make` builds `build/bin/t150d`. **On macOS it drives the wheel**, through
+`IOHIDDeviceSetReport` with a non-seizing open, so CrossOver keeps reading it
+throughout:
 
 ```sh
 ./build/bin/t150d -v
+t150d: wheel 044f:b677 open
 t150d: listening on 127.0.0.1:49713, endpoint .../t150ffb/endpoint
-t150d: backend fake, no wheel is being driven
+t150d: backend macOS HID
 ```
 
-Every packet it would have sent to the wheel is printed instead, in the same
-form `probe_setreport` prints, so the two can be compared directly. See
-[`t150d(8)`](man/t150d.8) for the endpoint file, the watchdog and the effect
-downgrades.
+It does not need root and it does not need the wheel to be plugged in when it
+starts: if the wheel is absent, or still at the boot product id, it keeps
+looking and picks one up when it appears.
+
+`-n` drives nothing and prints every packet instead, in the same form
+`probe_setreport` prints, so the two can be compared directly. That is the
+only behaviour anywhere but macOS.
+
+**A client connecting opens the wheel's input and disconnecting closes it.**
+The firmware renders no effect while no input is open, which is what
+[`docs/RESEARCH.md`](docs/RESEARCH.md) A28 established, so the daemon sends
+`42 04` on hello and `42 00` when the client goes.
+
+See [`t150d(8)`](man/t150d.8) for the endpoint file, the watchdog and the
+effect downgrades.
 
 ## Installing the proxy into a bottle
 

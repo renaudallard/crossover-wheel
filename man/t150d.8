@@ -32,6 +32,18 @@ displacing on the connection alone would let any local process end a game's
 force feedback at will.
 .Sh OPTIONS
 .Bl -tag -width Ds
+.It Fl g Ar ms
+Pause this long after every packet sent to the wheel. Off by default. The
+probe tools have always left 20 milliseconds between writes, on a comment
+saying the wheel drops back to back packets, but nothing has ever tested
+whether that is needed and the interrupt OUT route works with none. A floor
+on the write rate would cap effect updates well below what force feedback
+wants, so this exists to put the pause back if a real wheel asks for it.
+.It Fl n
+Drive nothing. Print every packet that would have gone to the wheel instead,
+in the form
+.Xr t150-probe 1
+prints. This is the only behaviour on anything but macOS.
 .It Fl e Ar endpoint
 Where to publish the port and token. The default is
 .Pa ~/Library/Application Support/t150ffb/endpoint ,
@@ -98,14 +110,18 @@ The port and token, removed on exit.
 .Sh AUTHORS
 .An Renaud Allard
 .Sh CAVEATS
-There is no macOS HID backend yet, so
-.Nm
-drives nothing: every packet goes to a log instead, and it says so at
-startup.
-.Pp
-The wheel does honour the settings packets, measured through an unprivileged
+The wheel honours settings and force feedback alike through an unprivileged
 .Fn IOHIDDeviceSetReport
-with the device left to macOS, which is the transport this daemon is designed
-around. The force feedback packets have never moved it on any transport. The
-procedure is in
+with the device left to macOS, which is the transport this daemon uses. Both
+were measured; the procedure is in
 .Pa docs/PROBES.md .
+.Pp
+What has not been measured is this daemon driving a wheel end to end. The
+backend is written and compiles against the real frameworks, and every packet
+it sends is one a probe tool has already moved the wheel with, but no game
+has yet reached a wheel through it.
+.Pp
+Only a constant force and one periodic have ever been played. Springs,
+dampers, envelopes, ramps and per-effect gain are arithmetic derived from
+a Linux driver rather than measured, so expect to find at least one of them
+wrong.

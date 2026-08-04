@@ -41,8 +41,14 @@ PROBE_COMMON = $(OBJ)/common.o
 LIB_NAMES = encode proto
 LIB_OBJS  = $(addprefix $(LIBOBJ)/,$(addsuffix .o,$(LIB_NAMES)))
 
-# The daemon, minus main, so the tests can drive the session directly.
+# The daemon, minus main, so the tests can drive the session directly. The
+# real backend only exists on macOS, and the tests never link it: they drive
+# the logging one, which is the point of having it.
 DAEMON_LIB_NAMES = session backend_fake
+DAEMON_EXTRA_OBJS =
+ifeq ($(UNAME_S),Darwin)
+DAEMON_EXTRA_OBJS += $(DAEMONOBJ)/hid_darwin.o
+endif
 DAEMON_LIB_OBJS  = $(addprefix $(DAEMONOBJ)/,$(addsuffix .o,$(DAEMON_LIB_NAMES)))
 DAEMON_BIN	 = $(BIN)/t150d
 
@@ -135,8 +141,9 @@ $(DAEMONOBJ)/%.o: src/t150d/%.c | $(DAEMONOBJ)
 $(BIN)/probe_%: $(OBJ)/probe_%.o $(PROBE_COMMON) $(LIB_OBJS) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(FRAMEWORKS)
 
-$(DAEMON_BIN): $(DAEMONOBJ)/main.o $(DAEMON_LIB_OBJS) $(LIB_OBJS) | $(BIN)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+$(DAEMON_BIN): $(DAEMONOBJ)/main.o $(DAEMON_LIB_OBJS) $(DAEMON_EXTRA_OBJS) \
+    $(LIB_OBJS) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(FRAMEWORKS)
 
 # daemon_check drives the session, so it needs the daemon's own objects.
 $(BIN)/daemon_check: tests/daemon_check.c $(DAEMON_LIB_OBJS) $(LIB_OBJS) | $(BIN)

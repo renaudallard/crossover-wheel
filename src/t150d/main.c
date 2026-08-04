@@ -38,6 +38,7 @@
 #include <unistd.h>
 
 #include "t150/proto.h"
+#include "t150/t150.h"
 #include "t150d.h"
 
 #define RXBUF	1024
@@ -360,14 +361,33 @@ consume(struct t150_session *s, int fd, uint8_t *buf, size_t have, int *done)
 	return (ssize_t)off;
 }
 
+/* Milliseconds, refusing anything that is not a number or is absurd. */
+static int
+parse_ms(const char *s, unsigned int *out)
+{
+	char *end;
+	unsigned long v;
+
+	errno = 0;
+	v = strtoul(s, &end, 10);
+	if (errno != 0 || end == s || *end != '\0' || v > 1000)
+		return -1;
+	*out = (unsigned int)v;
+
+	return 0;
+}
+
 static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: t150d [-v] [-e endpoint]\n"
+	    "usage: t150d [-nv] [-e endpoint] [-g ms]\n"
 	    "\n"
 	    "  -e endpoint  where to publish the port and token\n"
 	    "               (default $HOME%s)\n"
+	    "  -g ms        pause this long after each packet. Off by\n"
+	    "               default, see hid_darwin.c\n"
+	    "  -n           drive nothing, log the packets instead\n"
 	    "  -v           log effects, downgrades and safe states\n",
 	    ENDPOINT_REL);
 	exit(2);
@@ -386,12 +406,20 @@ main(int argc, char *argv[])
 	uint64_t pend_deadline = 0;
 	size_t have = 0, phave = 0;
 	unsigned short port;
-	int ch, lfd, cfd = -1, pfd_pend = -1, verbose = 0;
+	unsigned int gap_ms = 0;
+	int ch, lfd, cfd = -1, pfd_pend = -1, verbose = 0, fake = 0;
 
-	while ((ch = getopt(argc, argv, "e:v")) != -1) {
+	while ((ch = getopt(argc, argv, "e:g:nv")) != -1) {
 		switch (ch) {
 		case 'e':
 			epopt = optarg;
+			break;
+		case 'g':
+			if (parse_ms(optarg, &gap_ms) != 0)
+				usage();
+			break;
+		case 'n':
+			fake = 1;
 			break;
 		case 'v':
 			verbose = 1;
@@ -417,8 +445,23 @@ main(int argc, char *argv[])
 
 	if (make_token(token, sizeof(token)) != 0)
 		err(1, "cannot generate a token");
+#ifdef __APPLE__
+	if (!fake) {
+		if (t150_backend_hid(&be, T150_VID, T150_PID_FIRMWARE, gap_ms,
+		    verbose) != 0)
+			errx(1, "cannot open the wheel backend");
+	} else if (t150_backend_fake(&be, stdout) != 0) {
+		errx(1, "cannot open the logging backend");
+	}
+#else
+	/* Nowhere else has a wheel backend, so -n is the only behaviour. */
+	if (!fake)
+		fprintf(stderr, "t150d: this build drives no wheel, "
+		    "logging instead\n");
 	if (t150_backend_fake(&be, stdout) != 0)
 		errx(1, "cannot open the logging backend");
+	(void)gap_ms;
+#endif
 	if ((lfd = listen_loopback(&port)) == -1)
 		err(1, "cannot listen on loopback");
 	if (write_endpoint(endpoint, port, token, &epstat) != 0)
@@ -432,7 +475,7 @@ main(int argc, char *argv[])
 	(void)signal(SIGTERM, on_signal);
 
 	printf("t150d: listening on 127.0.0.1:%u, endpoint %s\n", port, endpoint);
-	printf("t150d: backend %s, no wheel is being driven\n", be.name);
+	printf("t150d: backend %s\n", be.name);
 	(void)fflush(stdout);
 
 	while (!quit) {

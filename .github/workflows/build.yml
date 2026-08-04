@@ -67,6 +67,23 @@ jobs:
           ./build/bin/probe_hid
           ./build/bin/probe_setreport -h || test $? -eq 2
           ./build/bin/probe_ep0 -h || test $? -eq 2
+          ./build/bin/probe_intr -h || test $? -eq 2
+      - name: confirm the daemon starts on its real backend
+        # No wheel on a runner, so this proves only that the HID backend
+        # initialises, walks the registry, finds nothing and keeps going
+        # rather than failing or crashing. That is the one thing about it
+        # that can be checked without hardware.
+        run: |
+          ./build/bin/t150d -v -e "$RUNNER_TEMP/endpoint" &
+          pid=$!
+          sleep 2
+          # While it is still up: it removes the endpoint on the way out.
+          grep -q . "$RUNNER_TEMP/endpoint" ||
+              { echo "the daemon published no endpoint" >&2; kill $pid; exit 1; }
+          kill -TERM $pid
+          wait $pid || test $? -eq 143
+          test ! -e "$RUNNER_TEMP/endpoint" ||
+              { echo "the daemon left its endpoint behind" >&2; exit 1; }
       - name: upload the macOS binaries
         uses: actions/upload-artifact@v7
         with:

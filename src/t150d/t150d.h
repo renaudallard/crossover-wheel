@@ -36,6 +36,18 @@ struct t150_backend {
 /* The logging backend, which drives nothing and records everything. */
 int	t150_backend_fake(struct t150_backend *be, FILE *fp);
 
+#ifdef __APPLE__
+/*
+ * The real one. Writes to the wheel with IOHIDDeviceSetReport and a
+ * non-seizing open, so CrossOver keeps reading it throughout. gap_ms
+ * optionally pauses between packets, see hid_darwin.c for why that is off by
+ * default. Succeeds even when no wheel is attached yet, and picks one up
+ * when it appears.
+ */
+int	t150_backend_hid(struct t150_backend *be, long vid, long pid,
+	    unsigned int gap_ms, int verbose);
+#endif
+
 /*
  * A ramp is not in the wheel's protocol, so it is sent as a constant that
  * the daemon re-sends as it slides. This is how often it does that.
