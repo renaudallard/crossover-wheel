@@ -61,12 +61,28 @@ t150_log(const char *fmt, ...)
  * things. Failing that, guess the usual place: Wine maps the whole host
  * filesystem at Z:, and the daemon writes under the macOS home directory.
  */
+/*
+ * What call_locked() distinguishes. A refusal is the daemon answering an
+ * error, which leaves the connection perfectly usable; a failure is the
+ * transport breaking, which does not.
+ */
+#define CALL_FAILED	(-1)
+#define CALL_REFUSED	1
+
 static int
 endpoint_path(char *out, size_t outlen)
 {
 	char user[256];
+	DWORD n;
 
-	if (GetEnvironmentVariableA("T150_ENDPOINT", out, (DWORD)outlen) > 0)
+	/*
+	 * GetEnvironmentVariableA returns the size it needed, not the size it
+	 * wrote, when the buffer is too small, and it leaves the buffer
+	 * untouched. Treating that as success handed an uninitialised path to
+	 * fopen.
+	 */
+	n = GetEnvironmentVariableA("T150_ENDPOINT", out, (DWORD)outlen);
+	if (n > 0 && n < outlen)
 		return 0;
 	if (GetEnvironmentVariableA("USERNAME", user, sizeof(user)) == 0)
 		return -1;
@@ -118,7 +134,7 @@ call_locked(uint8_t op, const void *payload, size_t len)
 	int r;
 
 	if (sock == INVALID_SOCKET || len > T150_PROTO_MAX_PAYLOAD)
-		return -1;
+		return CALL_FAILED;
 
 	hdr.magic = T150_PROTO_MAGIC;
 	hdr.version = T150_PROTO_VERSION;
@@ -126,7 +142,7 @@ call_locked(uint8_t op, const void *payload, size_t len)
 	hdr.length = (uint16_t)len;
 
 	if ((n = t150_proto_pack_hdr(buf, sizeof(buf), &hdr)) == 0)
-		return -1;
+		return CALL_FAILED;
 	if (len > 0)
 		memcpy(buf + n, payload, len);
 	n += len;
@@ -134,28 +150,28 @@ call_locked(uint8_t op, const void *payload, size_t len)
 	for (off = 0; off < n; off += (size_t)r) {
 		r = send(sock, (const char *)buf + off, (int)(n - off), 0);
 		if (r <= 0)
-			return -1;
+			return CALL_FAILED;
 	}
 
 	for (off = 0; off < T150_PROTO_HDR_LEN; off += (size_t)r) {
 		r = recv(sock, (char *)buf + off,
 		    (int)(T150_PROTO_HDR_LEN - off), 0);
 		if (r <= 0)
-			return -1;
+			return CALL_FAILED;
 	}
 	if (t150_proto_unpack_hdr(buf, T150_PROTO_HDR_LEN, &hdr) != 0)
-		return -1;
+		return CALL_FAILED;
 
 	for (off = 0; off < hdr.length; off += (size_t)r) {
 		r = recv(sock, (char *)buf + off, (int)(hdr.length - off), 0);
 		if (r <= 0)
-			return -1;
+			return CALL_FAILED;
 	}
 
 	if (hdr.op != T150_OP_OK) {
 		t150_log("daemon refused op %u with error %u\n", op,
 		    hdr.length >= 2 ? buf[0] : 0);
-		return -1;
+		return CALL_REFUSED;
 	}
 
 	return 0;
@@ -178,11 +194,18 @@ t150_client_call(uint8_t op, const void *payload, size_t len)
 
 	EnterCriticalSection(&lock);
 	r = call_locked(op, payload, len);
-	if (r != 0)
+	/*
+	 * Only a transport failure costs the connection. The daemon answers
+	 * an error rather than hanging up precisely so a game can carry on,
+	 * and dropping the socket here threw that away: nothing reconnects,
+	 * so one refused effect used to disable force feedback for the rest
+	 * of the process.
+	 */
+	if (r == CALL_FAILED)
 		drop_locked();
 	LeaveCriticalSection(&lock);
 
-	return r;
+	return r == 0 ? 0 : -1;
 }
 
 static DWORD WINAPI
