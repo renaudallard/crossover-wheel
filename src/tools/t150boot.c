@@ -41,10 +41,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "common.h"
 #include "t150/t150.h"
+
+/* The wheel takes a moment to drop off the bus and come back. */
+#define SETTLE_TRIES	60
+#define SETTLE_STEP_MS	50
+
+static void
+nap_ms(long ms)
+{
+	struct timespec ts;
+
+	ts.tv_sec = ms / 1000;
+	ts.tv_nsec = (ms % 1000) * 1000000L;
+	(void)nanosleep(&ts, NULL);
+}
 
 static void
 usage(void)
@@ -179,7 +194,7 @@ main(int argc, char *argv[])
 	UInt32 done = 0;
 	IOReturn r;
 	unsigned int value = T150_SWITCH_VALUE;
-	int ch, query_only = 0, quiet = 0, rc = 1;
+	int ch, i, query_only = 0, quiet = 0, value_given = 0, rc = 1;
 
 	while ((ch = getopt(argc, argv, "nqv:p:V:")) != -1) {
 		switch (ch) {
@@ -203,6 +218,7 @@ main(int argc, char *argv[])
 			if (probe_parse_uint(optarg, 0xffff, &parsed) != 0)
 				usage();
 			value = (unsigned int)parsed;
+			value_given = 1;
 			break;
 		default:
 			usage();
@@ -249,22 +265,76 @@ main(int argc, char *argv[])
 		printf("attachment 0x%02x, model 0x%02x%s\n",
 		    buf[T150_RQ_MODEL_OFF_ATTACH], buf[T150_RQ_MODEL_OFF_MODEL],
 		    buf[T150_RQ_MODEL_OFF_MODEL] == T150_MODEL ? "  T150" :
-		    "  not a T150, check -V against hid-tminit's table");
+		    "  not a T150");
 
 	if (query_only) {
 		rc = 0;
 		goto out;
 	}
 
-	r = mode_switch(dev, (uint16_t)value);
-	if (r == kIOReturnSuccess || left_the_bus(r)) {
-		if (!quiet)
-			printf("switched, the wheel is re-enumerating at "
-			    "0x%04x\n", T150_PID_FIRMWARE);
-		rc = 0;
-	} else {
-		warnx("the mode switch failed: %s", probe_ioreturn_str(r));
+	/*
+	 * Refuse rather than send one wheel's switch value to another. The
+	 * default is the T150 row of the kernel driver's table and means
+	 * nothing to a T300RS or a TMX, and this used to warn and go ahead
+	 * anyway, which -q then hid. Naming the model is enough for someone
+	 * to look up their own value and pass it with -V, which is also how
+	 * they say they meant it.
+	 */
+	if (buf[T150_RQ_MODEL_OFF_MODEL] != T150_MODEL && !value_given) {
+		warnx("this is model 0x%02x, not the T150's 0x%02x. Its switch "
+		    "value is in hid-tminit's model table; pass it with -V",
+		    buf[T150_RQ_MODEL_OFF_MODEL], T150_MODEL);
+		goto out;
 	}
+
+	r = mode_switch(dev, (uint16_t)value);
+
+	/*
+	 * The transfer's own result decides nothing, either way. The wheel
+	 * leaves the bus before it completes, so a success and half a dozen
+	 * different failures all mean the same thing: ask the wheel. Only
+	 * whether it reappears at its firmware id settles it, and that is what
+	 * makes this tool's exit status worth anything to a LaunchAgent.
+	 *
+	 * left_the_bus() therefore only decides whether to mention the code
+	 * when the wheel does not come back, rather than gating the check.
+	 */
+	if (buf[T150_RQ_MODEL_OFF_MODEL] != T150_MODEL) {
+		/* Reachable only via -V, and nobody here knows its firmware id. */
+		if (r == kIOReturnSuccess || left_the_bus(r)) {
+			if (!quiet)
+				printf("switch sent. Whether it worked is not "
+				    "checkable for a model this tool does not "
+				    "know\n");
+			rc = 0;
+		} else {
+			warnx("the mode switch failed: %s",
+			    probe_ioreturn_str(r));
+		}
+		goto out;
+	}
+
+	for (i = 0; i < SETTLE_TRIES; i++) {
+		io_service_t back;
+
+		nap_ms(SETTLE_STEP_MS);
+		if ((back = find_usb(vid, T150_PID_FIRMWARE)) == IO_OBJECT_NULL)
+			continue;
+		IOObjectRelease(back);
+		if (!quiet)
+			printf("switched, the wheel is at 0x%04x\n",
+			    T150_PID_FIRMWARE);
+		rc = 0;
+		goto out;
+	}
+
+	if (r == kIOReturnSuccess || left_the_bus(r))
+		warnx("the switch was accepted but the wheel never came back "
+		    "at 0x%04x. Replug it", T150_PID_FIRMWARE);
+	else
+		warnx("the mode switch failed with %s and the wheel did not "
+		    "come back at 0x%04x", probe_ioreturn_str(r),
+		    T150_PID_FIRMWARE);
 
 out:
 	(*dev)->Release(dev);

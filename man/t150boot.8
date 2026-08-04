@@ -38,17 +38,30 @@ Vendor id. The default is 0x044f.
 The boot product id to look for. The default is 0xb65d.
 .It Fl V Ar value
 The switch value, which selects the model. The default is 0x0006, the T150
-row of the kernel driver's table. Another wheel needs its own.
+row of the kernel driver's table. Another wheel needs its own, and giving
+this is also how you say you meant it: a wheel whose model byte is not the
+T150's is refused without it, rather than being sent another model's value.
+For such a wheel the check that it came back is skipped too, since nothing
+here knows which product id to expect. On a T150 the check runs either way.
 .El
 .Sh EXIT STATUS
-Exits 0 when the wheel was switched, and also when no wheel was found at the
-boot id, because that is the ordinary state once one has been switched and a
-tool that runs on every plug-in must not treat it as a failure. Exits 1 when
-a wheel was found and could not be switched, and 2 on a usage error.
+Exits 0 when the wheel was switched and came back at its firmware id, and
+also when no wheel was found at the boot id, because that is the ordinary
+state once one has been switched and a tool that runs on every plug-in must
+not treat it as a failure. Exits 1 when a wheel was found and could not be
+switched, when it was switched and never reappeared, and when it is not a
+T150 and no
+.Fl V
+was given. Exits 2 on a usage error.
+.Pp
+It waits up to three seconds for the wheel to come back, because the switch
+transfer's own result cannot say whether it worked: the wheel leaves the bus
+before the transfer completes, so the errors that produces are
+indistinguishable from a switch that went nowhere.
 .Sh EXAMPLES
 .Dl $ t150boot
 .Dl attachment 0x06, model 0x03  T150
-.Dl switched, the wheel is re-enumerating at 0xb677
+.Dl switched, the wheel is at 0xb677
 .Pp
 Check what a wheel is without touching it:
 .Pp
@@ -60,10 +73,8 @@ Check what a wheel is without touching it:
 .Sh CAVEATS
 The wheel leaves the bus the instant it accepts the switch, so the transfer
 usually cannot complete. A stall, a not-responding or a no-device from it is
-the normal outcome and is treated as success; only
-.Xr t150-probe 1 Ns 's
-.Nm probe_hid
-can say whether the wheel really came back.
+the normal outcome and is not treated as a failure; what settles it is
+whether the wheel reappears at its firmware id, which this waits for.
 .Pp
 This does not send the five initialisation packets the Linux driver puts on
 the interrupt OUT pipe before the switch. Those need the device captured,

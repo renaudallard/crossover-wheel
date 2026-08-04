@@ -304,7 +304,7 @@ has run:
 ```sh
 ./build/bin/t150boot
 attachment 0x06, model 0x03  T150
-switched, the wheel is re-enumerating at 0xb677
+switched, the wheel is at 0xb677
 ```
 
 It exits 0 when there is nothing at the boot id too, because that is the
