@@ -67,6 +67,18 @@ scale_effect(struct t150_effect *ef)
 	if (g >= (uint32_t)T150_DI_MAX)
 		return;
 
+	/*
+	 * The envelope rides on the same force, so it scales with it. Left
+	 * alone, a halved effect kept a full strength attack and fade and
+	 * pushed harder at the ends than in the middle.
+	 */
+	if (ef->envelope.present) {
+		ef->envelope.attack_level =
+		    apply_gain(ef->envelope.attack_level, g);
+		ef->envelope.fade_level =
+		    apply_gain(ef->envelope.fade_level, g);
+	}
+
 	switch (ef->kind) {
 	case T150_EFFECT_CONSTANT:
 		ef->u.constant.magnitude = apply_gain(ef->u.constant.magnitude, g);
@@ -79,6 +91,17 @@ scale_effect(struct t150_effect *ef)
 		break;
 	case T150_EFFECT_SPRING:
 	case T150_EFFECT_DAMPER:
+		/*
+		 * The coefficients are the slope and the saturations only cap
+		 * it, so scaling the caps alone left the wheel pushing at
+		 * full rate everywhere below them. A condition's output is
+		 * coefficient times displacement, clamped, and the gain
+		 * belongs to the output.
+		 */
+		ef->u.condition.pos_coeff =
+		    apply_gain(ef->u.condition.pos_coeff, g);
+		ef->u.condition.neg_coeff =
+		    apply_gain(ef->u.condition.neg_coeff, g);
 		ef->u.condition.pos_saturation =
 		    apply_gain(ef->u.condition.pos_saturation, g);
 		ef->u.condition.neg_saturation =

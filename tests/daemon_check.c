@@ -392,6 +392,43 @@ test_watchdog(void)
 }
 
 /*
+ * A per-effect gain has to reach everything the effect pushes with, not just
+ * the magnitude. A condition's coefficients are its slope and the
+ * saturations only cap it, so scaling the caps alone left the wheel pushing
+ * at full rate everywhere below them.
+ */
+static void
+test_gain_reaches_conditions(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+
+	reset_session();
+	hello(0);
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_SPRING;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.gain = T150_DI_MAX / 2;
+	ef.u.condition.pos_coeff = 10000;
+	ef.u.condition.neg_coeff = -10000;
+	ef.u.condition.pos_saturation = 10000;
+	ef.u.condition.neg_saturation = 10000;
+
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+
+	/*
+	 * Half gain, so the coefficients land at half of 100 and the
+	 * saturations at half of the spring's 0x54 maximum.
+	 */
+	expect_log("half gain halves a spring's slope as well as its cap",
+	    "write 11: 05 1c 00 00 00 00 00 00 00 46 54\n"
+	    "write 11: 05 0e 00 32 ce 00 00 00 00 2a 2a\n"
+	    "write 15: 01 00 40 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+}
+
+/*
  * DISFFC_STOPALL must stop without releasing, or a game that pauses cannot
  * start its effects again afterwards.
  */
@@ -537,6 +574,7 @@ main(void)
 	test_watchdog();
 	test_reupload_keeps_playing();
 	test_stop_all_keeps_slots();
+	test_gain_reaches_conditions();
 	test_panic_paths();
 
 	(void)fclose(logfp);
