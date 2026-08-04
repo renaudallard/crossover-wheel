@@ -217,9 +217,13 @@ di_CreateDevice(IDirectInput8W *self, REFGUID guid,
     LPDIRECTINPUTDEVICE8W *out, LPUNKNOWN outer)
 {
 	struct dinput_wrap *d = di_from(self);
-	DIDEVICEINSTANCEW info;
+	union {
+		DIDEVICEINSTANCEW w;
+		DIDEVICEINSTANCEA a;
+	} info;
 	IDirectInputDevice8W *inner;
 	HRESULT hr;
+	int got;
 
 	if (out == NULL)
 		return E_POINTER;
@@ -232,11 +236,31 @@ di_CreateDevice(IDirectInput8W *self, REFGUID guid,
 	 * Only the wheel is wrapped, and only when the daemon is there to
 	 * answer. Everything else is handed over untouched, so nothing else
 	 * in the bottle pays for this DLL being installed.
+	 *
+	 * The size has to match the interface the game asked for. An ANSI
+	 * device rejects anything but sizeof(DIDEVICEINSTANCEA) or its DX3
+	 * form with DIERR_INVALIDPARAM, so asking with the wide size, which
+	 * is 1100 against 580, failed for every ANSI game and the wheel was
+	 * handed back unwrapped with nothing logged. guidProduct sits at the
+	 * same offset in both, so only the size and the call differ.
 	 */
 	memset(&info, 0, sizeof(info));
-	info.dwSize = sizeof(info);
-	if (SUCCEEDED(IDirectInputDevice8_GetDeviceInfo(inner, &info)) &&
-	    t150_is_wheel(&info.guidProduct) && t150_client_start() == 0) {
+	if (d->wide) {
+		info.w.dwSize = sizeof(info.w);
+	} else {
+		info.a.dwSize = sizeof(info.a);
+	}
+	/*
+	 * One vtable slot serves both, and inner already holds whichever
+	 * interface the game asked for, so the cast only satisfies the
+	 * declared type. What the device does with the buffer is decided by
+	 * the dwSize set above.
+	 */
+	got = SUCCEEDED(IDirectInputDevice8_GetDeviceInfo(inner,
+	    (DIDEVICEINSTANCEW *)&info));
+
+	if (got && t150_is_wheel(&info.w.guidProduct) &&
+	    t150_client_start() == 0) {
 		void *wrapped;
 
 		if (SUCCEEDED(t150_device_wrap(inner, d->wide, &wrapped))) {
