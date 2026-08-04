@@ -96,6 +96,12 @@ hello(uint64_t now)
 {
 	frame(T150_OP_HELLO, (const uint8_t *)TOKEN, T150_TOKEN_LEN, now,
 	    T150_OP_OK, T150_ERR_NONE);
+	/*
+	 * A successful hello opens the wheel's input, which every test after
+	 * this one would otherwise have to account for. The packet itself is
+	 * checked by test_handshake.
+	 */
+	expect_log("hello opens the wheel's input", "write 2: 42 04\n");
 }
 
 static size_t
@@ -429,6 +435,35 @@ test_gain_reaches_conditions(void)
 }
 
 /*
+ * A client leaving for good closes the wheel's input, where the watchdog
+ * only quiets it. The wheel renders nothing while no input is open, so
+ * whatever opened one has to close it or the wheel is left in a state no
+ * game asked for.
+ */
+static void
+test_session_end_closes_the_input(void)
+{
+	reset_session();
+	hello(0);
+	drain_log();
+
+	t150_session_end(&sess, "test");
+	expect_log("ending a session releases the wheel and closes its input",
+	    "write 4: 40 03 00 00\n"
+	    "write 4: 40 04 00 00\n"
+	    "write 2: 42 00\n");
+
+	/* The watchdog does not: a quiet client may yet come back. */
+	reset_session();
+	hello(0);
+	drain_log();
+	(void)t150_session_tick(&sess, T150_WATCHDOG_MS);
+	expect_log("the watchdog leaves the input open",
+	    "write 4: 40 03 00 00\n"
+	    "write 4: 40 04 00 00\n");
+}
+
+/*
  * DISFFC_STOPALL must stop without releasing, or a game that pauses cannot
  * start its effects again afterwards.
  */
@@ -574,6 +609,7 @@ main(void)
 	test_watchdog();
 	test_reupload_keeps_playing();
 	test_stop_all_keeps_slots();
+	test_session_end_closes_the_input();
 	test_gain_reaches_conditions();
 	test_panic_paths();
 

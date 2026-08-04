@@ -94,4 +94,11 @@ unsigned int t150_session_tick(struct t150_session *s, uint64_t now_ms);
  */
 void	t150_session_panic(struct t150_session *s, const char *why);
 
+/*
+ * The client has gone for good rather than gone quiet: panic, then close the
+ * wheel's input so it returns to its own autocenter. The wheel renders no
+ * effect while no input is open, so whatever opens one has to close it.
+ */
+void	t150_session_end(struct t150_session *s, const char *why);
+
 #endif /* T150D_H */

@@ -161,6 +161,24 @@ t150_session_init(struct t150_session *s, struct t150_backend *be,
 	}
 }
 
+/*
+ * The client is gone for good, as opposed to merely quiet. Everything the
+ * watchdog does, and then close the wheel's input so it goes back to holding
+ * its own autocenter rather than waiting for effects nobody will send.
+ */
+void
+t150_session_end(struct t150_session *s, const char *why)
+{
+	uint8_t pkt[PKT_MAX];
+	size_t n;
+
+	t150_session_panic(s, why);
+
+	n = t150_enc_input_close(pkt, sizeof(pkt));
+	(void)s->be->write(s->be->priv, pkt, n);
+	s->hello = 0;
+}
+
 void
 t150_session_panic(struct t150_session *s, const char *why)
 {
@@ -462,6 +480,9 @@ int
 t150_session_frame(struct t150_session *s, uint8_t op, const uint8_t *payload,
     size_t len, uint64_t now_ms, struct t150_reply *rep)
 {
+	uint8_t pkt[PKT_MAX];
+	size_t n;
+
 	s->last_frame_ms = now_ms;
 
 	if (op == T150_OP_HELLO) {
@@ -470,6 +491,14 @@ t150_session_frame(struct t150_session *s, uint8_t op, const uint8_t *payload,
 			return 0;
 		}
 		s->hello = 1;
+		/*
+		 * Open the wheel's input. The firmware renders no effect at
+		 * all until something does, which is what cost this project
+		 * eleven sessions, and nothing on macOS opens it on our
+		 * behalf. RESEARCH.md A28.
+		 */
+		n = t150_enc_input_open(pkt, sizeof(pkt));
+		(void)emit(s, pkt, n);
 		reply_ok(rep);
 		return 0;
 	}

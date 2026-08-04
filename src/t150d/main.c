@@ -502,8 +502,7 @@ main(int argc, char *argv[])
 			}
 
 			if (done) {
-				t150_session_panic(&sess, "client went away");
-				sess.hello = 0;
+				t150_session_end(&sess, "client went away");
 				(void)close(cfd);
 				cfd = -1;
 				have = 0;
@@ -535,7 +534,7 @@ main(int argc, char *argv[])
 					fprintf(stderr, "t150d: a new client "
 					    "proved the token, displacing the "
 					    "old one\n");
-				t150_session_panic(&sess,
+				t150_session_end(&sess,
 				    "displaced by a new client");
 				(void)close(cfd);
 				sess = psess;
@@ -588,7 +587,7 @@ main(int argc, char *argv[])
 	}
 
 
-	t150_session_panic(&sess, "shutting down");
+	t150_session_end(&sess, "shutting down");
 	if (cfd != -1)
 		(void)close(cfd);
 	if (pfd_pend != -1)
