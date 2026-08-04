@@ -23,9 +23,11 @@ Two things are already true with nothing installed, and the design leans on
 both:
 
 - macOS enumerates the wheel as an ordinary joystick once it is in firmware
-  mode, so the steering and pedals already reach games. The buttons do not,
-  for a reason above the USB layer that is not yet diagnosed (RESEARCH.md
-  A21), and that is a gap in this claim rather than a change to the design.
+  mode, and early sessions had the steering and pedals reaching games. The
+  latest sessions have the wheel not appearing in the bottle at all
+  (RESEARCH.md A34, B10), a regression above the USB layer that gates the
+  end to end path but does not change this design: the force feedback half
+  is unaffected and waiting.
 - CrossOver carries it into the bottle without any driver, and it opens the
   device without seizing it, so a second process can still write to it.
 

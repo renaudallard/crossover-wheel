@@ -889,6 +889,32 @@ before each end stop turned hard, which reads like a firmware soft stop.
 Still untried after three sessions: `0x4021` and `0x4025`, because the
 waveform run used `20 40` again, and an isolated, felt `range 270`.
 
+**A34. `0x4021` is a waveform and `0x4025` is not, and the game cannot see
+the wheel at all.** Test 15.
+
+- **`0x4021` renders and oscillates.** "Wheel turn smooth": no hard flips,
+  so by feel it is not a square. Whether it is a triangle or another
+  sine-alike needs a back-to-back comparison against `0x4020`, so the
+  square and triangle downgrades stay until then.
+- **`0x4025` renders nothing, and the evidence is unusually clean.** The
+  stop between blocks was skipped, so the `0x4025` upload went into slot 0
+  over the still-playing `0x4021` and the motion ceased: a type that
+  replaces a running effect and produces no force is a type the firmware
+  does not render.
+- **The shipped range change is felt.** `range 270` then `range 1080`,
+  "both runs perfectly", which closes question 6b's last outcome.
+- The regsvr32 chain-load check passed again after re-copying the builtin.
+
+**The blocker moved.** With the daemon on `-n` and on its real backend,
+"assetto corsa didn't see the wheel on both": the wheel does not appear
+inside the bottle at all, so no DirectInput device exists for the proxy to
+wrap and question 8 cannot start. The input-path problem, called separate
+and non-blocking in every document since A21, now gates the project's goal.
+Note the regression shape: A1-era sessions had steering and pedals working
+in games, so the wheel did reach the bottle once on this machine and does
+not now. B8 and B9 were researched assuming the wheel arrives without
+force feedback; the measured reality is that nothing arrives.
+
 **A21. The wheel puts all thirteen buttons on the wire. Whatever loses them
 is above the USB layer.** A18 is answered, and against the wheel.
 
@@ -1094,7 +1120,61 @@ sits above DirectInput and never reads a descriptor. One practical
 consequence though: putting `044f:b677` in `EnableHidraw` routes the wheel
 back through `bus_iohid.c`, and the bottle then sees the wheel's own
 descriptor instead of SDL's synthesised one. That is an input fidelity knob,
-not a force feedback fix.
+not a force feedback fix. Since A34, that knob has become the leading
+candidate fix for the whole input problem: see B10.
+
+**B10. CrossOver 26.3.0's own winebus, read from CodeWeavers' published
+source, and why a missing wheel means the SDL chain.** A34 measured the
+wheel absent from the bottle entirely, which B8 and B9, researched against
+upstream Wine, did not predict. CodeWeavers publishes CrossOver's modified
+Wine tree, and 26.3.0's `dlls/winebus.sys/` says the following.
+
+- **CrossOver runs four buses, not three.** SDL, udev, iohid, and a
+  CodeWeavers-only `bus_xbox360.c` (2019, Aric Stewart), an IOKit USB
+  backend for Xbox pads. Xbox pads therefore never depend on the SDL bus,
+  and DualShock and DualSense ride the iohid bus through a hidraw
+  allowlist. **A dead SDL chain blanks exactly one class of device: the
+  generic HID joystick, which is what a T150 is.** Every controller a
+  typical user owns keeps working, which is how a broken SDL bus stays
+  unnoticed.
+- **The arbitration matches upstream.** `is_hidraw_enabled()` has the same
+  Thrustmaster allowlist as upstream, `b679`, `b687`, `b10a`, not `b677`,
+  so the wheel's iohid copy is discarded and the SDL copy is the only one
+  the bottle can receive. No CrossOver-specific filter drops it:
+  `sdl_add_device()` treats wheels as plain joysticks, and deliberately so,
+  with an explicit `joystick_type != SDL_JOYSTICK_TYPE_WHEEL` guard keeping
+  wheels out of the game-controller mapping.
+- **So the fault is in the SDL chain**: winebus's `dlopen` of CrossOver's
+  own `lib64/libSDL2-2.0.0.dylib`, `SDL_Init`, or SDL's macOS HID
+  enumeration inside the bottle's processes, which carry CrossOver.app's
+  TCC identity rather than Terminal's, where every working tool in this
+  project runs. Which link is broken cannot be read from source; the bottle
+  has to say.
+
+Two experiments decide it, both cheap:
+
+1. **Make winebus talk.** Quit CrossOver fully, then start the bottle from
+   a terminal with `--debugmsg +winebus` and the wheel plugged in, and run
+   `control.exe joy.cpl` for DirectInput's view. The trace prints the SDL
+   bus starting or failing to load libSDL2, and either
+   `creating non-hidraw device 044f:b677` or nothing at all. One log names
+   the broken link.
+2. **Reroute around SDL.** `HKLM\System\CurrentControlSet\Services\WineBus\
+   Devices\044f/b677` with DWORD `Hidraw` = 1, read at bottle boot, sends
+   the wheel through `bus_iohid.c` instead, which passes the wheel's own
+   descriptor into the bottle, buttons and all (B1, B8). If the wheel then
+   appears, the input problem is solved better than SDL ever solved it,
+   force feedback unaffected since the proxy sits above DirectInput. If it
+   does not appear through IOHID either, the fault is process-level, TCC
+   or the device, not SDL.
+
+> `sources/wine/dlls/winebus.sys/` in
+> `crossover-sources-26.3.0.tar.gz` from media.codeweavers.com:
+> `main.c` `bus_options_init()`, `load_device_options()`,
+> `is_hidraw_enabled()`, the `IRP_MN_START_DEVICE` case starting all four
+> buses; `bus_sdl.c` `sdl_bus_init()`, `sdl_add_device()`;
+> `bus_xbox360.c`. The shipped Mac package carries
+> `lib64/libSDL2-2.0.0.dylib` and the winebus allowlists verbatim.
 
 ---
 

@@ -29,8 +29,9 @@ extension approval.
 > crossed the loopback, and the daemon has never rendered one. Only a constant
 > force and one periodic have ever been played, so springs, dampers,
 > envelopes and per-effect gain are still arithmetic derived from a Linux
-> driver rather than measured. And CrossOver registers none of the wheel's
-> buttons, which is a separate input-path problem (A21, A25).
+> driver rather than measured. And the wheel currently does not reach the
+> bottle at all, which is now the blocker for the end to end path (A34,
+> B10).
 
 **Picking this up?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first. It is
 written for someone starting with no context: what is decided, what is
@@ -44,14 +45,18 @@ A T150 on a Mac is already half working, and it is worth being precise about
 which half.
 
 **Already works, with nothing installed.** macOS enumerates the wheel as an
-ordinary joystick once it is in firmware mode, and CrossOver passes it into
-the bottle, so the steering and pedals reach games today.
+ordinary joystick once it is in firmware mode, and early sessions had
+CrossOver passing it into the bottle, steering and pedals working in games.
 
-**Does not work: the buttons.** Measured, and not the wheel's fault. It puts
-all thirteen buttons and the hat on the wire, and CrossOver's controller
-panel registers none of them in either its DirectInput or its XInput view.
-Something between macOS HID and winebus drops them. This is a separate
-problem from the one the project was built for, and it is not yet diagnosed.
+**Does not work, and now the blocker: the wheel no longer reaches the
+bottle at all.** Measured across test 13 and test 15, and not the wheel's
+fault: it puts every axis and all thirteen buttons on the wire, and
+CrossOver's controller panel and the game both see nothing. Something
+between macOS HID and winebus drops the whole device, where earlier it only
+dropped the buttons. Until that is solved, no game can create a DirectInput
+device for the proxy to wrap, so the end to end path is gated on it. The
+investigation from CrossOver 26's own source is in
+[`docs/RESEARCH.md`](docs/RESEARCH.md) B10.
 
 **Does not work: force feedback.** Wine's DirectInput sets
 `DIDC_FORCEFEEDBACK` only from a Physical Interface Device collection it
@@ -149,36 +154,32 @@ everything below is read through that: a symmetric force about a displaced
 centre looks asymmetric. Unplug it from mains and USB, let it sweep, and
 start from there, and again after any run that worked against a stop.
 
-**1. Play the effects nobody has played yet.** A constant and the `0x4020`
-periodic have moved the wheel, on both pipes. Springs, dampers, envelopes,
-ramps and per-effect gain have never touched hardware, and every one of them
-is arithmetic this project derived from a driver rather than measured.
-`probe_setreport -x` plays any of them in a line, and the encoders' own
-golden vectors say what the bytes should be.
+**1. Where CrossOver loses the wheel.** This gates everything below it:
+test 15 ran a game with the daemon live and the game saw no wheel, because
+the wheel no longer appears inside the bottle at all, axes included, where
+early sessions had steering and pedals working. The wheel is innocent:
+`probe_intr -R` proved every axis and all thirteen buttons reach the wire.
+CrossOver 26's own source narrows the rest: pads survive through
+CodeWeavers' own Xbox bus and the hidraw allowlist, so a broken SDL chain
+blanks exactly the generic-joystick class the T150 is in, and a per-device
+registry knob can reroute the wheel around SDL entirely.
+[`docs/RESEARCH.md`](docs/RESEARCH.md) B10 has the analysis and the two
+experiments that decide it.
 
-Settle what `0x4021` and `0x4025` are while you are there; the exact bytes
-to change are in PROBES.md under the missing waveforms. Test 13 meant to and
-ran `0x4020` twice, so square and triangle are still downgrades on faith.
+**2. A game through the proxy**, step by step under
+[testing it today](#testing-it-today), the moment the wheel is back in the
+bottle. The chain-load is proven: the proxy loads in a real bottle and
+forwards into CrossOver's builtin (A33). What has never happened is a game
+creating a device through it and its effects crossing the loopback to the
+daemon, and finding that out needs no working force feedback at all.
 
-**2. Where CrossOver loses the buttons.** Answered as far as the wheel is
-concerned: `probe_intr -R` proved all thirteen buttons reach the wire, and
-the mask it printed matches the report descriptor field for field. CrossOver
-registers none of them, in either its DirectInput or its XInput view, so the
-loss is in macOS HID, SDL or winebus. That makes it an input problem rather
-than a force feedback one, and `docs/RESEARCH.md` B8 is where to start.
-
-One thing to pin down first: the latest report says the **axes** stop working
-too, where earlier ones had them working. Replug the wheel, switch it with
-`probe_intr -I`, touch nothing else, and open the controller panel, so that
-whatever is measured is measured on a wheel that has not been captured and
-released a dozen times.
-
-**3. A game through the proxy**, step by step under
-[testing it today](#testing-it-today). The chain-load is proven: the proxy
-loads in a real bottle and forwards into CrossOver's builtin (A33). What has
-never happened is a game creating a device through it and its effects
-crossing the loopback to the daemon, and finding that out needs no working
-force feedback at all.
+**3. Play the effects nobody has played yet.** A constant and two periodics
+have moved the wheel. Springs, dampers, envelopes, ramps and per-effect
+gain have never touched hardware, and every one of them is arithmetic this
+project derived from a driver rather than measured. `probe_setreport -x`
+plays any of them in a line, and the encoders' own golden vectors say what
+the bytes should be. The one waveform question left is telling `0x4020`
+from `0x4021` back to back; `0x4025` is settled, it renders nothing.
 
 Then, whichever way those went:
 

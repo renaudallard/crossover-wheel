@@ -320,11 +320,14 @@ byte holding the *high* byte of the start delay in milliseconds.
 | `0x4041` | damper |
 
 The codes are contiguous around the periodics, so `0x4020`, `0x4021` and
-`0x4025` may well be the waveforms the Linux driver never implemented.
-**`0x4020` is one of them**: committed with it, a periodic made the wheel
-oscillate left and right (RESEARCH.md A28). Which waveform it is needs a run
-that compares it against `0x4021` by feel, so square and triangle stay
-downgrades until then.
+`0x4025` looked like the waveforms the Linux driver never implemented. Two
+of the three are real: **`0x4020` oscillates** (RESEARCH.md A28) and
+**`0x4021` oscillates smoothly** (A34), so neither is obviously a square.
+**`0x4025` renders nothing**: uploaded over a playing `0x4021` it stopped
+the motion and produced no force, so it is not a waveform the firmware
+renders (A34). Which shapes `0x4020` and `0x4021` actually are needs a
+back-to-back comparison by feel, so square and triangle stay downgrades
+until then.
 
 **Effect control**, 4 bytes, starts or stops an uploaded effect:
 

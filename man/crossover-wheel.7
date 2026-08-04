@@ -10,16 +10,16 @@ gives a Thrustmaster T150 working force feedback in games running under
 CrossOver on macOS, without installing anything system wide: no kext, no
 DriverKit system extension, no SIP change and no AMFI change.
 .Pp
-Some of this already works on a stock Mac with nothing installed. macOS
-enumerates the wheel as an ordinary joystick once it is in firmware mode, and
-CrossOver's HID backend passes the wheel's own report descriptor into the
-bottle unchanged, so the steering and pedals reach games already.
+macOS enumerates the wheel as an ordinary joystick once it is in firmware
+mode, and early sessions had CrossOver carrying it into the bottle with
+steering and pedals working in games. The latest sessions do not: the wheel
+no longer appears inside the bottle at all, though it puts every axis and
+button on the wire, and until that input path regression is solved no game
+can reach the force feedback this project provides. RESEARCH.md A34 and B10.
 .Pp
-What is missing is force feedback, because the wheel's descriptor contains no
-Physical Interface Device collection and Wine performs no force feedback
-translation of its own on macOS. The buttons are missing too, for a different
-and undiagnosed reason: the wheel puts all thirteen of them on the wire and
-CrossOver registers none.
+Force feedback itself is missing for a structural reason: the wheel's
+descriptor contains no Physical Interface Device collection and Wine
+performs no force feedback translation of its own on macOS.
 .Pp
 Rather than trying to present a force feedback device to macOS, which is
 blocked by restricted entitlements no free path can obtain,

@@ -123,20 +123,22 @@ most of a session re-proving what was already proven.
 1. **Question 1**, what macOS publishes. Always.
 2. **Question 2**, the mode switch, if question 1 found `B65D`. `t150boot`,
    one command, no root.
-3. **Question 6b**, the shipped tools. One outcome is still unobserved:
-   whether `range 270` visibly shortens lock to lock.
+3. **The input path**, which test 15 promoted from side quest to the gate:
+   the wheel does not appear inside the bottle at all, so nothing below it
+   in this list can run. RESEARCH.md A34 and B10.
 4. **Question 7**, the daemon on its own backend. Half answered, and the
    precondition for question 8.
 5. **Question 8**, a game reaching the wheel. The end to end path, the one
-   nobody has run, and where the hardware time should go.
-6. **Question 6**, the buttons, if you are chasing why CrossOver sees none.
-   Independent of everything else.
+   nobody has run.
+6. **Question 6**, the buttons on the wire, if the input path work needs it
+   reproduced.
 
-The rest are answered and are kept as rerun procedures. Question 4, the HID
-path, on a new machine or after a macOS update; question 3, the interrupt
-OUT cross-check, only if the HID path ever stops working; question 5, the
-force feedback packets, after any change to `src/lib/encode.c`, plus its one
-open item, what `0x4021` and `0x4025` are.
+The rest are answered and are kept as rerun procedures. Question 6b, the
+shipped tools, all outcomes now observed; question 4, the HID path, on a
+new machine or after a macOS update; question 3, the interrupt OUT
+cross-check, only if the HID path ever stops working; question 5, the force
+feedback packets, after any change to `src/lib/encode.c`, plus its one open
+item, telling `0x4020` and `0x4021` apart.
 
 Questions 3 and 4 send the same bytes down different pipes, and both work.
 Keeping both is what made question 5 interpretable when it was failing: an
@@ -386,11 +388,12 @@ tshark -r windows_constant0.pcapng -Y usb.capdata -T fields -e usb.capdata
 
 ### While you are here: the two missing waveforms
 
-`0x4020` is real: test 13 played it through the HID pipe and the wheel swung
-left and right until it was told to stop. What is still unknown is what
-shape `0x4021` and `0x4025` are. The protocol has contiguous type codes for
-sine and both sawtooths, so those two may be the square and triangle the
-Linux driver never implemented, which this project downgrades to sine.
+**Answered by test 15.** `0x4021` oscillates smoothly, so it is a real
+waveform and by feel not a square; `0x4025` renders nothing, measured the
+strong way, by being uploaded over a playing effect and stopping it. What
+remains is telling `0x4020` and `0x4021` apart, which needs the two played
+back to back and compared by feel; until someone does, square and triangle
+stay downgrades. RESEARCH.md A34.
 
 The type code lives in the commit packet, the fifteen-byte one starting
 `01 00`. Its third and fourth bytes are the code, little endian: `20 40` is
@@ -413,12 +416,13 @@ Feel it, then stop it:
 ./build/bin/probe_setreport -x "41 00 00 01"
 ```
 
-Run it again with `21 40` as those two bytes and again with `25 40`,
-changing nothing else, stopping each one. Test 13 meant to and ran `20 40`
-twice, so nothing is known about the other two yet. Flat tops and hard flips
-is square; a steady sweep up and down is triangle; either would stop being a
-downgrade. When you are done, close the input with the cleanup line above,
-and remember the wheel may need a replug before its centre can be trusted.
+For the remaining comparison, run it once with `20 40` and once with
+`21 40` as those two bytes, changing nothing else and stopping each one.
+The same shape twice means `0x4021` is another sine and both downgrades
+stand; a steady linear sweep on one of them means it is the triangle and
+the triangle downgrade can go. When you are done, close the input with the
+cleanup line above, and remember the wheel may need a replug before its
+centre can be trusted.
 
 ---
 
@@ -467,12 +471,11 @@ about.
 
 ## Question 6b: do the shipped tools work?
 
-**Mostly answered by test 13.** `t150boot` switched a real wheel and
-confirmed it back at `0xb677`, and `t150ctl status` identified it while it
-was mid-effect, through the non-seizing open. The `range` and `autocenter`
-commands ran without error, but nobody recorded whether lock to lock
-actually shortened, so the one decisive outcome below is still unobserved:
-run the range pair again and feel it. RESEARCH.md A31.
+**Answered.** Test 13: `t150boot` switched a real wheel and confirmed it
+back at `0xb677`, and `t150ctl status` identified it while it was
+mid-effect, through the non-seizing open. Test 15: the range pair was run
+and felt, "both runs perfectly", which was the last outcome this question
+was waiting on. RESEARCH.md A31 and A34.
 
 Everything before this is a probe, built to answer a question. These two are
 what a user actually runs, and they take the same paths the probes proved.
@@ -542,6 +545,11 @@ test 14 proved the proxy loads in a real bottle and chain-loads CrossOver's
 builtin (A33), so what remains starts at the game. It needs the proxy
 installed in a bottle, which is the procedure in the README under testing it
 today.
+
+**Currently gated on the input path.** Test 15 ran the game with the daemon
+in both modes and it saw no wheel, because the wheel does not appear inside
+the bottle at all (A34): no device, so nothing for the proxy to wrap. Solve
+that first; B10 in RESEARCH.md is where the investigation stands.
 
 Run it twice. First with `t150d -n`, which prints every packet instead of
 sending it, so a fault in the proxy cannot be confused with a fault at the
