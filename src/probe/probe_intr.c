@@ -304,18 +304,25 @@ static void
 find_pipes(IOUSBInterfaceInterface500 **iface, struct pipe *out,
     struct pipe *in)
 {
-	UInt8 n = 0, i;
+	unsigned int i;
+	UInt8 n = 0;
 
 	if ((*iface)->GetNumEndpoints(iface, &n) != kIOReturnSuccess)
 		return;
 
+	/*
+	 * i counts wider than n on purpose. Both were UInt8, so an interface
+	 * claiming 255 endpoints made i wrap from 255 to 0 and the loop never
+	 * ended, with the wheel captured and only a kill to escape, which is
+	 * exactly what strands it until a replug.
+	 */
 	for (i = 1; i <= n; i++) {
 		UInt8 dir = 0, num = 0, tt = 0, interval = 0;
 		UInt16 maxsize = 0;
 		struct pipe *p;
 
-		if ((*iface)->GetPipeProperties(iface, i, &dir, &num, &tt,
-		    &maxsize, &interval) != kIOReturnSuccess)
+		if ((*iface)->GetPipeProperties(iface, (UInt8)i, &dir, &num,
+		    &tt, &maxsize, &interval) != kIOReturnSuccess)
 			continue;
 
 		printf("  pipe %u: %s, type %u, endpoint 0x%02x, max %u\n", i,
@@ -327,7 +334,7 @@ find_pipes(IOUSBInterfaceInterface500 **iface, struct pipe *out,
 		p = dir == kUSBOut ? out : dir == kUSBIn ? in : NULL;
 		if (p == NULL || p->ref != 0)
 			continue;
-		p->ref = i;
+		p->ref = (UInt8)i;
 		p->addr = (UInt8)(num | (dir == kUSBIn ? 0x80 : 0));
 	}
 }
