@@ -125,7 +125,8 @@ mkpath(const char *path)
  * a file, and 0600 because anything that can read it can drive the motors.
  */
 static int
-write_endpoint(const char *path, unsigned short port, const char *token)
+write_endpoint(const char *path, unsigned short port, const char *token,
+    struct stat *st)
 {
 	char tmp[PATH_MAX];
 	FILE *fp;
@@ -149,8 +150,30 @@ write_endpoint(const char *path, unsigned short port, const char *token)
 		(void)unlink(tmp);
 		return -1;
 	}
+	if (st != NULL && stat(path, st) == -1)
+		return -1;
 
 	return 0;
+}
+
+/*
+ * Remove the endpoint file, but only while it is still the one this process
+ * published. A second daemon overwrites it with its own port and token, and
+ * unlinking unconditionally on the way out would delete the newcomer's, so
+ * every game would then fail to find a daemon that is running perfectly
+ * well.
+ */
+static void
+unlink_endpoint(const char *path, const struct stat *mine)
+{
+	struct stat now;
+
+	if (stat(path, &now) == -1)
+		return;
+	if (now.st_dev != mine->st_dev || now.st_ino != mine->st_ino)
+		return;
+
+	(void)unlink(path);
 }
 
 static int
@@ -299,6 +322,7 @@ int
 main(int argc, char *argv[])
 {
 	char endpoint[PATH_MAX], token[T150_TOKEN_LEN + 1];
+	struct stat epstat;
 	struct t150_backend be;
 	struct t150_session sess;
 	struct pollfd pfd[2];
@@ -341,7 +365,7 @@ main(int argc, char *argv[])
 		errx(1, "cannot open the logging backend");
 	if ((lfd = listen_loopback(&port)) == -1)
 		err(1, "cannot listen on loopback");
-	if (write_endpoint(endpoint, port, token) != 0)
+	if (write_endpoint(endpoint, port, token, &epstat) != 0)
 		err(1, "cannot write %s", endpoint);
 
 	t150_session_init(&sess, &be, token);
@@ -431,7 +455,7 @@ main(int argc, char *argv[])
 	if (cfd != -1)
 		(void)close(cfd);
 	(void)close(lfd);
-	(void)unlink(endpoint);
+	unlink_endpoint(endpoint, &epstat);
 
 	return 0;
 }
