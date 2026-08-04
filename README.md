@@ -22,11 +22,14 @@ extension approval.
 > `t150_init()` the whole time. See [`docs/RESEARCH.md`](docs/RESEARCH.md)
 > A26 and A28.
 >
-> **What is not finished.** The daemon still has no macOS backend, so it logs
-> rather than drives. The proxy has never run in a bottle. Only a constant
-> and one periodic have been played, so nothing has exercised springs,
-> dampers or envelopes on hardware. And CrossOver still registers none of the
-> wheel's buttons, which is a separate input-path problem (A21, A25).
+> **What is not finished.** Everything between a game and the wheel is
+> written, and none of it has been run end to end: the daemon's macOS
+> backend, `t150ctl`, `t150boot` and the in-bottle proxy all compile and none
+> has touched hardware. Only a constant force and one periodic have ever been
+> played, so springs, dampers, envelopes and per-effect gain are still
+> arithmetic derived from a Linux driver rather than measured. And CrossOver
+> registers none of the wheel's buttons, which is a separate input-path
+> problem (A21, A25).
 
 **Picking this up?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first. It is
 written for someone starting with no context: what is decided, what is
@@ -125,30 +128,19 @@ conversion, then load the DLL with a copy of the system `dinput8` beside it
 and confirm both entry points chain-load. Whether a Wine bottle resolves the
 same way is the first thing M5 has to try.
 
-The wheel agrees with the settings bytes on both pipes, which
-[`docs/PROBES.md`](docs/PROBES.md) is the procedure for. It has never been
-asked the force feedback question in a way that could have been answered.
+The wheel agrees with the settings bytes and with force feedback, on both
+pipes. [`docs/PROBES.md`](docs/PROBES.md) is the procedure that established
+it and the thing to rerun after any change to the encoders.
 
 ## What needs doing next
 
-Everything that can be built without hardware has been, and **the gate is
-answered yes on the pipe the project was designed around**. Measured:
-`probe_setreport` set the autocenter to full and the wheel became hard to
-turn; `probe_setreport -a 0` released it and it turned freely. No root, no
-capture, ordinary `IOHIDDeviceSetReport`, with CrossOver free to keep
-reading the wheel throughout.
+**The wheel is answered and the software is not.** Settings and force
+feedback both work through an unprivileged `IOHIDDeviceSetReport`, with
+CrossOver keeping the wheel throughout, so there is no ownership conflict and
+nothing here needs root. What has never happened is a game reaching the wheel
+through this project's own code.
 
-`sudo probe_intr -a 0` does the same thing on the interrupt OUT pipe, so
-**both transports work**. Everything that once looked like a firmware that
-ignored us was `-A`, an autocenter flag that does nothing on macOS. See
-[`docs/RESEARCH.md`](docs/RESEARCH.md) A15 and A19.
-
-Two things are settled by that. There is no ownership conflict: the daemon
-can write settings without taking the wheel from CrossOver. And `t150ctl`
-needs no privilege at all.
-
-What is left is three experiments, all needing the Mac and **all independent
-of each other**.
+What is left needs the Mac. In order:
 
 **0. Let the wheel find its centre again.** Its end stops have been measured
 about ten degrees apart, roughly 170 degrees one way and 190 the other, after
@@ -187,25 +179,13 @@ needs no working force feedback at all.
 
 Then, whichever way those went:
 
-**4. `t150ctl`, and `t150boot`.** Rotation range, gain and autocenter from
-the command line, on `IOHIDDeviceSetReport` with a non-seizing open. **No
-root, no capture, and CrossOver keeps the wheel while it runs**, which is
-what A19 bought. `probe_setreport` is already the working core of it.
-`t150boot` is the mode switch; ship it as a LaunchAgent matching the boot
-product id, because sleep, wake and replug all drop the wheel back.
+**4. Package what is written.** `t150boot` wants to be a user LaunchAgent
+matching the boot product id, because sleep, wake and every replug drop the
+wheel back, and `t150d` wants to be another so a game never has to be told to
+start it. Both run unprivileged, so neither needs an admin prompt at install.
+That is the last thing between this and something a person could just use.
 
-**This is buildable now** and waits on nothing above, which makes it the
-safest thing to do next.
-
-**5. The daemon's macOS backend.** A non-seizing open and output writes
-behind the interface `backend_fake.c` already implements, with
-`src/probe/common.c` as the enumeration it needs, moved rather than
-rewritten. There is no ownership conflict: the HID path carries settings
-(A19) and effects (A28), so the daemon never has to take the wheel from
-CrossOver. **It has to send `42 04` when a client connects and `42 00` when
-the last one leaves**, or the wheel renders nothing.
-
-**6. Robustness, then a real game.** Reconnect on both ends, hot plug, and
+**5. Robustness, then a real game.** Reconnect on both ends, hot plug, and
 the watchdog under real crash conditions. Measure the latency and jitter of
 the whole path under Rosetta while you are there: a wheel wants updates near
 500 Hz and nobody has measured it.
@@ -434,44 +414,63 @@ many HID nodes appear for the one wheel, each node's usage page and usage,
 each `MaxOutputReportSize`, and whether `ProtectedAccess` is present.
 
 **A2. If A1 said `B65D`, switch the wheel to firmware mode.** Do this before
-anything else, not after: until it succeeds the wheel is not the device this project
-drives, and it may not even turn. Read only by default, so the first three
-are safe:
+anything else, not after: until it succeeds the wheel is not the device this
+project drives.
 
 ```sh
-./build/bin/probe_ep0
+./build/bin/t150boot
+```
+
+That is the shipped tool and it is what a user should run. No `sudo`: the two
+endpoint 0 transfers were measured working as an ordinary user with the
+device unopened. It waits for the wheel to come back at `044f:b677` and only
+then says it worked, because the switch transfer's own result cannot tell
+you: the wheel leaves the bus before the transfer completes, so success and
+half a dozen different failures all look the same.
+
+```
+attachment 0x06, model 0x03  T150
+switched, the wheel is at 0xb677
+```
+
+It exits 0 when nothing is at the boot id too, so it is safe to run on every
+plug-in. It refuses a wheel whose model byte is not the T150's rather than
+sending it another model's switch value; pass `-V` with the right one from
+the Linux driver's table if you know it.
+
+**If that fails, the probe is the fallback**, and it is a different route:
+
+```sh
 sudo ./build/bin/probe_intr -I
 ./build/bin/probe_hid -o .
 ```
 
-**`probe_intr -I`, not `probe_ep0 -w`.** The switch is three steps: five
-packets on the interrupt OUT pipe first, while the wheel is still at the boot
-id, then the two control transfers. Skipping the first step leaves the wheel
-switched but blocked, which is what every session before this one did. `-I`
-does all three in one capture so nothing re-enumerates in between.
+`probe_intr -I` also sends the five initialisation packets the Linux driver
+puts on the interrupt OUT pipe first, which needs the device captured and so
+needs root. `t150boot` deliberately does not. Whether those packets matter is
+**unsettled**: they were adopted to explain a wheel that came back apparently
+blocked, and that turned out to be the autocenter holding at full strength
+rather than anything about the switch. If a wheel misbehaves after
+`t150boot`, try `t150ctl autocenter 0` before reaching for `-I`.
 
-The first only reads, and prints the model and attachment bytes of whatever
-it finds: `0x03` and `0x06` is a T150, anything else means passing that
-model's switch value with `-V`. This has already succeeded as an ordinary
-user with the device unopened, so if it fails on yours that is news; the
-escalations are `sudo ./build/bin/probe_ep0` and then `-s`, which seizes and
-would take the wheel away from CrossOver.
+The `-o .` dump from `probe_hid` is worth keeping either way: firmware mode
+reports `MaxOutputReportSize` 15 where the protocol document expects a
+14-byte report with id `0x0A`, and 15 is exactly the length of the one packet
+that never fitted.
 
-`-w` has only ever been run under `sudo`. Try it as your user, as above: if
-it works the finished tool never needs a password, and if it does not it
-needs one per plug-in.
+**A2b. Check the settings tool while you are here.** It needs no privilege
+and does not take the wheel from anything:
 
-**`kIOReturnNotResponding` from `-w` is the expected answer**, not a failure.
-The wheel detaches the instant it accepts the switch, so it is gone before it
-can reply, and it visibly re-runs its power-on sequence. Only `probe_hid`
-says whether it worked.
+```sh
+./build/bin/t150ctl status
+./build/bin/t150ctl range 270
+./build/bin/t150ctl range 1080
+./build/bin/t150ctl autocenter 0
+```
 
-The `-o .` dump matters: firmware mode reports `MaxOutputReportSize` 15 where
-the protocol document expects a 14-byte report with id `0x0A`, and 15 is
-exactly the length of the one packet that never fitted. That descriptor
-settles the framing, and nothing else can. That decides whether the
-finished tool needs a password once per plug-in or never. If only `-s` works,
-stop and reassess: seizing takes the wheel away from CrossOver.
+`range 270` should make lock to lock obviously short and `1080` put it back;
+`autocenter 0` should leave the wheel free to turn. If those work, the whole
+settings path works, and A3 below is the same thing done by hand.
 
 **A3. Write through the HID layer**, which is the path the project needs and
 which needs no root. Turn the wheel by hand first, before sending anything,

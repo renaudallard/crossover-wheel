@@ -6,8 +6,8 @@ answered on real hardware. Half an hour with the wheel plugged into the Mac.
 **The questions that decide the project are answered yes.** The wheel obeys
 settings sent through `IOHIDDeviceSetReport`, unprivileged and without taking
 the device from CrossOver, and it renders force feedback the same way once
-`42 04` has opened its input. What is left is whether a game can reach it,
-which is questions 7 and 8.
+`42 04` has opened its input. What is left is whether this project's own code
+can reach it, which is questions 6b, 7 and 8.
 [What is already settled](#what-is-already-settled) says which is which, so
 nothing here has to be run twice.
 
@@ -17,13 +17,14 @@ wheel that cannot turn cannot show a spring being applied. Release it with
 `-a 0` before judging anything, and never with `-A`, which does nothing. The
 mode switch is likewise a precondition rather than a follow-up.
 
-Build the tools first. On the Mac:
+Build them first. On the Mac:
 
 ```sh
-make probes
+make probes tools daemon
 ```
 
-or take them from the `probes-macos` artifact of the `build` workflow.
+or take them from the `macos` artifact of the `build` workflow, or from a
+release.
 
 Run everything as your normal user first. Only add `sudo` where a step says
 to, and only after the unprivileged run has been recorded.
@@ -122,11 +123,13 @@ false for this wheel**, and A19 is the measurement.
    the same question with the device captured.
 5. **Question 5**, the force feedback packets, which work as long as `42 04`
    opens the wheel's input first.
-6. **Question 7**, the daemon on its own backend. One command, and it is the
+6. **Question 6b**, the shipped tools, which take the paths the probes
+   proved and are what a user actually runs.
+7. **Question 7**, the daemon on its own backend. One command, and it is the
    precondition for question 8.
-7. **Question 8**, a game reaching the wheel. The end to end path, and the
+8. **Question 8**, a game reaching the wheel. The end to end path, and the
    one nobody has run.
-8. **Question 6**, the buttons, if you are chasing why CrossOver sees none.
+9. **Question 6**, the buttons, if you are chasing why CrossOver sees none.
    Independent of everything else.
 
 Questions 3 and 4 send the same bytes down different pipes, and both work.
@@ -164,6 +167,28 @@ descriptor dumps written by `-o .` can be parsed offline on Linux with
 `hid-tools` and belong in the bug report if anything looks unexpected.
 
 ## Question 2: can the wheel be switched to firmware mode?
+
+**Use `t150boot`, which is the shipped tool for this:**
+
+```sh
+./build/bin/t150boot
+attachment 0x06, model 0x03  T150
+switched, the wheel is at 0xb677
+```
+
+No `sudo`. It waits for the wheel to reappear at its firmware id before
+saying it worked, because the switch transfer's own result cannot say: the
+wheel leaves the bus before it completes. It exits 0 when nothing is at the
+boot id too, so it is safe to run on every plug-in, and it refuses a wheel
+whose model byte is not the T150's rather than sending it another model's
+value.
+
+What follows is the probe route, which does the same two transfers and also
+sends five initialisation packets on the interrupt OUT pipe first. That needs
+the device captured and therefore root, and whether those packets matter is
+unsettled: they were adopted to explain a wheel that came back apparently
+blocked, and that turned out to be the autocenter. Try `t150ctl autocenter 0`
+before reaching for them.
 
 **Use `probe_intr -I`, not `probe_ep0 -w`.** The switch is three steps, not
 two: five packets go out on the interrupt OUT pipe first, while the wheel is
@@ -588,6 +613,29 @@ nothing about firmware mode. Run this in whichever mode the question is
 about.
 
 ---
+
+## Question 6b: do the shipped tools work?
+
+Everything before this is a probe, built to answer a question. These two are
+what a user actually runs, and they take the same paths the probes proved.
+
+```sh
+./build/bin/t150ctl status
+./build/bin/t150ctl range 270
+./build/bin/t150ctl range 1080
+./build/bin/t150ctl autocenter 0
+```
+
+| Outcome | Meaning |
+| --- | --- |
+| `range 270` shortens lock to lock and `1080` restores it | The settings path works through the shipped tool, not just the probe. |
+| `autocenter 0` leaves the wheel free | Same, and it is the command a user reaches for when a wheel feels stuck. |
+| `no wheel at 044f:b677` | It is not in firmware mode. Run `t150boot`. |
+| It asks for a password | Something is wrong. Nothing here needs one. |
+
+`t150boot` is question 2. Run it on a wheel that is already switched too: it
+should say there is nothing to switch and exit 0, because that is what a
+LaunchAgent firing on every plug-in will mostly see.
 
 ## Question 7: does the daemon reach the wheel?
 
