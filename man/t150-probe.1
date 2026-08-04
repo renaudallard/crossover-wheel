@@ -168,11 +168,13 @@ product id. Skipping the initialisation is what leaves the wheel blocked.
 .It Fl O
 Open the wheel's input,
 .Dq 42 04 .
-The firmware tracks whether an application has the input open and the
-autocenter is unconditionally active while none has, so force feedback may be
-gated the same way. Nothing on macOS opens it. Combine with
-.Fl H ,
-because the open lasts only as long as the session does.
+The firmware renders no effect while no application has the input open, and
+nothing on macOS opens it. The open outlives this tool: it persists across
+process exits and capture cycles until something sends
+.Dq 42 00 ,
+so close what you open, with
+.Fl C
+or the wheel keeps rendering whatever was last started.
 .It Fl C
 Close the wheel's input,
 .Dq 42 00 .

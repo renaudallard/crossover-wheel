@@ -102,6 +102,7 @@ Measured on a T150 on macOS 26, so these do not need redoing. Full detail in
 | **The interrupt OUT pipe moves it too** | the same bytes through `probe_intr`, so both transports reach the firmware |
 | The wheel puts all thirteen buttons on the wire | `probe_intr -R`, and the change mask matches the report descriptor field for field |
 | **Force feedback works** | with `42 04` ahead of it to open the wheel's input, on either pipe. Without it nothing renders at all |
+| The open outlives its sender | `42 04` persists across process exits and capture cycles until something sends `42 00`, so every sequence that opens must close (A30) |
 
 **What made this look hopeless for six sessions** was `-A`. The autocenter
 enable flag decides only whether the effect survives an application opening
@@ -410,26 +411,32 @@ important.
 
 **Answered: it works, and `42 04` was the missing packet.** The same upload
 moves the wheel with the open ahead of it and does nothing without, on either
-pipe, replicated across two sessions and four runs. RESEARCH.md A28 and A29.
+pipe, replicated across two sessions and four runs, and test 13 played the
+periodic through the HID pipe as well. RESEARCH.md A28, A29 and A31.
 
 What follows is the procedure that established it. It is worth rerunning
 after any change to `src/lib/encode.c`, because it is the only thing that
 checks those bytes against hardware rather than against golden vectors.
 
-**The open is not optional and it does not persist.** Nothing on macOS opens
-the wheel's input, so `42 04` has to lead every sequence here, and
-`probe_intr` needs `-H` beside it because the open lasts only as long as the
-tool holds the device. `probe_intr -O` sends the open on its own.
+**The open is not optional, and it outlives the tool that sends it.** Nothing
+on macOS opens the wheel's input, so `42 04` has to lead every sequence here.
+It is not undone by the tool exiting, by the device being captured and
+released, or by another process opening and closing the wheel's HID node:
+only `42 00` ends it, which is why every run here has to finish with the
+cleanup block below. Test 13 left a sine playing for half a session because
+nothing sent the close. RESEARCH.md A28 and A30. `probe_intr -O` sends the
+open on its own and `-C` the close.
 
 An effect uploads as three packets that correlate through slot keys, then a
 fourth starts it. `-x` is repeatable and every packet goes out on one open
 handle.
 
-**On the HID path**, with the autocenter cleared first this time. Slot 0, a
-constant force at half level, endless:
+**On the HID path**, no root. The open, the autocenter cleared, the gain set,
+then slot 0, a constant force at half level, endless:
 
 ```sh
 ./build/bin/probe_setreport \
+    -x "42 04" \
     -x "40 03 00 00" \
     -x "43 60" \
     -x "02 1c 00 00 00 00 00 00 00" \
@@ -438,16 +445,16 @@ constant force at half level, endless:
     -x "41 00 41 01"
 ```
 
-**On the interrupt OUT pipe, holding the wheel and hands off.** `-H` keeps the
-session open for fifteen seconds and reads the IN pipe while it waits, so the
-effect has time to do something and its reports are visible. `-N 32` pads
-every packet to the endpoint size, which is what the T300RS driver does.
-**Take your hands off the wheel while it runs**: an idle T150 sends about four
-reports a second and never changes them, so anything that moves is the wheel
-moving itself:
+**On the interrupt OUT pipe, holding the wheel and hands off.** `-H` keeps
+the session open for fifteen seconds and reads the IN pipe while it waits, so
+the wheel's own reports show it moving. `-N 32` pads every packet to the
+endpoint size, which is what the T300RS driver does. **Take your hands off
+the wheel while it runs**: an idle T150 sends about four reports a second and
+never changes them, so anything that moves is the wheel moving itself:
 
 ```sh
 sudo ./build/bin/probe_intr -N 32 -H 15 \
+    -x "42 04" \
     -x "40 03 00 00" \
     -x "43 60" \
     -x "02 1c 00 00 00 00 00 00 00" \
@@ -467,70 +474,28 @@ the ceiling is real and `T150_FF_LEVEL_MAX` is right; if `0x7f` is stronger,
 raise it.
 
 **Hold the wheel or keep a hand on the plug.** A constant force with no
-duration limit does not stop on its own. The `-H` form releases the wheel by
-itself; stop the HID one with:
+duration limit does not stop on its own, and it does not stop when the tool
+exits either, because the open persists. That includes the `-H` form: the
+release hands the wheel back with the effect still rendering.
+
+**Leave the wheel safe when you are done.** Stop the effect and close the
+input, one line, no root:
 
 ```sh
-./build/bin/probe_setreport -x "41 00 00 01"
+./build/bin/probe_setreport -x "41 00 00 01" -x "42 05" -x "42 05" -x "42 00"
 ```
 
-**Then with the wheel's input actually open**, which is the one thing never
-tried and now the leading suspect. The firmware tracks whether an application
-has the input open, which is why the autocenter is "always active while no
-input are open", and nothing on macOS opens it. `42 04` does:
+The `42 05` pair is what the vendor driver sends before a close (A26); a bare
+`42 00` has also worked. And if the effect drove the wheel into its end
+stops, its idea of straight ahead has probably moved with it: it will centre
+itself somewhere that is visibly not centre. Unplug it from USB, plug it
+back and let it run its sweep; that is the recalibration. RESEARCH.md A32.
 
-```sh
-sudo ./build/bin/probe_intr -N 32 -H 15 \
-    -x "42 04" \
-    -x "40 03 00 00" \
-    -x "43 60" \
-    -x "02 1c 00 00 00 00 00 00 00" \
-    -x "03 0e 00 20" \
-    -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
-    -x "41 00 41 01"
-```
-
-**Two corrections are folded into both blocks above.** `42 04` opens the
+**Two corrections are folded into the blocks above.** `42 04` opens the
 wheel's input, which no run before ever sent, and `ff_first` is nine bytes
 rather than eleven: Thrustmaster's own driver ends it at `fade_level`, and
 only a condition carries the two extra `46 54` bytes. RESEARCH.md A26 and A27.
 
-The `43 60` is the gain. Without it the effect may render at whatever gain
-the wheel powers up with, and nothing has established what that is, so a
-silent wheel would be ambiguous.
-
-The level byte is `0x20` because a constant appears to top out at `0x40`, not
-at `0x7f`: the driver divides a full scale value by `0x1ff`, which lands on
-64. A periodic magnitude reaches `0x7f`. If `0x40` and `0x7f` feel the same,
-the ceiling is real and `T150_FF_LEVEL_MAX` is right; if `0x7f` is stronger,
-raise it.
-
-**Hold the wheel or keep a hand on the plug.** A constant force with no
-duration limit does not stop on its own. The `-H` form releases the wheel by
-itself; stop the HID one with:
-
-```sh
-./build/bin/probe_setreport -x "41 00 00 01"
-```
-
-**Then with the wheel's input actually open**, which is the one thing never
-tried and now the leading suspect. The firmware tracks whether an application
-has the input open, which is why the autocenter is "always active while no
-input are open", and nothing on macOS opens it. `42 04` does:
-
-```sh
-sudo ./build/bin/probe_intr -N 32 -H 15 \
-    -x "42 04" \
-    -x "40 03 00 00" \
-    -x "43 60" \
-    -x "02 1c 00 00 00 00 00 00 00" \
-    -x "03 0e 00 20" \
-    -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" \
-    -x "41 00 41 01"
-```
-
-`-H` is not optional here: the open only lasts as long as the session does.
-RESEARCH.md A26.
 
 If everything above is silent, the remaining unknowns are in the effect
 payloads rather than the packet shapes, since A27 confirmed every shape

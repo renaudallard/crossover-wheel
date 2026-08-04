@@ -613,13 +613,14 @@ actually reported.
 could have worked, so this is a fresh start rather than a repeat. Run both
 forms below.
 
-**On the HID path**, which A19 showed reaches the firmware. The last attempt
-here left the autocenter at full strength fighting the effect, so the first
-packet clears it; the second sets the gain, because nothing has established
-what the wheel powers up with:
+**On the HID path**, which A19 showed reaches the firmware. `42 04` opens the
+wheel's input, without which nothing renders; the next packet clears the
+autocenter so nothing fights the effect; the third sets the gain, because
+nothing has established what the wheel powers up with:
 
 ```sh
 ./build/bin/probe_setreport \
+    -x "42 04" \
     -x "40 03 00 00" \
     -x "43 60" \
     -x "02 1c 00 00 00 00 00 00 00" \
@@ -628,18 +629,21 @@ what the wheel powers up with:
     -x "41 00 41 01"
 ```
 
-**Hold the wheel or keep a hand on the plug**, then stop it:
+**Hold the wheel or keep a hand on the plug**, then stop it and close the
+input, because the open outlives the tool and an unstopped effect renders
+until something sends `42 00` (A30):
 
 ```sh
-./build/bin/probe_setreport -x "41 00 00 01"
+./build/bin/probe_setreport -x "41 00 00 01" -x "42 05" -x "42 05" -x "42 00"
 ```
 
-**On the interrupt OUT pipe, holding the wheel and hands off.** `-H` keeps the
-session open, so the effect is not destroyed by the release, and `-N 32` pads
-every packet to the endpoint size, which is what Akellacom's working T300RS
-driver does. **Take your hands off the wheel while it runs.** An idle T150
-emits about four reports a second and never changes them, so anything that
-moves is the wheel moving itself:
+**On the interrupt OUT pipe, holding the wheel and hands off.** `-H` keeps
+the session open for fifteen seconds and reads the IN pipe while it waits, so
+the wheel's own reports show it moving, and `-N 32` pads every packet to the
+endpoint size, which is what Akellacom's working T300RS driver does. **Take
+your hands off the wheel while it runs.** An idle T150 emits about four
+reports a second and never changes them, so anything that moves is the wheel
+moving itself:
 
 ```sh
 sudo ./build/bin/probe_intr -N 32 -H 15 \
@@ -659,20 +663,16 @@ at `fade_level` and only a condition carries the two extra bytes. Between them
 those are the two concrete reasons force feedback has never worked. See
 [`docs/RESEARCH.md`](docs/RESEARCH.md) A26 and A27.
 
-Each prints the wheel's own reports for those fifteen seconds and then hands
-the wheel back on its own. `nothing ever changed` at the end means the effect did
-nothing; a run of changing steering bytes with your hands off is the answer we
-are looking for.
+The interrupt run prints the wheel's own reports for those fifteen seconds
+and then hands the wheel back. `nothing ever changed` at the end means the
+effect did nothing; a run of changing steering bytes with your hands off is
+the answer we are looking for.
 
-**If both are silent, the missing open command is the leading suspect.** Try
-the `probe_setreport` form again with the wheel's input held open, by starting
-a game in a bottle or leaving CrossOver's controller panel showing the wheel.
-The driver's comment says the autocenter is active "while no input are open",
-so the firmware distinguishes the two, and the T300RS driver sends an explicit
-`60 01 05` before any effect, and the T150's own equivalent is `42 04`. Send
-it inline with `-H`, as the interrupt OUT block above does, because the open
-lasts only as long as the session. See
-[`docs/RESEARCH.md`](docs/RESEARCH.md) A20, A24 and A26.
+**Handing the wheel back does not stop the effect.** The open and the effect
+both outlive the tool, so end every session with the stop and close line
+above, and if the effect spent time working against an end stop, unplug the
+wheel and plug it back so it re-finds its centre. See
+[`docs/RESEARCH.md`](docs/RESEARCH.md) A30 and A32.
 
 **A7. Three cheap answers while you are set up.** Compare `03 0e 00 40`
 against `03 0e 00 7f` in A6: if they feel the same, a constant really does
