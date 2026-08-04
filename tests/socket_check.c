@@ -219,6 +219,32 @@ wait_for(int fd, const char *want)
 	return wait_for_after(fd, want, 0);
 }
 
+/*
+ * Pull everything the daemon has already written into logbuf, so that a
+ * position taken afterwards really does separate the past from the future.
+ * Without this an offset means nothing: unread bytes from an earlier step
+ * land after it and are indistinguishable from what comes next.
+ */
+static void
+drain(int fd)
+{
+	for (;;) {
+		struct pollfd pfd;
+		ssize_t r;
+
+		if (loghave + 1 >= sizeof(logbuf))
+			return;
+		pfd.fd = fd;
+		pfd.events = POLLIN;
+		if (poll(&pfd, 1, 100) != 1)
+			return;
+		if ((r = read(fd, logbuf + loghave, sizeof(logbuf) - loghave - 1)) <= 0)
+			return;
+		loghave += (size_t)r;
+		logbuf[loghave] = '\0';
+	}
+}
+
 static void
 put_u32(uint8_t *b, uint32_t v)
 {
@@ -435,6 +461,25 @@ main(void)
 	}
 
 	(void)close(fd);
+
+	/*
+	 * A hangup has to leave the wheel safe too. The documented way to run
+	 * the daemon is in a terminal, and closing that terminal sends one:
+	 * dying without the safe state leaves the wheel holding whatever
+	 * force it was last given, with its input still open so it does not
+	 * even fall back to its own autocenter.
+	 */
+	{
+		size_t mark;
+
+		drain(pipefd[0]);
+		mark = loghave;
+		(void)kill(pid, SIGHUP);
+		if (wait_for_after(pipefd[0], "write 4: 40 03 00 00\n"
+		    "write 4: 40 04 00 00\n"
+		    "write 2: 42 00\n", mark) != 0)
+			fail("a hangup did not leave the wheel safe");
+	}
 
 out:
 	(void)kill(pid, SIGTERM);

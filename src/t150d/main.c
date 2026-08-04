@@ -471,9 +471,19 @@ main(int argc, char *argv[])
 	t150_session_init(&sess, &be, token);
 	sess.verbose = verbose;
 
+	/*
+	 * Every signal that would otherwise kill the process outright, so the
+	 * loop can exit through the safe state at the bottom. Dying without
+	 * it leaves the wheel holding whatever force it was last given, with
+	 * its input still open so it does not even fall back to its own
+	 * autocenter. SIGHUP matters most: the documented way to run this is
+	 * in a terminal, and closing that terminal sends one.
+	 */
 	(void)signal(SIGPIPE, SIG_IGN);
 	(void)signal(SIGINT, on_signal);
 	(void)signal(SIGTERM, on_signal);
+	(void)signal(SIGHUP, on_signal);
+	(void)signal(SIGQUIT, on_signal);
 
 	printf("t150d: listening on 127.0.0.1:%u, endpoint %s\n", port, endpoint);
 	printf("t150d: backend %s\n", be.name);

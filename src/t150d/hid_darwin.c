@@ -52,8 +52,11 @@ struct hid_be {
 	 * re-acquire. A wheel that is unplugged and replugged comes back with
 	 * its input shut, and only this layer knows that happened: the
 	 * session sends 42 04 once, on hello, and would never send it again.
-	 * Without this a mid-game replug leaves the wheel silently deaf to
-	 * every effect. 0 means nothing has been sent yet.
+	 * Without this a mid-game replug, or a wheel that only appears after
+	 * the client has said hello, leaves the wheel silently deaf to every
+	 * effect. Set from the intent rather than from a successful write, so
+	 * that an open sent to an absent wheel still counts. 0 means nothing
+	 * has been asked for yet.
 	 */
 	uint8_t		 input_state;
 	long		 vid;
@@ -256,6 +259,19 @@ hid_write(void *priv, const uint8_t *buf, size_t len)
 	if (len == 0)
 		return 0;
 
+	/*
+	 * Record what the session wants before trying to send it, not after
+	 * succeeding. A client that says hello while the wheel is absent, or
+	 * still at the boot product id, has its 42 04 dropped here, and if
+	 * that were only remembered on success the acquire that follows would
+	 * open a device and never open its input. Every write after it would
+	 * return success and the wheel would render nothing for the life of
+	 * that client, which is the exact failure that took eleven sessions
+	 * to find the first time.
+	 */
+	if (len == 2 && buf[0] == T150_OP_INPUT)
+		h->input_state = buf[1];
+
 	if (h->dev == NULL) {
 		uint64_t now = mono_ms();
 
@@ -286,10 +302,6 @@ hid_write(void *priv, const uint8_t *buf, size_t len)
 		}
 		return -1;
 	}
-
-	/* Remember it so a re-acquired wheel can be put back in this state. */
-	if (len == 2 && buf[0] == T150_OP_INPUT)
-		h->input_state = buf[1];
 
 	/*
 	 * An optional pause between packets. probe_setreport has always left
