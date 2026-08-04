@@ -294,6 +294,11 @@ bottle under `~/Library/Application Support/CrossOver/Bottles`, honouring the
 `BottleDir` preference, copies the DLL into `system32` and sets the override
 with `wine --bottle <name> --cx-app reg.exe`. Scope the override to
 `AppDefaults\<game>.exe` when the bottle holds more than the target game.
+The `dinput8_orig.dll` it puts beside the proxy has to come from
+`$CX_ROOT/lib/wine/x86_64-windows/dinput8.dll` and never from the bottle's own
+`system32`, which holds a placeholder Wine will not load as an implementation.
+The README section on installing the proxy has the rest of what CrossOver 26
+does with overrides, tracing and the environment.
 *Done when:* a real title's force feedback settings are live and the wheel
 pushes back.
 

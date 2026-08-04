@@ -339,30 +339,89 @@ effect downgrades.
 `make dll` cross builds it, and needs `gcc-mingw-w64-x86-64`. It has to go in
 the bottle's `system32` rather than beside a game, because SDL reaches
 DirectInput through `CoCreateInstance`, which the loader resolves to an
-absolute `system32` path and never to a game directory. Two files and one
-registry value:
+absolute `system32` path and never to a game directory.
+
+Written against CrossOver 26.3.0, which is Wine 11. The paths and the loader
+behaviour below were read out of that release rather than remembered.
+
+**It serves 64-bit games only.** The proxy is an x86_64 PE, and a 32-bit
+process has its `system32` redirected to `syswow64`, where this is not, and
+Wine skips a file whose machine does not match in any case. `file "<game>.exe"`
+says which one you have. There is no i386 build.
+
+Two files and one registry value:
 
 ```sh
-CX_ROOT=/Applications/CrossOver.app/Contents/SharedSupport/CrossOver
-BOTTLE="$HOME/Library/Application Support/CrossOver/Bottles/<name>"
+CX_ROOT="/Applications/CrossOver.app/Contents/SharedSupport/CrossOver"
+SYS32="$HOME/Library/Application Support/CrossOver/Bottles/<name>/drive_c/windows/system32"
 
 # the real implementation, under the name the proxy chain-loads
-cp "$CX_ROOT"/lib*/wine/x86_64-windows/dinput8.dll \
-   "$BOTTLE/drive_c/windows/system32/dinput8_orig.dll"
-cp build/bin/t150-dinput8.dll \
-   "$BOTTLE/drive_c/windows/system32/dinput8.dll"
+cp "$CX_ROOT/lib/wine/x86_64-windows/dinput8.dll" "$SYS32/dinput8_orig.dll"
 
+# the proxy, under the name the game and SDL ask for
+cp build/bin/t150-dinput8.dll "$SYS32/dinput8.dll"
+
+# the override, once, in the bottle's registry
 "$CX_ROOT/bin/wine" --bottle "<name>" --cx-app reg.exe add \
     'HKCU\Software\Wine\DllOverrides' /v dinput8 /t REG_SZ /d native,builtin /f
 ```
 
 From a release archive, use `t150-dinput8.dll` from the extracted directory
-in place of `build/bin/t150-dinput8.dll`.
+in place of `build/bin/t150-dinput8.dll`. A bottle can move the builtin
+directory with `DllPath` in its `cxbottle.conf`, and
+`find "$CX_ROOT" -name dinput8.dll` says where it went.
 
-Set `T150_DEBUG=1` in the bottle to make the proxy say what it is doing, and
-`T150_ENDPOINT` to point it at the daemon's endpoint file if the default
-guess is wrong. Verify the chain-load with `WINEDEBUG=+loaddll`: the
-`dinput8_orig.dll` line must say `builtin`.
+**Copy CrossOver's builtin, not the bottle's own `dinput8.dll`.** The file
+already in `system32` is a placeholder carrying no implementation, and Wine
+will not fall back to one, so the proxy would find nothing to chain-load and
+every game would come back without force feedback. Check what you copied:
+
+```sh
+head -c 64 "$SYS32/dinput8_orig.dll" | strings | head -1
+```
+
+`Wine builtin DLL` is right and `Wine placeholder DLL` is the mistake.
+
+**Override `dinput8` and nothing else.** The copy still carries the builtin
+signature, and Wine refuses a builtin file whose load order says native only,
+so an override for `dinput8_orig` breaks the chain-load that no entry at all
+resolves correctly.
+
+**For one run rather than for good**, pass `--dll dinput8=n,b` instead of
+touching the registry. Exporting `WINEDLLOVERRIDES` does nothing: CrossOver's
+wine wrapper deletes it from the environment and honours only `--dll`.
+
+**The proxy's environment.** `T150_DEBUG=1` makes it say what it is doing, and
+`T150_ENDPOINT` points it at the daemon's endpoint file, whose default guess
+is `Z:\Users\<you>\Library\Application Support\t150ffb\endpoint`. From a
+terminal pass them with `--env`. For a game started from the CrossOver window,
+put them in the bottle's `cxbottle.conf`, which every launch reads:
+
+```ini
+[EnvironmentVariables]
+"T150_DEBUG" = "1"
+```
+
+**Check the install without a game:**
+
+```sh
+"$CX_ROOT/bin/wine" --bottle "<name>" --debugmsg +loaddll --env "T150_DEBUG=1" \
+    --cx-app regsvr32.exe dinput8.dll
+```
+
+`regsvr32` calls `DllRegisterServer`, which the proxy forwards, so this loads
+the whole chain and nothing else. Two lines say it worked: `dinput8.dll` as
+`native`, which is the proxy, and `dinput8_orig.dll` as `builtin`, which is
+the implementation behind it.
+
+Exporting `WINEDEBUG` does nothing either. The wrapper sets `WINEDEBUG=-all`
+unless it is given `--debugmsg` or finds `CX_DEBUGMSG` in the environment, so
+a silent run is the wrapper and not the loader.
+
+**A CrossOver upgrade leaves the proxy in place**, because Wine only
+overwrites `system32` files that are still placeholders. `dinput8_orig.dll`
+stays at the Wine version it was copied from, so copy it again after an
+upgrade.
 
 None of this has been tried in a real bottle yet. If the chain-load does not
 resolve, the fallbacks are in [`docs/HANDOFF.md`](docs/HANDOFF.md) under M4.
@@ -688,7 +747,19 @@ actually move.
 
 **B1. Install the proxy** as [above](#installing-the-proxy-into-a-bottle).
 
-**B2. Start the daemon** and leave it running where you can see it:
+**B2. Check the chain-load with no game and no daemon**, which separates a
+broken install from a broken game:
+
+```sh
+"$CX_ROOT/bin/wine" --bottle "<name>" --debugmsg +loaddll --env "T150_DEBUG=1" \
+    --cx-app regsvr32.exe dinput8.dll
+```
+
+`dinput8.dll` as `native` and `dinput8_orig.dll` as `builtin` in the output
+means the proxy loads and reaches the implementation behind it. Nothing else
+below can work until this does.
+
+**B3. Start the daemon** and leave it running where you can see it:
 
 ```sh
 ./build/bin/t150d -n -v          # first pass: log only
@@ -698,22 +769,24 @@ actually move.
 **Hold the wheel or keep a hand on the plug during the second pass.** A game
 that asks for a strong constant force will get one.
 
-**B3. Start the game** from a terminal so the loader talks:
+**B4. Start the game** from a terminal so the loader talks. The wrapper sets
+`WINEDEBUG=-all` unless it is told otherwise, so the tracing has to go through
+its own options rather than through exported variables:
 
 ```sh
-WINEDEBUG=+loaddll T150_DEBUG=1 \
-    "$CX_ROOT/bin/wine" --bottle "<name>" --cx-app "<game>.exe"
+"$CX_ROOT/bin/wine" --bottle "<name>" --debugmsg +loaddll --env "T150_DEBUG=1" \
+    --cx-app "<game>.exe"
 ```
 
-**B4. Watch for four things, in order.** Each one that appears rules out a
+**B5. Watch for four things, in order.** Each one that appears rules out a
 whole class of failure:
 
 1. `dinput8_orig.dll` loaded as `builtin` in the `+loaddll` output. If it
    says `native`, or does not appear, the chain-load did not resolve and the
    fallbacks are in [`docs/HANDOFF.md`](docs/HANDOFF.md) under M4.
 2. `t150-dinput8: connected to the daemon on port ...` from `T150_DEBUG`. If
-   this is missing, the proxy could not find the endpoint file; set
-   `T150_ENDPOINT` to its Windows path explicitly.
+   this is missing, the proxy says which path it tried; pass the right one
+   with `--env "T150_ENDPOINT=Z:\..."`.
 3. `t150-dinput8: wrapped the wheel`. If this is missing, the game's device
    is not being recognised as the T150, or the game never created it.
 4. `write ...` lines in the daemon's output as the game's force feedback

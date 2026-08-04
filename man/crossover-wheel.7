@@ -1,4 +1,4 @@
-.Dd July 31, 2026
+.Dd August 4, 2026
 .Dt CROSSOVER-WHEEL 7
 .Os
 .Sh NAME
@@ -40,15 +40,29 @@ The in-bottle proxy. Written and cross built, never yet run. It is installed
 as
 .Pa dinput8.dll
 in the bottle's
-.Pa system32
-and chain-loads CrossOver's builtin from
+.Pa system32 ,
+with a copy of CrossOver's builtin from
+.Pa lib/wine/x86_64-windows
+beside it as
 .Pa dinput8_orig.dll
-beside it. It must go there rather than beside a game, because SDL reaches
-DirectInput through
+to chain-load, and a
+.Li native,builtin
+override for
+.Li dinput8
+in the bottle's registry. The copy has to be that one: the
+.Pa dinput8.dll
+already in
+.Pa system32
+is a placeholder that Wine will not load as an implementation. It must go in
+.Pa system32
+rather than beside a game, because SDL reaches DirectInput through
 .Fn CoCreateInstance ,
 which resolves to an absolute
 .Pa system32
-path.
+path. It is an x86_64 PE and serves 64-bit games only, since a 32-bit process
+is redirected to
+.Pa syswow64 .
+The README has the whole procedure.
 .It Nm t150boot
 One-shot boot to firmware mode switch. Not yet implemented.
 .It Nm t150ctl
