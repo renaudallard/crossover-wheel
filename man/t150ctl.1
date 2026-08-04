@@ -74,6 +74,11 @@ Let go of the wheel completely:
 .Xr t150d 8 ,
 .Xr crossover-wheel 7
 .Sh CAVEATS
+It refuses to guess between HID nodes. A wheel that publishes more than one
+matching node is written to only when exactly one of them is a Generic
+Desktop collection, because a set of nodes has no order and picking the first
+would be a coin toss over which one drives the motor.
+.Pp
 A zero autocenter is the only thing that releases the wheel. The protocol has
 a separate enable flag, and clearing it releases nothing at all, because the
 autocenter is active whenever no application has the wheel's input open and

@@ -132,6 +132,37 @@ build(struct job *j, int argc, char *argv[])
 	return -1;
 }
 
+/*
+ * Which node to write to. A CFSet has no order, so taking the first element
+ * of a multi-node match is a coin toss, and the wheel publishes more than one
+ * node in some modes. Prefer the Generic Desktop one, which is the joystick
+ * or gamepad collection that carries the wheel, and refuse to guess when
+ * there is more than one candidate.
+ */
+static IOHIDDeviceRef
+pick_node(const struct probe_devlist *dl)
+{
+	IOHIDDeviceRef found = NULL;
+	CFIndex i;
+	int seen = 0;
+
+	if (dl->count == 1)
+		return (IOHIDDeviceRef)dl->items[0];
+
+	for (i = 0; i < dl->count; i++) {
+		IOHIDDeviceRef d = (IOHIDDeviceRef)dl->items[i];
+		long page = 0;
+
+		if (probe_get_long(d, CFSTR(kIOHIDPrimaryUsagePageKey),
+		    &page) != 0 || page != 0x01)
+			continue;
+		found = d;
+		seen++;
+	}
+
+	return seen == 1 ? found : NULL;
+}
+
 static void
 show_status(IOHIDDeviceRef dev, long vid, long pid)
 {
@@ -207,7 +238,12 @@ main(int argc, char *argv[])
 		errx(1, "no wheel at %04lx:%04lx, is it plugged in and "
 		    "switched to firmware mode", vid, pid);
 	}
-	dev = (IOHIDDeviceRef)dl.items[0];
+	if ((dev = pick_node(&dl)) == NULL) {
+		probe_devlist_close(&dl);
+		errx(1, "%ld nodes match %04lx:%04lx and none is a joystick, "
+		    "so there is no telling which one drives the wheel",
+		    (long)dl.count, vid, pid);
+	}
 
 	if (j.n == 0) {
 		show_status(dev, vid, pid);
