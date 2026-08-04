@@ -276,6 +276,17 @@ main(int argc, char *argv[])
 	 */
 	if (!queried && seize) {
 		printf("\nstep 3: USBDeviceOpenSeize, then the model query\n");
+		/*
+		 * Close first if step 2 got the device open. Seizing a device
+		 * this client already holds just succeeds without seizing
+		 * anything, so the step would report a success it never
+		 * tested and the escalation ladder would lie about which
+		 * rung the wheel actually needs.
+		 */
+		if (opened) {
+			(void)(*dev)->USBDeviceClose(dev);
+			opened = 0;
+		}
 		r = (*dev)->USBDeviceOpenSeize(dev);
 		printf("  USBDeviceOpenSeize           %s\n",
 		    probe_ioreturn_str(r));
