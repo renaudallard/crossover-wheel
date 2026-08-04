@@ -184,7 +184,8 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 {
 	struct t150_effect ef;
 	struct t150_slot *sl;
-	uint8_t want;
+	uint64_t started_ms;
+	uint8_t want, was_playing, iterations;
 
 	if (len < T150_PROTO_EFFECT_LEN ||
 	    t150_proto_unpack_effect(payload, len, &ef) != 0) {
@@ -211,7 +212,22 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 
 	scale_effect(&ef);
 
+	/*
+	 * Re-uploading a slot that is already playing must not forget that it
+	 * is. A game updating a running force is the commonest thing there
+	 * is, and nothing here stops the effect on the wheel, so clearing the
+	 * flag would hide the slot from both the ramp slicer and the
+	 * watchdog's stop loop. The wheel would then keep pushing after the
+	 * game died, which is the one outcome the watchdog exists to prevent.
+	 */
+	was_playing = sl->used ? sl->playing : 0;
+	started_ms = sl->started_ms;
+	iterations = sl->iterations;
+
 	memset(sl, 0, sizeof(*sl));
+	sl->playing = was_playing;
+	sl->started_ms = started_ms;
+	sl->iterations = iterations;
 	sl->source_kind = want;
 	if (want == T150_EFFECT_RAMP) {
 		struct t150_effect raw;
@@ -224,6 +240,14 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 	sl->last_level = ef.u.constant.magnitude;
 
 	if (upload(s, &ef) != 0) {
+		/*
+		 * A failed upload leaves the wheel holding an incomplete
+		 * effect. If the slot was already playing, say so and stop it
+		 * rather than wiping the flag, because something on the wheel
+		 * is still running and only the stop packet ends it.
+		 */
+		if (was_playing)
+			(void)control(s, ef.slot, 0, 0);
 		memset(sl, 0, sizeof(*sl));
 		reply_err(rep, T150_ERR_DEVICE_IO);
 		return;

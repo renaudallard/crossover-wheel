@@ -383,6 +383,48 @@ test_watchdog(void)
 	expect_log("the watchdog fires once", "");
 }
 
+/*
+ * Updating a force that is already playing is the commonest thing a racing
+ * game does, and the slot used to be wiped clean by it, taking the playing
+ * flag with it. Nothing stops the effect on the wheel when a slot is
+ * re-uploaded, so the watchdog then had no reason to send a stop and the
+ * wheel kept pushing after the game died.
+ */
+static void
+test_reupload_keeps_playing(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+	uint8_t start[2];
+
+	reset_session();
+	hello(0);
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_CONSTANT;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.constant.magnitude = 10000;
+
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 100, T150_OP_OK, T150_ERR_NONE);
+
+	/* The game changes the force without stopping it first. */
+	ef.u.constant.magnitude = 5000;
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 200, T150_OP_OK,
+	    T150_ERR_NONE);
+	drain_log();
+
+	(void)t150_session_tick(&sess, 200 + T150_WATCHDOG_MS);
+	expect_log("the watchdog still stops an effect that was re-uploaded",
+	    "write 4: 41 00 00 01\n"
+	    "write 4: 40 04 00 00\n");
+}
+
 static void
 test_panic_paths(void)
 {
@@ -441,6 +483,7 @@ main(void)
 	test_downgrade();
 	test_ramp();
 	test_watchdog();
+	test_reupload_keeps_playing();
 	test_panic_paths();
 
 	(void)fclose(logfp);
