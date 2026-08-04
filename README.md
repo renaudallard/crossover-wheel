@@ -24,8 +24,9 @@ extension approval.
 >
 > **What is not finished.** No game has reached the wheel end to end.
 > `t150boot`, `t150ctl` and the daemon's macOS backend have all now touched
-> hardware and worked (A31), but the in-bottle proxy has never run, and the
-> daemon has never rendered an effect a client asked for. Only a constant
+> hardware and worked (A31), and the proxy loads and chain-loads in a real
+> bottle (A33), but no game has created a device through it, no effect has
+> crossed the loopback, and the daemon has never rendered one. Only a constant
 > force and one periodic have ever been played, so springs, dampers,
 > envelopes and per-effect gain are still arithmetic derived from a Linux
 > driver rather than measured. And CrossOver registers none of the wheel's
@@ -104,7 +105,7 @@ in-bottle bus driver was considered and rejected.
 | `src/lib/proto.c` DLL to daemon protocol | written, round-trip tested on Linux |
 | `t150d` protocol, slots, downgrades, watchdog | written and tested on Linux |
 | `t150d` macOS HID backend | working: opened a real wheel unprivileged, and its shutdown stopped a runaway effect. Has not yet rendered an effect for a client |
-| `t150-dinput8.dll` the in-bottle proxy | written, cross builds, never yet run |
+| `t150-dinput8.dll` the in-bottle proxy | loads and chain-loads in a real bottle, test 14. The force feedback path has never run |
 | build, CI, docs, man pages | working |
 | `t150ctl`, `t150boot` | working on hardware: `t150boot` switched a wheel, `t150ctl` talked to one. The range change has run but nobody felt it yet |
 
@@ -172,10 +173,12 @@ too, where earlier ones had them working. Replug the wheel, switch it with
 whatever is measured is measured on a wheel that has not been captured and
 released a dozen times.
 
-**3. Try the proxy in a bottle**, step by step under
-[testing it today](#testing-it-today). The DLL has never run under Wine, and
-finding out whether it loads and whether a game's effects reach the daemon
-needs no working force feedback at all.
+**3. A game through the proxy**, step by step under
+[testing it today](#testing-it-today). The chain-load is proven: the proxy
+loads in a real bottle and forwards into CrossOver's builtin (A33). What has
+never happened is a game creating a device through it and its effects
+crossing the loopback to the daemon, and finding that out needs no working
+force feedback at all.
 
 Then, whichever way those went:
 
@@ -677,7 +680,7 @@ sudo ./build/bin/probe_intr -N 32 -H 15 \
 input, which no run before this ever sent, and `ff_first` is nine bytes rather
 than the eleven this project used to send: Thrustmaster's own driver ends it
 at `fade_level` and only a condition carries the two extra bytes. Between them
-those are the two concrete reasons force feedback has never worked. See
+those were the two concrete reasons force feedback had never worked. See
 [`docs/RESEARCH.md`](docs/RESEARCH.md) A26 and A27.
 
 The interrupt run prints the wheel's own reports for those fifteen seconds

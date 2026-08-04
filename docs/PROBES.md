@@ -537,8 +537,11 @@ question 8, and the README's Test B is the step by step for it.
 
 ## Question 8: does a game reach the wheel?
 
-The end to end path, and the one nobody has run. It needs the proxy installed
-in a bottle, which is the procedure in the README under testing it today.
+The end to end path, and the one nobody has run. Its first rung is climbed:
+test 14 proved the proxy loads in a real bottle and chain-loads CrossOver's
+builtin (A33), so what remains starts at the game. It needs the proxy
+installed in a bottle, which is the procedure in the README under testing it
+today.
 
 Run it twice. First with `t150d -n`, which prints every packet instead of
 sending it, so a fault in the proxy cannot be confused with a fault at the

@@ -860,6 +860,35 @@ straightened itself after the close, which reads as the firmware restoring
 its own autocenter once the input shuts. Whether `42 00` resets the
 commanded force is unmeasured, and nothing yet depends on it.
 
+**A33. The proxy loads in a real bottle and chain-loads CrossOver's
+builtin.** Test 14, on CrossOver 26.3.0, in a Steam bottle, with
+`regsvr32.exe dinput8.dll` and `+loaddll` tracing. The passing run shows
+`dinput8.dll` as `native`, which is the proxy, then the builtin's own
+imports loading, `hid.dll`, `setupapi.dll`, `comctl32.dll`, `oleaut32.dll`,
+then `dinput8_orig.dll` as `builtin`, then a clean unload and no failure
+from regsvr32. The proxy executed, resolved the file beside it, and
+forwarded a call into CrossOver's own implementation. M4's chain-load
+question is answered; what has still never run is the force feedback path,
+because the game launch that followed lost `$CX_ROOT` and never started.
+
+The failure the day before is instructive and is why the loaddll tag
+matters more than the file listing: both `dinput8.dll` and
+`dinput8_orig.dll` were the proxy, byte for byte, so the chain-load found a
+real PE, loaded it as `native`, and `DllRegisterServer` failed downstream.
+The tag comes from the file's own bytes, `Wine builtin DLL` at offset 64,
+which also means a `head -c 64` can never show it: the check in the README
+stopped one byte short of the signature and printed nothing on every file.
+
+Two more firsts from the same session's warm-up. The question 5 HID block
+with its own `42 04` drove the constant to the stop through nothing but
+`probe_setreport`, so both effect classes now render on both pipes with the
+open sent on the same pipe. And the stop plus `42 05 42 05 42 00` cleanup
+line freed the wheel as designed. One observation recorded rather than
+concluded: after the stop, with the input open, the last 45 degrees or so
+before each end stop turned hard, which reads like a firmware soft stop.
+Still untried after three sessions: `0x4021` and `0x4025`, because the
+waveform run used `20 40` again, and an isolated, felt `range 270`.
+
 **A21. The wheel puts all thirteen buttons on the wire. Whatever loses them
 is above the USB layer.** A18 is answered, and against the wheel.
 

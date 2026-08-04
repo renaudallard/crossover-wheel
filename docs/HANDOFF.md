@@ -281,13 +281,15 @@ one-axis DirectInput effect is normalized to due east, because DirectInput
 carries the side in the sign of the magnitude and the encoder would otherwise
 project a northward direction onto no force at all.
 
-**What is checked, and what is not.** There is no Wine here and no Mac, so
-`tests/dll_check.c` runs on Windows in CI: it unit tests the DIEFFECT
-conversion, then loads the DLL with a copy of the system `dinput8` beside it
-and confirms both entry points chain-load. That is a real loader and a real
-COM call, but it is not Wine's loader, and a CI runner has no wheel, so the
-force feedback path itself has never run. Treat the chain-load in a bottle as
-unverified until M5 tries it.
+**What is checked, and what is not.** `tests/dll_check.c` runs on Windows in
+CI: it unit tests the DIEFFECT conversion, then loads the DLL with a copy of
+the system `dinput8` beside it and confirms both entry points chain-load.
+And the chain-load in a real bottle is now verified too: test 14 loaded the
+proxy as `native` in a CrossOver 26 bottle, chain-loaded the builtin from
+`dinput8_orig.dll`, and forwarded `DllRegisterServer` into it, with the
+builtin's imports visibly resolving (RESEARCH.md A33). What has never run is
+the force feedback path: no game has created a device through the proxy, and
+no effect has crossed the loopback to the daemon.
 
 **M5. First force feedback in a real game.** An installer that finds the
 bottle under `~/Library/Application Support/CrossOver/Bottles`, honouring the
