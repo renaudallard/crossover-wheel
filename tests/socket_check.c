@@ -320,7 +320,8 @@ main(void)
 	 */
 	if (wait_for(pipefd[0], "write 4: 41 00 00 01\n") != 0)
 		fail("the watchdog did not stop the effect");
-	if (wait_for(pipefd[0], "write 4: 40 04 00 00\n") != 0)
+	if (wait_for(pipefd[0], "write 4: 40 03 00 00\n"
+	    "write 4: 40 04 00 00\n") != 0)
 		fail("the watchdog did not release the wheel");
 
 	(void)close(fd);

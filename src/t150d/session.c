@@ -156,7 +156,16 @@ t150_session_panic(struct t150_session *s, const char *why)
 	/*
 	 * Release the autocenter last. A wheel that has been left holding a
 	 * force should end up limp, not fighting whoever grabs it next.
+	 *
+	 * It takes the force, not the enable flag. 0x04 only says whether the
+	 * autocenter survives an application opening the wheel's input, and
+	 * the effect is active whenever none has, so clearing it releases
+	 * nothing. This code sent only 0x04 and therefore never made the
+	 * wheel safe. See PROTOCOL.md and RESEARCH.md A15, which cost six
+	 * hardware sessions to learn.
 	 */
+	n = t150_enc_autocenter_force(pkt, sizeof(pkt), 0);
+	(void)s->be->write(s->be->priv, pkt, n);
 	n = t150_enc_autocenter_enable(pkt, sizeof(pkt), 0);
 	(void)s->be->write(s->be->priv, pkt, n);
 
@@ -344,8 +353,18 @@ do_setting(struct t150_session *s, uint8_t op, const uint8_t *payload,
 		}
 		break;
 	case T150_OP_SET_AUTOCENTER:
-		/* Zero means off, anything else is a strength and an enable. */
+		/*
+		 * Zero means off, anything else is a strength and an enable.
+		 * Off is the force, not the enable flag: clearing 0x04 alone
+		 * leaves the wheel gripped, which is PROTOCOL.md's warning
+		 * and was measured on hardware.
+		 */
 		if (v == 0) {
+			n = t150_enc_autocenter_force(pkt, sizeof(pkt), 0);
+			if (emit(s, pkt, n) != 0) {
+				reply_err(rep, T150_ERR_DEVICE_IO);
+				return;
+			}
 			n = t150_enc_autocenter_enable(pkt, sizeof(pkt), 0);
 			if (emit(s, pkt, n) != 0) {
 				reply_err(rep, T150_ERR_DEVICE_IO);

@@ -158,7 +158,14 @@ test_settings(void)
 
 	put_u32(arg, 0);
 	frame(T150_OP_SET_AUTOCENTER, arg, 4, 0, T150_OP_OK, T150_ERR_NONE);
-	expect_log("autocenter off is one packet", "write 4: 40 04 00 00\n");
+	/*
+	 * Off is the force, not the enable flag. Clearing 0x04 alone leaves
+	 * the wheel gripped, which is the mistake that cost this project six
+	 * hardware sessions and which used to live in this code path.
+	 */
+	expect_log("autocenter off releases the force, not just the flag",
+	    "write 4: 40 03 00 00\n"
+	    "write 4: 40 04 00 00\n");
 
 	/* Half gain is 0x40: the wire's full scale is 0x80, not 0xff. */
 	put_u32(arg, 5000);
@@ -376,6 +383,7 @@ test_watchdog(void)
 	(void)t150_session_tick(&sess, 100 + T150_WATCHDOG_MS);
 	expect_log("the watchdog stops the effect and releases the wheel",
 	    "write 4: 41 00 00 01\n"
+	    "write 4: 40 03 00 00\n"
 	    "write 4: 40 04 00 00\n");
 
 	/* Having fired, it does not keep firing. */
@@ -422,6 +430,7 @@ test_reupload_keeps_playing(void)
 	(void)t150_session_tick(&sess, 200 + T150_WATCHDOG_MS);
 	expect_log("the watchdog still stops an effect that was re-uploaded",
 	    "write 4: 41 00 00 01\n"
+	    "write 4: 40 03 00 00\n"
 	    "write 4: 40 04 00 00\n");
 }
 
@@ -461,6 +470,7 @@ test_panic_paths(void)
 	frame(T150_OP_BYE, NULL, 0, 0, T150_OP_OK, T150_ERR_NONE);
 	expect_log("goodbye leaves the wheel limp",
 	    "write 4: 41 00 00 01\n"
+	    "write 4: 40 03 00 00\n"
 	    "write 4: 40 04 00 00\n");
 }
 
