@@ -599,10 +599,10 @@ for the whole run and looks identical to one that obeyed nothing. Turn the
 wheel by hand after each pair and watch for a *change*, not for stiffness.
 
 Those are, in order: the declared output report id, zero-padding to the
-declared size, both together, the other HID node if there is one, the boot
-mode product id, and then the rotation range instead of the spring, since a
-firmware that silently drops one opcode may accept another. `-r 270` should
-make lock to lock obviously short and `-r 1080` put it back.
+declared size, both together, the other HID node if there is one, and then
+the rotation range instead of the spring, since a firmware that silently
+drops one opcode may accept another. `-r 270` should make lock to lock
+obviously short and `-r 1080` put it back.
 
 Watch for `no HID node matches`. `probe_setreport` defaults to the T150's
 firmware product id, so against any other wheel, or against one still in boot

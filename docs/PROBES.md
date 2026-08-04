@@ -1,7 +1,8 @@
 # Phase 0: the measurements
 
-Nothing else in this repository is worth writing until these questions are
-answered on real hardware. Half an hour with the wheel plugged into the Mac.
+Nothing else in this repository was worth writing until these questions were
+answered on real hardware. Most now are. This file is what remains open, and
+the procedure for rerunning what is settled when something changes.
 
 **The questions that decide the project are answered yes.** The wheel obeys
 settings sent through `IOHIDDeviceSetReport`, unprivileged and without taking
@@ -85,7 +86,7 @@ Three more things on macOS 26 will otherwise waste a run:
 ## What is already settled
 
 Measured on a T150 on macOS 26, so these do not need redoing. Full detail in
-[RESEARCH.md](RESEARCH.md) A4 to A11 and A15 to A21.
+[RESEARCH.md](RESEARCH.md) A4 to A11 and A15 to A32.
 
 | | |
 | --- | --- |
@@ -115,23 +116,27 @@ false for this wheel**, and A19 is the measurement.
 
 ## The order to run these in
 
+The unanswered questions first. Everything else is a rerun, worth the time
+only when something it depends on has changed, which is how test 13 spent
+most of a session re-proving what was already proven.
+
 1. **Question 1**, what macOS publishes. Always.
-2. **Question 2**, the mode switch, if question 1 found `B65D`. It is a
-   precondition, not a follow-up.
-3. **Question 4**, the HID path, which is what the project actually needs and
-   which is now known to work. It needs no root, so it comes first.
-4. **Question 3**, the interrupt OUT write, as the cross-check. It answers
-   the same question with the device captured.
-5. **Question 5**, the force feedback packets, which work as long as `42 04`
-   opens the wheel's input first.
-6. **Question 6b**, the shipped tools, which take the paths the probes
-   proved and are what a user actually runs.
-7. **Question 7**, the daemon on its own backend. One command, and it is the
+2. **Question 2**, the mode switch, if question 1 found `B65D`. `t150boot`,
+   one command, no root.
+3. **Question 6b**, the shipped tools. One outcome is still unobserved:
+   whether `range 270` visibly shortens lock to lock.
+4. **Question 7**, the daemon on its own backend. Half answered, and the
    precondition for question 8.
-8. **Question 8**, a game reaching the wheel. The end to end path, and the
-   one nobody has run.
-9. **Question 6**, the buttons, if you are chasing why CrossOver sees none.
+5. **Question 8**, a game reaching the wheel. The end to end path, the one
+   nobody has run, and where the hardware time should go.
+6. **Question 6**, the buttons, if you are chasing why CrossOver sees none.
    Independent of everything else.
+
+The rest are answered and are kept as rerun procedures. Question 4, the HID
+path, on a new machine or after a macOS update; question 3, the interrupt
+OUT cross-check, only if the HID path ever stops working; question 5, the
+force feedback packets, after any change to `src/lib/encode.c`, plus its one
+open item, what `0x4021` and `0x4025` are.
 
 Questions 3 and 4 send the same bytes down different pipes, and both work.
 Keeping both is what made question 5 interpretable when it was failing: an
@@ -184,80 +189,29 @@ boot id too, so it is safe to run on every plug-in, and it refuses a wheel
 whose model byte is not the T150's rather than sending it another model's
 value.
 
-What follows is the probe route, which does the same two transfers and also
-sends five initialisation packets on the interrupt OUT pipe first. That needs
-the device captured and therefore root, and whether those packets matter is
-unsettled: they were adopted to explain a wheel that came back apparently
-blocked, and that turned out to be the autocenter. Try `t150ctl autocenter 0`
-before reaching for them.
-
-**Use `probe_intr -I`, not `probe_ep0 -w`.** The switch is three steps, not
-two: five packets go out on the interrupt OUT pipe first, while the wheel is
-still at the boot id, and skipping them leaves the wheel switched but
-blocked. That is what every earlier session did.
+The probe route is the fallback. `probe_intr -I` does the same two transfers
+and also sends the five initialisation packets the Linux driver puts on the
+interrupt OUT pipe first, which needs the device captured and therefore root:
 
 ```sh
 sudo ./build/bin/probe_intr -I
 ./build/bin/probe_hid -o .
 ```
 
-One capture covers the initialisation and the switch, so nothing
-re-enumerates between them. Then **turn the wheel by hand**: on Linux, where
-the kernel sends the same five packets, the wheel is free at this point with
-no force feedback driver loaded at all.
+**Those five packets look unnecessary.** They were adopted to explain a
+wheel that came back from the switch apparently blocked, and that turned out
+to be the autocenter holding at full strength. Test 13 then switched with
+`t150boot` alone, no initialisation packets, and everything afterward
+worked: settings, force feedback, buttons on the wire. If a wheel misbehaves
+after `t150boot`, try `t150ctl autocenter 0` before reaching for `-I`.
 
-`probe_ep0` remains the tool for asking what a wheel is and what privilege
-endpoint 0 needs. Its `-w` performs the switch without the initialisation,
-which is now known to be incomplete.
-
-### The old two-step switch
-
-Only needed if question 1 found the wheel at `B65D`, and then it is needed
-before anything else: until this succeeds the wheel is not the device
-PROTOCOL.md describes, and it may not even turn.
-
-The mode switch is a pair of vendor control transfers directed at interface
-0, the interface macOS's own HID driver owns. It was expected to be refused
-and it is not: the read-only model query has succeeded as an ordinary user,
-with the device unopened, on the first of the three approaches `probe_ep0`
-tries. Confirm that on your wheel, then switch it:
-
-```sh
-./build/bin/probe_ep0
-./build/bin/probe_ep0 -w
-./build/bin/probe_hid -o .
-```
-
-`probe_ep0` with no arguments only reads. It prints the model and attachment
-bytes of whatever it finds: `0x03` and `0x06` is a T150, and any other pair
-means passing that model's switch value with `-V`.
-
-**`-w` has only ever been run under `sudo`.** Try it as your user first, as
-above. If it needs `sudo` the finished tool needs a password once per
-plug-in; if it does not, it never needs one. That is the whole reason to try.
-
-**`kIOReturnNotResponding` from the switch is the expected answer**, not a
-failure. The wheel detaches the instant it accepts the switch, so it is gone
-before the completion can come back. Only `probe_hid` can say whether it
-worked, and the wheel visibly re-runs its power-on sequence when it does.
-
-Record four things:
-
-- which invocation first succeeded, and as whom,
-- whether `probe_hid` now reports `B677`,
-- **whether the wheel turns freely by hand afterwards**, which is what makes
-  questions 3 and 4 measurable at all,
-- the descriptor `-o .` just dumped. Firmware mode reports
-  `MaxOutputReportSize` **15** where PROTOCOL.md expects a 14-byte report
-  with id `0x0A`, and 15 is exactly the length of `ff_commit`, the one packet
-  that never fitted. That dump settles which framing the wheel actually
-  declares, and nothing else can.
-
-If the read-only query ever does fail, `sudo ./build/bin/probe_ep0` and then
-`sudo ./build/bin/probe_ep0 -s` are the escalations. Be aware of what `-s`
-costs if it is the only thing that works: seizing takes the device away from
-every other client, so the wheel would vanish from CrossOver for as long as
-the daemon holds it, which is not a degraded mode but a different design.
+`probe_ep0` remains the tool for asking what a wheel is without touching it,
+and `t150boot -n` does the same. Its `-w` switch is the same pair of
+transfers `t150boot` sends, minus the wait for the wheel to come back, so
+there is no reason left to run it; what it established, that the transfers
+need no privilege and that `kIOReturnNotResponding` from the switch is the
+expected answer rather than a failure, is in the settled table, in
+RESEARCH.md A6, and built into `t150boot`.
 
 ## Question 3: does the wheel listen on the interrupt OUT pipe?
 
@@ -280,24 +234,14 @@ That sets the autocenter force to zero, which is what actually frees a
 gripped wheel. **Not `-A`**: `0x04` only decides whether the autocenter
 survives an application opening the input, and since nothing on macOS does
 that, the autocenter is always on and the flag changes nothing. This has been
-measured both ways. **If the wheel
-becomes turnable, three questions are answered at once**: the wheel is
-healthy, the bytes in PROTOCOL.md are right, and the pipe was the whole
-problem. If it does not, the layout is wrong rather than the transport, which
-is a different and more tractable failure.
-
-Then the settings, which are what a working `t150ctl` would send:
-
-```sh
-sudo ./build/bin/probe_intr -r 270
-sudo ./build/bin/probe_intr -r 1080
-sudo ./build/bin/probe_intr -g 5000
-sudo ./build/bin/probe_intr -a 10000
-sudo ./build/bin/probe_intr -a 0
-```
+measured both ways. A wheel that becomes turnable has proven the pipe; one
+that does not has a layout problem rather than a transport one.
 
 Its packets come from `src/lib/encode.c`, the same encoders the daemon uses,
-so whatever this proves about the wheel it proves about them too.
+so whatever this proves about the wheel it proves about them too. The
+settings sweep that used to follow here is question 6b now: `t150ctl` sends
+the same bytes with no root and no capture, so running them through a
+captured device answers nothing extra.
 
 If it is killed between the capture and the release, the wheel stays gone
 from macOS until it is unplugged and replugged. That is the cost of this
@@ -307,105 +251,34 @@ wheel this tool owns.
 
 ## Question 4: does an unprivileged SetReport move the wheel?
 
-This is the one that decides the project. It only applies once the wheel is
-in firmware mode.
+**Answered: yes, and it decided the project.** The wheel obeys an
+unprivileged `IOHIDDeviceSetReport` with the device left to macOS, which is
+E1 answered and the transport the daemon uses. RESEARCH.md A19. Three
+commands rerun it on a new machine or a new macOS.
 
-**Establish the baseline first, because the last two runs did not.** Unplug
-the wheel, plug it back in, do question 2, and then, before sending a single
-byte, turn the wheel by hand and write down what you feel. Everything below
-is a comparison against that.
-
-This matters more than it sounds. A measured wheel sat rigid through every
-write, which reads like a negative result and is not one: the run set the
-autocenter spring to maximum and never turned it off, so a wheel obeying
-perfectly and a wheel ignoring everything both ended up immovable. Without a
-before, there is no after.
-
-If it will not turn even at `B677` with nothing sent, say so: that is a
-separate and more interesting failure than the one this question is looking
-for.
-
-Then the single most informative command, on a wheel you have just found to
-be rigid, is the one that releases the spring:
+**Establish the baseline first.** Unplug the wheel, plug it back in, do
+question 2, and before sending a single byte turn the wheel by hand and note
+what you feel. A freshly plugged wheel holds a full autocenter and feels
+locked; that is normal. Without a before there is no after: a wheel obeying
+perfectly and a wheel ignoring everything are both immovable, which is
+exactly how a whole session was once lost.
 
 ```sh
 ./build/bin/probe_setreport -a 0
-```
-
-If the wheel frees up, the firmware has been obeying all along and E1 is
-answered yes.
-
-```sh
 ./build/bin/probe_setreport
-```
-
-The autocenter spring is used rather than the rotation range because its
-effect is unmistakable: the wheel starts pulling itself back to centre
-immediately, with no need to hunt for the end stops. Switch it back off with:
-
-```sh
 ./build/bin/probe_setreport -a 0
 ```
 
-**A success return is not the answer.** macOS can accept a report that the
-firmware then ignores. What settles this is whether the wheel physically
-reacted. If every call returned `kIOReturnSuccess` and the wheel did nothing,
-work through the framings before concluding anything:
+Expect free, then hard to turn, then free. The autocenter is used rather
+than the rotation range because its effect is unmistakable and immediate,
+with no need to hunt for the end stops.
 
-```sh
-./build/bin/probe_setreport -i 0x0a
-./build/bin/probe_setreport -a 0
-./build/bin/probe_setreport -P
-./build/bin/probe_setreport -a 0
-./build/bin/probe_setreport -i 0x0a -P
-./build/bin/probe_setreport -a 0
-./build/bin/probe_setreport -n 1
-```
-
-**The `-a 0` between each one is not optional.** Every variant here is the
-autocenter action, which sets the spring to maximum and enables it. Without
-releasing it in between, a wheel that obeyed the first command is held rigid
-for the rest of the run, and a wheel that obeys nothing looks exactly the
-same. Turn the wheel by hand after each pair: the question is whether it
-changes, not whether it is stiff.
-
-The reason all four are worth trying: the wheel's own report descriptor
-declares a 14-byte output report with id `0x0A`, but the Linux driver ignores
-the HID layer entirely and writes 2 to 4 raw bytes on the interrupt OUT
-endpoint with no report id. Only the hardware can say which framing the
-firmware actually honours.
-
-If none of them work, the useful follow-up is the rotation range instead of
-the spring, since a firmware that silently drops one opcode may accept
-another:
-
-```sh
-./build/bin/probe_setreport -r 270
-./build/bin/probe_setreport -r 1080
-```
-
-### Also try it in boot mode
-
-Worth five minutes, because a wheel that honours settings before the switch
-would make the whole endpoint 0 problem in question 2 go away. Point
-`probe_setreport` at the boot id, since it defaults to the firmware one:
-
-```sh
-./build/bin/probe_setreport -p 0xb65d
-```
-
-Be careful reading a null result here. This has already been run once, on a
-wheel that was locked rigid at the time, and every write returned success
-while nothing happened. That is not evidence the firmware ignored the bytes:
-there was no way to see whether it had.
-
-### Also try it with CrossOver running
-
-Everything above is worth repeating once with a game running in a bottle.
-macOS 26 fails `setReport` from every client the moment any process seizes
-the device, and the design depends on CrossOver not doing that. A run that
-succeeds on an idle desktop and fails with a game running has found something
-important.
+**A success return is not the answer.** macOS can accept a report the
+firmware then ignores; what settles a run is whether the wheel physically
+changed. The framing this sends, report id 0 and the payload raw, is the one
+the wheel was measured obeying. The declared id `0x0A` report in the
+descriptor is a red herring, and `probe_setreport` keeps `-i`, `-P` and `-n`
+for a wheel that ever behaves differently.
 
 ## Question 5: does the force feedback protocol work too?
 
@@ -693,12 +566,12 @@ Struck through where the wheel has already answered.
 | `probe_setreport -a 0` frees a rigid wheel | **E1 is answered yes.** The architecture works unprivileged and CrossOver keeps the wheel. Build it. | **measured** |
 | `probe_intr -a 0` frees it as well | Both transports reach the firmware, so the interrupt OUT route is a fallback rather than the plan. | **measured** |
 | Neither frees it | The transport is not the problem and the packet layout is. | did not happen |
-| `-w` works without `sudo` | The finished tool never needs a password. | **measured** |
+| The switch works without `sudo` | The finished tool never needs a password. | **measured**, and `t150boot` is that tool |
 | It moves on an idle desktop but not with a game running | Something in the bottle is seizing the device. Find out what before writing anything. | still untested |
-| Settings work but the force feedback packets do nothing | The transport is fine and the packet layout is wrong. Recoverable, and much the better failure. | **measured, on both pipes** |
-| A contiguous type code plays a waveform | Square or triangle stops being a downgrade. Record which code. | nothing played at all yet |
+| Settings work but the force feedback packets do nothing | The transport is fine and the packet layout is wrong. | superseded: it was the missing `42 04`, not the layout (A28) |
+| A contiguous type code plays a waveform | Square or triangle stops being a downgrade. Record which code. | `0x4020` oscillates (A29); `0x4021` and `0x4025` untried |
 | Buttons change on the IN pipe but CrossOver sees none | An input path problem above USB, in macOS HID, SDL or winebus. Not a force feedback problem. | **measured** |
-| The daemon opens the wheel and CrossOver keeps it | The non-seizing open holds, which is the assumption the whole design rests on. | untested |
+| The daemon opens the wheel and CrossOver keeps it | The non-seizing open holds, which is the assumption the whole design rests on. | half: the daemon's open is measured (A31), CrossOver alongside it is not |
 | A game's effects reach the wheel and it moves | The project does what it was built for. | untested, and the only thing left |
 | the switch needs root | One `sudo` per plug-in, and sleep, wake or a replug drops the wheel back to boot mode, so it is a mid-race failure too. | not needed |
 | the switch needs `-s` | Reconsider the design before writing more code. | not needed |
