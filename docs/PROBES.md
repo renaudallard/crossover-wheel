@@ -380,7 +380,15 @@ The settings opcodes prove the transport, on both pipes, and A19 settled
 that. This is the part the daemon will actually spend its time on, and it is
 the one thing that has never worked.
 
-**Where this stands: one clean negative, on the HID path.** All six packets
+**Answered: it works, and `42 04` was the missing packet.** The same upload
+moves the wheel with the open ahead of it and does nothing without. Both
+pipes carry effects. RESEARCH.md A28. What follows is the procedure that
+established it, and it is worth rerunning after any change to the encoders.
+
+Everything below about the two runs being unreadable describes how it looked
+before that, and is kept because the reasoning is what found the answer.
+
+**Where this stood: one clean negative, on the HID path.** All six packets
 on one handle, autocenter cleared, gain set, and the wheel did not move
 (RESEARCH.md A24). The interrupt OUT equivalent has still not produced a
 readable run: `-H` was telling the tester to work every button while it held

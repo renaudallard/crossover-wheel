@@ -162,6 +162,10 @@ with `usb_interrupt_msg()` on `pipe_out` with length 2: the open from
 `t150_input_open()` before `hid_hw_open()`, and after `hid_hw_close()` the
 `0x05` packet twice followed by the close.
 
+**Nothing is rendered until the input is open, and this is what opens it.**
+Measured: the same effect upload moves the wheel with `42 04` ahead of it and
+does nothing without. RESEARCH.md A28.
+
 **The firmware tracks whether an application has the input open**, and that is
 not a guess: `t150_set_enable_autocenter`'s comment says the autocentering
 effect "is always active while no input are open", which is exactly what this
@@ -169,10 +173,11 @@ project measured before it understood why. Nothing on macOS opens the input
 the way a Linux application does, so unless something sends `42 04` the wheel
 believes no application is there.
 
-Whether force feedback is gated the same way is the open question. It would
-explain every silent effect run, and Akellacom's T300RS driver sends its own
-open command (`60 01 05`) before range, gain or any effect, which is the same
-shape one wheel family over. See RESEARCH.md A20 and A26.
+Force feedback is gated the same way. That was the open question and it is
+answered: it explains every silent effect run this project ever made.
+Akellacom's T300RS driver sends its own open command, `60 01 05`, before
+range, gain or any effect, which is the same shape one wheel family over.
+See RESEARCH.md A26 and A28.
 
 > `hid-t150/hid-t150.c` `t150_init()` for the three values, `hid-t150/input.c`
 > `t150_input_open()` and `t150_input_close()` for how they are sent.
@@ -315,8 +320,11 @@ byte holding the *high* byte of the start delay in milliseconds.
 | `0x4041` | damper |
 
 The codes are contiguous around the periodics, so `0x4020`, `0x4021` and
-`0x4025` may well be the waveforms the Linux driver never implemented. That is
-a guess, and `probe_setreport -x` can settle it in a minute.
+`0x4025` may well be the waveforms the Linux driver never implemented.
+**`0x4020` is one of them**: committed with it, a periodic made the wheel
+oscillate left and right (RESEARCH.md A28). Which waveform it is needs a run
+that compares it against `0x4021` by feel, so square and triangle stay
+downgrades until then.
 
 **Effect control**, 4 bytes, starts or stops an uploaded effect:
 

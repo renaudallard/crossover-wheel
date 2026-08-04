@@ -5,31 +5,28 @@ Force feedback for the **Thrustmaster T150** in games running under
 DriverKit system extension, no SIP change, no AMFI change, no system
 extension approval.
 
-> **Status: the wheel obeys us, and it does so on the unprivileged path this
-> design rests on.** Measured on a T150: an ordinary `IOHIDDeviceSetReport`
-> from a process with no root and no device capture sets the autocenter to
-> full and the wheel becomes hard to turn, then releases it and the wheel
-> turns freely. CrossOver can keep reading the wheel throughout. The same
-> works on the interrupt OUT pipe, so both transports reach the firmware.
+> **Status: the wheel pushes back.** Force feedback works on a T150 under
+> macOS, from an unprivileged process, which is what this project exists for.
+> A constant force drove the wheel hard to one lock and held it there; a
+> periodic made it oscillate. Both transports carry effects: the interrupt
+> OUT pipe and, with no root and no device capture, `IOHIDDeviceSetReport`.
 >
-> Six sessions of "the wheel is locked and ignores everything" were one
-> mistake: the command being sent was `0x04`, an autocenter flag that is a
-> no-op on macOS because the effect is active whenever no application has the
-> wheel's input open. Only the force releases it. Nothing was ever wrong with
-> the wheel, the pipes, or the settings protocol.
+> **The missing piece was one two-byte packet, `42 04`.** The firmware
+> renders nothing until something opens the wheel's input, and nothing on
+> macOS does. The same fact had been staring at the project for months in the
+> Linux driver's own comment, which says the autocenter "is always active
+> while no input are open"; four sessions were spent believing the packet's
+> bytes were unrecoverable from the published source. They were in
+> `t150_init()` the whole time. See [`docs/RESEARCH.md`](docs/RESEARCH.md)
+> A26 and A28.
 >
-> **Force feedback has still never moved the wheel.** There is now one clean
-> negative, through the HID path with the autocenter cleared, the gain set and
-> all six packets on one handle. The leading suspect is no longer the packet
-> layout but a missing step: the T300RS driver sends an explicit open command
-> before any effect, the T150's Linux driver has an equivalent whose bytes are
-> `42 04`, recovered from the same driver, and this project has never sent
-> it.
->
-> Separately, the wheel puts all thirteen of its buttons on the wire and
-> CrossOver registers none of them, which is an input path problem in macOS
-> HID, SDL or winebus rather than anything the wheel does. See [`docs/RESEARCH.md`](docs/RESEARCH.md) A15
-> and A19 to A21, and [what needs doing next](#what-needs-doing-next).
+> **What is not finished.** The force is wrong in a way that matters: a
+> constant at half the documented ceiling went to full lock rather than
+> pushing at half strength, so the direction or level scaling is off and no
+> game should be pointed at this yet. The daemon still has no macOS backend,
+> so it logs rather than drives. The proxy has never run in a bottle. And
+> CrossOver still registers none of the wheel's buttons, which is a separate
+> input-path problem (A21, A25).
 
 **Picking this up?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first. It is
 written for someone starting with no context: what is decided, what is
@@ -153,30 +150,18 @@ needs no privilege at all.
 What is left is three experiments, all needing the Mac and **all independent
 of each other**.
 
-**1. Force feedback, the one thing that has never worked.** There is now a
-clean negative on the HID path: six packets on one handle, autocenter cleared,
-gain set, no movement. The interrupt OUT equivalent has still not produced a
-readable run, because `-H` was telling the tester to work the buttons while it
-held the wheel, which makes self-movement impossible to see. That is fixed.
+**1. Get the force right.** Force feedback works, so this is no longer a
+question of whether but of how much. A constant at level `0x20`, half the
+documented `0x40` ceiling, drove the wheel to full lock and held it: that is
+not half force in a direction. The direction handling in
+`t150_enc_ff_commit` and the level scaling in `t150_enc_ff_update` are the
+suspects, and the vendor captures in [`docs/RESEARCH.md`](docs/RESEARCH.md)
+A27 are the reference to compare against. **No game should be pointed at
+this until it is fixed.**
 
-Two things to run, both under [testing it today](#testing-it-today):
-
-- **The `-H` retest, hands off.** An idle T150 emits about four reports a
-  second and never changes them, so a wheel that moves under an effect is
-  unmistakable against that baseline.
-- **The open command, `42 04`.** This is the leading suspect now. The
-  firmware tracks whether an application has the input open, which is why the
-  autocenter is "always active while no input are open", and nothing on macOS
-  opens it. `probe_intr -O` sends it, and an effect test needs it inline with
-  `-H`, because the open lasts only as long as the session.
-  [`docs/RESEARCH.md`](docs/RESEARCH.md) A26.
-
-If both fail, the answer is a `usbmon` capture on the Linux machine with
-`scarburato/t150_driver` driving the wheel. That shows the real bytes rather
-than anyone's reading of source, the open packet's included. Two things the
-encoders guess at settle on the way: whether a constant force tops out at
-`0x40` or `0x7f`, and whether type codes `0x4020` and `0x4021` are the square
-and triangle the Linux driver never implemented.
+While you are there, settle which waveform `0x4020` is. It oscillates, so it
+is real, and PROTOCOL.md still calls it a guess; comparing it against
+`0x4021` by feel says whether square and triangle can stop being downgrades.
 
 **2. Where CrossOver loses the buttons.** Answered as far as the wheel is
 concerned: `probe_intr -R` proved all thirteen buttons reach the wire, and
@@ -211,10 +196,10 @@ safest thing to do next.
 **5. The daemon's macOS backend.** A non-seizing open and output writes
 behind the interface `backend_fake.c` already implements, with
 `src/probe/common.c` as the enumeration it needs, moved rather than
-rewritten. The ownership conflict that used to sit here is gone: A19 showed
-the HID path works, so the daemon never has to take the wheel from CrossOver.
-What it cannot yet do is drive effects, because no effect has been made to
-render on any pipe.
+rewritten. There is no ownership conflict: the HID path carries settings
+(A19) and effects (A28), so the daemon never has to take the wheel from
+CrossOver. **It has to send `42 04` when a client connects and `42 00` when
+the last one leaves**, or the wheel renders nothing.
 
 **6. Robustness, then a real game.** Reconnect on both ends, hot plug, and
 the watchdog under real crash conditions. Measure the latency and jitter of

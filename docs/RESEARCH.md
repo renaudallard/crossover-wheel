@@ -673,6 +673,65 @@ and `git show fa59bba:t150/forcefeedback.h` shows `struct ff_first` ending at
 `fade_level`. It says nothing about the vendor. The vendor captures above do,
 and they happen to agree for class `0x02`.
 
+**A28. Force feedback works. The missing piece was `42 04`.** Measured on a
+T150, and the project's first moving wheel.
+
+Two runs, identical but for one packet:
+
+```
+sudo probe_intr -N 32 -H 15 \
+    -x "40 03 00 00" -x "43 60" \
+    -x "02 1c 00 00 00 00 00 00 00" -x "03 0e 00 20" \
+    -x "01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00" -x "41 00 41 01"
+                                          -> nothing
+
+sudo probe_intr -N 32 -H 15 \
+    -x "42 04" \
+    ... the same six packets ...
+                                          -> "it turn the wheel to the max
+                                             left and next it have the max
+                                             force to prevent i turn it"
+```
+
+So the wheel does render effects, and it renders them only once something has
+opened its input. That is A26's packet, recovered from the driver's own
+source after four sessions of assuming its bytes were unrecoverable.
+
+**The tool confirmed it independently.** `-H` reads the interrupt IN pipe
+while it holds the wheel, and that run returned 829 reports, 784 of them
+different, with this mask:
+
+```
+00 ff ff 00 00 00 00 00 00 00 00 00 00 00 00
+```
+
+Only bytes 1 and 2 moved, which is the steering axis. No button, no pedal, no
+hat. The wheel was turning under its own power with nobody touching it, which
+is exactly what `-H` was built to make visible and what an idle T150 never
+does (A23: 61 reports, one of them different).
+
+**Periodics work too, and on the HID path.** A later run through
+`probe_setreport`, with no capture and no root, played a periodic and the
+wheel "turn right left indefinitely". So both transports carry effects, and
+the earlier `42 04` was still in force across a release and re-enumeration.
+Whether the open survives a replug is untested.
+
+**`0x4020` is a real waveform.** That periodic committed with type `0x4020`,
+which PROTOCOL.md lists as a guess: the codes are contiguous around the known
+periodics and `0x4020`, `0x4021` and `0x4025` "may be the missing waveforms".
+One of them is. It oscillates. Which waveform it is, square or triangle,
+needs a run that compares it against `0x4021` by feel, and until then the
+downgrade table stays as it is.
+
+**One thing is clearly wrong and is the next thing to fix.** A constant at
+level `0x20`, half of the documented `0x40` ceiling, drove the wheel to full
+left lock and held it there. That is not half force in a direction, it is a
+position command or a saturated one. The direction handling in
+`t150_enc_ff_commit` and the level scaling in `t150_enc_ff_update` are the
+suspects, and the vendor captures in A27 are the reference: their constant
+sends `03 0e 00 3e`, level `0x3e`, against a commit of
+`01 00 00 40 c4 09 ...` where this project sends `ff ff` for the length.
+
 **A21. The wheel puts all thirteen buttons on the wire. Whatever loses them
 is above the USB layer.** A18 is answered, and against the wheel.
 

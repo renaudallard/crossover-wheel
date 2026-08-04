@@ -152,8 +152,12 @@
 /*
  * ff_commit effect type codes. The driver implements no square or triangle
  * and declares no code for either. The codes are contiguous around the
- * periodics, so 0x4020, 0x4021 and 0x4025 may be the missing waveforms, but
- * that is a guess and is not used until hardware confirms it.
+ * periodics, so 0x4020, 0x4021 and 0x4025 may be the missing waveforms.
+ *
+ * 0x4020 is one: a periodic committed with it made the wheel oscillate
+ * (RESEARCH.md A28). Which waveform it is takes a run comparing it against
+ * 0x4021 by feel, so neither is named here and square and triangle stay
+ * downgrades.
  */
 #define T150_FF_TYPE_CONSTANT	0x4000u
 #define T150_FF_TYPE_SINE	0x4022u
