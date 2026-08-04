@@ -33,8 +33,12 @@ unprivileged macOS daemon that owns the wheel through
 .Bl -tag -width "t150-dinput8.dll"
 .It Xr t150d 8
 The macOS daemon. Owns the wheel, encodes effects, writes output reports.
-The protocol, the slot table, the downgrades and the watchdog work; the
-backend that would reach a wheel does not exist yet, so it logs instead.
+The protocol, the slot table, the downgrades and the watchdog work, and the
+HID backend that writes to the wheel is written and compiles but has never
+driven one.
+.Fl n
+swaps it for a log, which is how the rest of the stack is exercised without
+hardware.
 .It Nm t150-dinput8.dll
 The in-bottle proxy. Written and cross built, never yet run. It is installed
 as
@@ -63,13 +67,14 @@ path. It is an x86_64 PE and serves 64-bit games only, since a 32-bit process
 is redirected to
 .Pa syswow64 .
 The README has the whole procedure.
-.It Nm t150boot
-One-shot boot to firmware mode switch. Not yet implemented.
-.It Nm t150ctl
-Rotation range, gain and autocenter from the command line. Not yet
-implemented.
+.It Xr t150boot 8
+One-shot boot to firmware mode switch, unprivileged. Written, never yet run
+against a wheel.
+.It Xr t150ctl 1
+Rotation range, gain and autocenter from the command line, unprivileged.
+Written, never yet run against a wheel.
 .It Xr t150-probe 1
-The three Phase 0 measurement tools. Implemented.
+The four measurement tools. They are what proved the wheel obeys.
 .El
 .Sh IMPLEMENTATION NOTES
 The T150 renders constant force, sine, both sawtooths, spring and damper in
@@ -86,20 +91,25 @@ a reset on a graceful unacquire. A crashed game would therefore leave the
 last commanded force latched on the wheel. The daemon treats silence as a
 fault and stops every effect after half a second without traffic.
 .Sh STATUS
-The probe tools, the shared headers, the wire encoders, the wire protocol,
-the daemon's logic and the proxy exist. The macOS HID backend and the command
-line tools do not, and the proxy has never been executed.
+Everything is written: the probe tools, the shared headers, the wire
+encoders, the wire protocol, the daemon with its HID backend, both command
+line tools and the proxy. What has not happened is a game reaching the wheel
+through any of it. The backend, the tools and the proxy all compile and none
+of them has been run end to end.
 .Pp
 The measurement the project was gated on has been made and it succeeded: an
 unprivileged
 .Fn IOHIDDeviceSetReport
 sets the wheel's autocenter to full and it becomes hard to turn, then
 releases it and it turns freely, with CrossOver free to keep reading the
-wheel. Force feedback effects are a different matter and still move nothing,
-on that pipe or on interrupt OUT, which makes it a question about the packet
-layout rather than about macOS. See
+wheel throughout. Force feedback followed once the wheel's input was opened
+with
+.Li 42 04 ,
+which nothing on macOS sends and which the daemon now sends itself. A
+constant force and a periodic both move the wheel, through the HID pipe and
+through interrupt OUT. See
 .Pa docs/PROBES.md
-and RESEARCH.md A19 and A20.
+and RESEARCH.md A19, A28 and A29.
 .Pp
 Everything written so far is checked by
 .Cm make test
@@ -109,7 +119,10 @@ socket. That proves the bytes are the ones
 .Pa docs/PROTOCOL.md
 describes, and nothing at all about whether the wheel honours them.
 .Sh SEE ALSO
-.Xr t150-probe 1
+.Xr t150ctl 1 ,
+.Xr t150-probe 1 ,
+.Xr t150boot 8 ,
+.Xr t150d 8
 .Pp
 .Pa docs/HANDOFF.md ,
 .Pa docs/RESEARCH.md ,
@@ -119,7 +132,12 @@ describes, and nothing at all about whether the wheel honours them.
 .Sh AUTHORS
 .An Renaud Allard
 .Sh CAVEATS
-The T150 wire protocol is not published by Thrustmaster. Everything here is
-derived from the Linux drivers cited in
+The T150 wire protocol is not published by Thrustmaster. It is derived from
+the Linux drivers cited in
 .Pa docs/PROTOCOL.md
-and from a firmware 3.5 descriptor capture, not from current hardware.
+and from a firmware 3.5 descriptor capture, and only part of it has been felt
+on a wheel: the settings, a constant force and one periodic. Springs, dampers,
+envelopes, ramps and per-effect gain are still arithmetic nobody has tested
+against hardware.
+.Pa docs/PROBES.md
+is the procedure that would settle them.
