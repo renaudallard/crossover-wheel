@@ -407,8 +407,18 @@ dev_SendForceFeedbackCommand(IDirectInputDevice8W *self, DWORD flags)
 {
 	(void)self;
 
-	if (flags & (DISFFC_RESET | DISFFC_STOPALL)) {
+	/*
+	 * These mean different things and used to be sent as the same op.
+	 * RESET stops and releases every effect; STOPALL stops them and
+	 * leaves them downloaded, so a game that pauses with STOPALL can
+	 * start the same effects again. Sending STOPALL as a reset destroyed
+	 * the slots underneath it.
+	 */
+	if (flags & DISFFC_RESET) {
 		if (t150_client_call(T150_OP_RESET, NULL, 0) != 0)
+			return DIERR_INPUTLOST;
+	} else if (flags & DISFFC_STOPALL) {
+		if (t150_client_call(T150_OP_STOP_ALL, NULL, 0) != 0)
 			return DIERR_INPUTLOST;
 	}
 

@@ -410,6 +410,31 @@ do_reset(struct t150_session *s, struct t150_reply *rep)
 	reply_ok(rep);
 }
 
+/*
+ * DirectInput draws a line between its two commands and so must we.
+ * DISFFC_RESET stops and releases; DISFFC_STOPALL stops and leaves every
+ * effect downloaded, so a game that pauses with STOPALL can start the same
+ * effects again afterwards. Sending both as a reset destroyed the slots and
+ * the game's next Start referred to something that no longer existed.
+ */
+static void
+do_stop_all(struct t150_session *s, struct t150_reply *rep)
+{
+	size_t i;
+
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		if (!s->slots[i].used || !s->slots[i].playing)
+			continue;
+		if (control(s, (uint8_t)i, 0, 0) != 0) {
+			reply_err(rep, T150_ERR_DEVICE_IO);
+			return;
+		}
+		s->slots[i].playing = 0;
+	}
+
+	reply_ok(rep);
+}
+
 int
 t150_session_frame(struct t150_session *s, uint8_t op, const uint8_t *payload,
     size_t len, uint64_t now_ms, struct t150_reply *rep)
@@ -456,6 +481,9 @@ t150_session_frame(struct t150_session *s, uint8_t op, const uint8_t *payload,
 		break;
 	case T150_OP_RESET:
 		do_reset(s, rep);
+		break;
+	case T150_OP_STOP_ALL:
+		do_stop_all(s, rep);
 		break;
 	case T150_OP_KEEPALIVE:
 		reply_ok(rep);

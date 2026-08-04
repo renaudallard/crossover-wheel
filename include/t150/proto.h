@@ -71,6 +71,7 @@ enum t150_proto_op {
 	T150_OP_SET_RANGE,	/* degrees */
 	T150_OP_RESET,		/* stop everything, release every slot */
 	T150_OP_KEEPALIVE,	/* feeds the watchdog, see below */
+	T150_OP_STOP_ALL,	/* stop everything, keep every slot loaded */
 
 	/* daemon to client */
 	T150_OP_OK = 128,

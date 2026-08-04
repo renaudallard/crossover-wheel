@@ -392,6 +392,48 @@ test_watchdog(void)
 }
 
 /*
+ * DISFFC_STOPALL must stop without releasing, or a game that pauses cannot
+ * start its effects again afterwards.
+ */
+static void
+test_stop_all_keeps_slots(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+	uint8_t start[2];
+
+	reset_session();
+	hello(0);
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_CONSTANT;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.constant.magnitude = 10000;
+
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 100, T150_OP_OK, T150_ERR_NONE);
+	drain_log();
+
+	frame(T150_OP_STOP_ALL, NULL, 0, 110, T150_OP_OK, T150_ERR_NONE);
+	expect_log("stop all stops the effect", "write 4: 41 00 00 01\n");
+
+	/* The slot survives, so the same effect starts again. */
+	frame(T150_OP_EFFECT_START, start, 2, 120, T150_OP_OK, T150_ERR_NONE);
+	expect_log("and the slot is still loaded", "write 4: 41 00 41 01\n");
+
+	/* A reset, by contrast, releases it. */
+	frame(T150_OP_RESET, NULL, 0, 130, T150_OP_OK, T150_ERR_NONE);
+	drain_log();
+	frame(T150_OP_EFFECT_START, start, 2, 140, T150_OP_ERROR,
+	    T150_ERR_BAD_SLOT);
+}
+
+/*
  * Updating a force that is already playing is the commonest thing a racing
  * game does, and the slot used to be wiped clean by it, taking the playing
  * flag with it. Nothing stops the effect on the wheel when a slot is
@@ -494,6 +536,7 @@ main(void)
 	test_ramp();
 	test_watchdog();
 	test_reupload_keeps_playing();
+	test_stop_all_keeps_slots();
 	test_panic_paths();
 
 	(void)fclose(logfp);
