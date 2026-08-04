@@ -340,7 +340,16 @@ eff_Start(IDirectInputEffect *self, DWORD iterations, DWORD flags)
 	struct effect_obj *e = from_iface(self);
 	uint8_t start[2];
 
-	(void)flags;
+	/*
+	 * Start downloads the effect first unless the caller says not to,
+	 * which is the whole purpose of DIES_NODOWNLOAD. Skipping it meant
+	 * that anything releasing the daemon's slots, an Unacquire or a
+	 * SendForceFeedbackCommand(DISFFC_RESET), left the game's effect
+	 * objects pointing at slots that no longer existed. Every later
+	 * Start then failed and the game had no way to know why.
+	 */
+	if (!(flags & DIES_NODOWNLOAD) && upload(e) != 0)
+		return DIERR_INPUTLOST;
 
 	start[0] = (uint8_t)e->slot;
 	start[1] = iterations >= 255 ? 255 : (uint8_t)iterations;
@@ -360,8 +369,17 @@ eff_Stop(IDirectInputEffect *self)
 	struct effect_obj *e = from_iface(self);
 	uint8_t slot = (uint8_t)e->slot;
 
-	if (t150_client_call(T150_OP_EFFECT_STOP, &slot, 1) != 0)
-		return DIERR_INPUTLOST;
+	if (t150_client_call(T150_OP_EFFECT_STOP, &slot, 1) != 0) {
+		/*
+		 * The slot may simply not be downloaded, which is what the
+		 * daemon says when a reset cleared it. DIERR_NOTDOWNLOADED
+		 * describes that; DIERR_INPUTLOST claims the device went
+		 * away and sends the game into a reacquire loop it cannot
+		 * win. Either way the effect is not running.
+		 */
+		e->playing = 0;
+		return DIERR_NOTDOWNLOADED;
+	}
 	e->playing = 0;
 
 	return DI_OK;
