@@ -1,0 +1,82 @@
+.Dd August 4, 2026
+.Dt T150CTL 1
+.Os
+.Sh NAME
+.Nm t150ctl
+.Nd set a Thrustmaster T150's range, gain and autocenter
+.Sh SYNOPSIS
+.Nm
+.Op Fl v Ar vid
+.Op Fl p Ar pid
+.Cm range Ar degrees |
+.Cm gain Ar n |
+.Cm autocenter Ar n |
+.Cm status
+.Sh DESCRIPTION
+.Nm
+changes the settings the wheel keeps for itself: how far it turns lock to
+lock, how hard it pushes overall, and how strongly it centres.
+.Pp
+It needs no privilege and it does not take the wheel away from anything else.
+The device is opened without
+.Dv kIOHIDOptionsTypeSeizeDevice ,
+so a game running in a bottle keeps reading the wheel while this runs.
+.Pp
+The wheel stores these itself and keeps them until it is unplugged, so there
+is nothing to leave running and no daemon involved. It does not read them
+back either: the wheel publishes no report that carries them, so
+.Cm status
+describes the device rather than its settings.
+.Pp
+The wheel must be in firmware mode. If it is still at the boot product id,
+run
+.Xr t150boot 8
+first.
+.Bl -tag -width Ds
+.It Fl v Ar vid
+Vendor id. The default is 0x044f.
+.It Fl p Ar pid
+Product id. The default is 0xb677, the T150 in firmware mode.
+.El
+.Sh COMMANDS
+.Bl -tag -width Ds
+.It Cm range Ar degrees
+Lock to lock, 270 to 1080. The firmware clamps anything smaller.
+.It Cm gain Ar n
+Overall force, 0 to 10000. This scales every effect the wheel renders. It has
+nothing to scale unless something is driving force feedback, so on an idle
+wheel it does nothing you can feel.
+.It Cm autocenter Ar n
+Centring spring, 0 to 10000, where 0 releases the wheel.
+.Pp
+It is a progressive spring rather than a constant pull: the restoring torque
+grows with displacement, so at low settings the wheel stiffens without
+returning, and only from further out does it move back, in stages. Do not
+expect a low setting to recentre it.
+.It Cm status
+What the wheel is, which mode it is in, and what its report descriptor
+declares.
+.El
+.Sh EXIT STATUS
+.Ex -std
+It fails if no wheel matches, if the wheel cannot be opened, or if the wheel
+refuses a packet.
+.Sh EXAMPLES
+Three quarters of a turn lock to lock, which is where most rally cars sit:
+.Pp
+.Dl $ t150ctl range 270
+.Pp
+Let go of the wheel completely:
+.Pp
+.Dl $ t150ctl autocenter 0
+.Sh SEE ALSO
+.Xr t150boot 8 ,
+.Xr t150d 8 ,
+.Xr crossover-wheel 7
+.Sh CAVEATS
+A zero autocenter is the only thing that releases the wheel. The protocol has
+a separate enable flag, and clearing it releases nothing at all, because the
+autocenter is active whenever no application has the wheel's input open and
+nothing on macOS opens one. This tool sends both, force first.
+.Sh AUTHORS
+.An Renaud Allard

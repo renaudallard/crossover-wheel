@@ -111,10 +111,10 @@ Implemented and working:
   See section 7's M4 for what is and is not checked.
 - `Makefile`, CI, `README.md`, man pages, docs.
 
-Not started: `t150boot`, `t150ctl`. The daemon's macOS HID backend is written
-and compiles on macOS, though nothing has driven a wheel through it. Until the
-backend exists `t150d` logs its packets instead of sending them, and says so
-at startup.
+Written but never run against a wheel: the daemon's macOS HID backend,
+`t150ctl` and `t150boot`. All three compile on macOS and none has touched
+hardware. `t150d -n` still logs its packets rather than sending them, which
+is what every test drives and the only behaviour off macOS.
 
 The probe tools compile clean on `macos-latest` with `-Werror` against the
 real CoreFoundation and IOKit headers, and they have now been run against a
@@ -238,13 +238,25 @@ forgets. `src/probe/common.c` was left where it is rather than promoted: the
 probes enumerate, read and drop, while the daemon has to hold a device across
 a replug, so sharing the code would have meant sharing the wrong lifecycle.
 
-What is left of this milestone is `t150ctl`, and `t150boot` if the mode
-switch is wanted without root. For `t150boot`, lift `model_query()` and
-`mode_switch()` from `probe_ep0.c` as they stand, and never claim a USB
-interface: an endpoint 0 device request needs no claim, and claiming one on a
-HID-owned interface is both refused and currently reported to panic macOS 26.
-Ship it as a user LaunchAgent matching the boot product id so it fires on
-every plug-in, because sleep, wake and replug all drop the wheel back.
+**`t150ctl` and `t150boot` are written too**, in `src/tools/`. Both take the
+unprivileged path and share the probes' enumeration, which fits because they
+have the probes' lifecycle: find the wheel, do one thing, let go.
+
+`t150boot` does the two endpoint 0 transfers and nothing else. It does not
+send the five interrupt OUT initialisation packets, because those need the
+device captured and therefore root, and because whether they matter is
+unsettled: they were adopted to explain a wheel that came back apparently
+blocked, and that turned out to be the autocenter. `probe_intr -I` remains
+the tool for them.
+
+Neither claims a USB interface, deliberately: an endpoint 0 device request
+needs no claim, and claiming one on a HID-owned interface is both refused and
+currently reported to panic macOS 26.
+
+What is left is packaging. `t150boot` should ship as a user LaunchAgent
+matching the boot product id so it fires on every plug-in, because sleep,
+wake and replug all drop the wheel back, and `t150d` as another so a game
+never has to be told to start it.
 *Done when:* on the Mac, `t150ctl range 270` visibly shortens lock to lock
 and `t150ctl autocenter 0` releases the spring, with no password prompt,
 while CrossOver still reads the wheel.

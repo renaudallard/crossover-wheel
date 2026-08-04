@@ -23,29 +23,35 @@
 #define PROBE_SRC_DIR "src/probe"
 #endif
 
+#ifndef TOOL_SRC_DIR
+#define TOOL_SRC_DIR "src/tools"
+#endif
+
 #define MAX_SRC		(256 * 1024)
 
-static const char *const probes[] = {
-	"probe_hid", "probe_setreport", "probe_ep0", "probe_intr"
+/*
+ * Every macOS-only program, not just the probes. t150ctl and t150boot ship to
+ * users and cannot run here either, so the same trap applies to them.
+ */
+static const char *const sources[] = {
+	PROBE_SRC_DIR "/probe_hid.c",
+	PROBE_SRC_DIR "/probe_setreport.c",
+	PROBE_SRC_DIR "/probe_ep0.c",
+	PROBE_SRC_DIR "/probe_intr.c",
+	TOOL_SRC_DIR "/t150ctl.c",
+	TOOL_SRC_DIR "/t150boot.c"
 };
 
 static int failures;
 
 static char *
-slurp(const char *name, char *buf, size_t buflen)
+slurp(const char *path, char *buf, size_t buflen)
 {
-	char path[512];
 	size_t n;
 	FILE *f;
 
-	if ((size_t)snprintf(path, sizeof(path), "%s/%s.c", PROBE_SRC_DIR,
-	    name) >= sizeof(path)) {
-		fprintf(stderr, "FAIL %s: path too long\n", name);
-		failures++;
-		return NULL;
-	}
 	if ((f = fopen(path, "r")) == NULL) {
-		fprintf(stderr, "FAIL %s: cannot open %s\n", name, path);
+		fprintf(stderr, "FAIL: cannot open %s\n", path);
 		failures++;
 		return NULL;
 	}
@@ -176,8 +182,8 @@ main(void)
 {
 	size_t i;
 
-	for (i = 0; i < sizeof(probes) / sizeof(probes[0]); i++)
-		check(probes[i]);
+	for (i = 0; i < sizeof(sources) / sizeof(sources[0]); i++)
+		check(sources[i]);
 
 	if (failures != 0) {
 		fprintf(stderr, "usage_check: %d failure(s)\n", failures);

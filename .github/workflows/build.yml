@@ -68,6 +68,14 @@ jobs:
           ./build/bin/probe_setreport -h || test $? -eq 2
           ./build/bin/probe_ep0 -h || test $? -eq 2
           ./build/bin/probe_intr -h || test $? -eq 2
+      - name: confirm the tools run
+        # No wheel on a runner, so t150ctl can only be checked as far as
+        # "no wheel at 044f:b677", and t150boot is expected to find nothing
+        # at the boot id and exit 0, which is the state it must tolerate.
+        run: |
+          ./build/bin/t150ctl -h || test $? -eq 2
+          ./build/bin/t150ctl status || test $? -eq 1
+          ./build/bin/t150boot
       - name: confirm the daemon starts on its real backend
         # No wheel on a runner, so this proves only that the HID backend
         # initialises, walks the registry, finds nothing and keeps going
@@ -92,5 +100,8 @@ jobs:
             build/bin/probe_hid
             build/bin/probe_setreport
             build/bin/probe_ep0
+            build/bin/probe_intr
+            build/bin/t150ctl
+            build/bin/t150boot
             build/bin/t150d
           if-no-files-found: error

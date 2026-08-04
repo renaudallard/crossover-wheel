@@ -37,6 +37,13 @@ PROBE_NAMES  = probe_hid probe_setreport probe_ep0 probe_intr
 PROBE_BINS   = $(addprefix $(BIN)/,$(PROBE_NAMES))
 PROBE_COMMON = $(OBJ)/common.o
 
+# The shipped command line tools. macOS only, like the probes, and they share
+# the probes' enumeration because they have the same lifecycle: find the
+# wheel, do one thing, let go. The daemon does not, which is why it has its
+# own.
+TOOL_NAMES = t150ctl t150boot
+TOOL_BINS  = $(addprefix $(BIN)/,$(TOOL_NAMES))
+
 # The portable half: no I/O, no platform calls, tested everywhere.
 LIB_NAMES = encode proto
 LIB_OBJS  = $(addprefix $(LIBOBJ)/,$(addsuffix .o,$(LIB_NAMES)))
@@ -72,7 +79,7 @@ DLL_CPPFLAGS = -Iinclude -Isrc/dll
 DLL_CFLAGS   = -O2 -std=c11 $(WARNINGS)
 DLL_LIBS     = -ldxguid -luuid -lole32 -lws2_32
 
-.PHONY: all probes daemon dll test check strict clean help
+.PHONY: all probes tools daemon dll test check strict clean help
 
 ifeq ($(HAVE_DLL_CC),yes)
 DLL_TARGET = dll
@@ -81,18 +88,20 @@ DLL_TARGET =
 endif
 
 ifeq ($(UNAME_S),Darwin)
-all: probes daemon $(DLL_TARGET) test
+all: probes tools daemon $(DLL_TARGET) test
 else
 all: daemon $(DLL_TARGET) test
 	@echo
-	@echo "Note: the probe tools are macOS only and were not built here."
+	@echo "Note: the probes and the t150ctl/t150boot tools are macOS only"
+	@echo "      and were not built here."
 	@echo "      Everything portable was built and tested."
 endif
 
 help:
 	@echo "targets:"
 	@echo "  all      build what this platform can build, then run tests"
-	@echo "  probes   build the three Phase 0 probe tools (macOS only)"
+	@echo "  probes   build the four Phase 0 probe tools (macOS only)"
+	@echo "  tools    build t150ctl and t150boot (macOS only)"
 	@echo "  daemon   build t150d"
 	@echo "  dll      cross build the in-bottle proxy (needs mingw-w64)"
 	@echo "  test     build and run the portable tests"
@@ -118,9 +127,16 @@ $(DLL_CHECK_BIN): tests/dll_check.c $(DLL_SRCS) src/dll/proxy.h | $(BIN)
 	    src/dll/device.c src/dll/effect.c src/dll/client.c \
 	    src/lib/proto.c -static-libgcc $(DLL_LIBS)
 
+# Guarded by the prerequisites, not by the recipe. A recipe cannot stop make
+# building what it was told the target depends on, so the old form still
+# reached the compiler and died on a missing IOKit header before its own
+# message could explain why.
+ifeq ($(UNAME_S),Darwin)
 probes: $(PROBE_BINS)
-ifneq ($(UNAME_S),Darwin)
-	@echo "probes: macOS only, nothing to do on $(UNAME_S)" >&2
+tools: $(TOOL_BINS)
+else
+probes tools:
+	@echo "$@: macOS only, nothing to do on $(UNAME_S)" >&2
 	@false
 endif
 
@@ -138,6 +154,13 @@ $(DAEMONOBJ)/%.o: src/t150d/%.c | $(DAEMONOBJ)
 
 # probe_intr builds its packets with the shared encoders, so the probes link
 # the portable library too.
+$(OBJ)/%.o: src/tools/%.c | $(OBJ)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
+
+$(BIN)/t150ctl $(BIN)/t150boot: $(BIN)/%: $(OBJ)/%.o $(PROBE_COMMON) \
+    $(LIB_OBJS) | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(FRAMEWORKS)
+
 $(BIN)/probe_%: $(OBJ)/probe_%.o $(PROBE_COMMON) $(LIB_OBJS) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(FRAMEWORKS)
 
@@ -157,7 +180,8 @@ $(BIN)/socket_check: tests/socket_check.c $(LIB_OBJS) | $(BIN) $(DAEMON_BIN)
 # usage_check reads the probe sources rather than linking them, because the
 # probes themselves only build on macOS. It needs to know where they are.
 $(BIN)/usage_check: tests/usage_check.c | $(BIN)
-	$(CC) $(CPPFLAGS) -DPROBE_SRC_DIR='"$(CURDIR)/src/probe"' $(CFLAGS) \
+	$(CC) $(CPPFLAGS) -DPROBE_SRC_DIR='"$(CURDIR)/src/probe"' \
+	    -DTOOL_SRC_DIR='"$(CURDIR)/src/tools"' $(CFLAGS) \
 	    -o $@ tests/usage_check.c $(LDFLAGS)
 
 $(BIN)/%_check: tests/%_check.c $(LIB_OBJS) | $(BIN)

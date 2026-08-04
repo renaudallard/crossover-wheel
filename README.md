@@ -103,7 +103,7 @@ in-bottle bus driver was considered and rejected.
 | `t150d` macOS HID backend | written, compiles on macOS, never yet driven a wheel |
 | `t150-dinput8.dll` the in-bottle proxy | written, cross builds, never yet run |
 | build, CI, docs, man pages | working |
-| `t150boot`, `t150ctl` | not started |
+| `t150ctl`, `t150boot` | written, macOS only, never yet run against a wheel |
 
 The encoders turn a normalized effect into the wheel's packets and are the
 only code that knows both DirectInput units and wheel units. They do no I/O,
@@ -227,7 +227,7 @@ built by CI from the tagged commit. Two archives:
 
 | Archive | Contains |
 | --- | --- |
-| `crossover-wheel-<v>-macos-arm64.tar.gz` | `probe_hid`, `probe_setreport`, `probe_ep0`, `t150d` |
+| `crossover-wheel-<v>-macos-arm64.tar.gz` | `t150ctl`, `t150boot`, `t150d`, and the four `probe_*` tools |
 | `crossover-wheel-<v>-windows-x86_64.zip` | `t150-dinput8.dll`, the in-bottle proxy |
 
 Apple Silicon only, and there is no Intel build. Verify what you downloaded
@@ -292,6 +292,38 @@ Development happens on Linux; the Mac is only needed to run the probes and
 the daemon. Because the probe sources cannot be compiled on Linux, CI builds
 them on `macos-latest` on every push and attaches them as an artifact, so a
 Mac is not needed to get a binary either.
+
+## Setting the wheel up
+
+Two small tools, both macOS only and neither needing root.
+
+**`t150boot`** takes the wheel out of boot mode, which is where it starts and
+where sleep, wake and every replug put it back. Nothing else works until it
+has run:
+
+```sh
+./build/bin/t150boot
+attachment 0x06, model 0x03  T150
+switched, the wheel is re-enumerating at 0xb677
+```
+
+It exits 0 when there is nothing at the boot id too, because that is the
+ordinary state once a wheel has been switched, so it is safe to run on every
+plug-in from a LaunchAgent.
+
+**`t150ctl`** sets what the wheel keeps for itself, and does not take it away
+from a running game:
+
+```sh
+./build/bin/t150ctl range 270          # three quarters of a turn lock to lock
+./build/bin/t150ctl autocenter 0       # let go of the wheel completely
+./build/bin/t150ctl status
+```
+
+Autocenter is a progressive spring rather than a constant pull, so a low
+setting stiffens the wheel without recentring it. Only `autocenter 0` releases
+it; see [`t150ctl(1)`](man/t150ctl.1) for why the protocol's separate enable
+flag releases nothing.
 
 ## Running the daemon
 

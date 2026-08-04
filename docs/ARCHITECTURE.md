@@ -124,9 +124,9 @@ by sleeping, and it keeps the part that has to be right small enough to read.
 Implemented: the three probe tools, the shared headers, the encoders, the
 protocol codec, the daemon's logic, the proxy, the build and CI.
 
-Not implemented: `t150boot`, `t150ctl`. The daemon's macOS HID backend is
-written and compiles against the real frameworks, but no game has reached a
-wheel through it. Until
+Written and compiling against the real frameworks, but never run against a
+wheel: the daemon's macOS HID backend, `t150ctl` and `t150boot`. No game has
+reached a wheel through any of it. Until
 the backend exists the daemon writes its packets to a log, which is enough to
 drive the whole stack from a test without a Mac.
 

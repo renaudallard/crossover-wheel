@@ -1,0 +1,79 @@
+.Dd August 4, 2026
+.Dt T150BOOT 8
+.Os
+.Sh NAME
+.Nm t150boot
+.Nd take a Thrustmaster wheel out of boot mode
+.Sh SYNOPSIS
+.Nm
+.Op Fl nq
+.Op Fl v Ar vid
+.Op Fl p Ar pid
+.Op Fl V Ar value
+.Sh DESCRIPTION
+Every T-series wheel enumerates at the shared boot product id
+.Li 044f:b65d
+and only reveals its own identity, and its own protocol, after a pair of
+vendor control transfers on endpoint 0.
+.Nm
+issues them. Nothing else in this project works until it has.
+.Pp
+Sleep, wake and a replug all put the wheel back into boot mode, so this is
+meant to run on every plug-in rather than once. It needs no privilege, so it
+can be a user LaunchAgent that never asks for a password.
+.Pp
+It never claims a USB interface. An endpoint 0 device request does not need
+one, claiming the interface macOS's HID driver already owns would be refused,
+and
+.Fn libusb_claim_interface
+is currently reported to panic macOS 26.3 on Apple silicon.
+.Bl -tag -width Ds
+.It Fl n
+Query the model and stop. Switches nothing.
+.It Fl q
+Say nothing unless something goes wrong, which is what a LaunchAgent wants.
+.It Fl v Ar vid
+Vendor id. The default is 0x044f.
+.It Fl p Ar pid
+The boot product id to look for. The default is 0xb65d.
+.It Fl V Ar value
+The switch value, which selects the model. The default is 0x0006, the T150
+row of the kernel driver's table. Another wheel needs its own.
+.El
+.Sh EXIT STATUS
+Exits 0 when the wheel was switched, and also when no wheel was found at the
+boot id, because that is the ordinary state once one has been switched and a
+tool that runs on every plug-in must not treat it as a failure. Exits 1 when
+a wheel was found and could not be switched, and 2 on a usage error.
+.Sh EXAMPLES
+.Dl $ t150boot
+.Dl attachment 0x06, model 0x03  T150
+.Dl switched, the wheel is re-enumerating at 0xb677
+.Pp
+Check what a wheel is without touching it:
+.Pp
+.Dl $ t150boot -n
+.Sh SEE ALSO
+.Xr t150ctl 1 ,
+.Xr t150d 8 ,
+.Xr t150-probe 1
+.Sh CAVEATS
+The wheel leaves the bus the instant it accepts the switch, so the transfer
+usually cannot complete. A stall, a not-responding or a no-device from it is
+the normal outcome and is treated as success; only
+.Xr t150-probe 1 Ns 's
+.Nm probe_hid
+can say whether the wheel really came back.
+.Pp
+This does not send the five initialisation packets the Linux driver puts on
+the interrupt OUT pipe before the switch. Those need the device captured,
+which needs root, and
+.Nm probe_intr Fl I
+is the tool for it. Whether they matter is unsettled: they were adopted here
+to explain a wheel that came back apparently blocked, and that turned out to
+be the autocenter holding at full strength rather than anything about the
+switch. If a wheel misbehaves after this, try
+.Nm t150ctl autocenter 0
+before reaching for them.
+.Sh AUTHORS
+.An Renaud Allard
