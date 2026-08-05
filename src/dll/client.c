@@ -81,8 +81,8 @@ t150_log(const char *fmt, ...)
  * Where the daemon publishes its port and token.
  *
  * T150_ENDPOINT wins, because an installer knows exactly where it put
- * things. Failing that, guess the usual place: Wine maps the whole host
- * filesystem at Z:, and the daemon writes under the macOS home directory.
+ * things. The guesses below go through Z:, Wine's mapping of the whole host
+ * filesystem, to the daemon's place under a macOS home directory.
  */
 /*
  * What call_locked() distinguishes. A refusal is the daemon answering an
@@ -92,11 +92,28 @@ t150_log(const char *fmt, ...)
 #define CALL_FAILED	(-1)
 #define CALL_REFUSED	1
 
+/* Fill out with the endpoint under one macOS home; 0 only if it exists. */
+static int
+endpoint_under(const char *name, char *out, size_t outlen)
+{
+	if ((size_t)snprintf(out, outlen,
+	    "Z:\\Users\\%s\\Library\\Application Support\\t150ffb\\endpoint",
+	    name) >= outlen)
+		return -1;
+	if (GetFileAttributesA(out) == INVALID_FILE_ATTRIBUTES)
+		return -1;
+
+	return 0;
+}
+
 static int
 endpoint_path(char *out, size_t outlen)
 {
+	WIN32_FIND_DATAA fd;
+	HANDLE h;
 	char user[256];
 	DWORD n;
+	int found = -1;
 
 	/*
 	 * GetEnvironmentVariableA returns the size it needed, not the size it
@@ -107,14 +124,35 @@ endpoint_path(char *out, size_t outlen)
 	n = GetEnvironmentVariableA("T150_ENDPOINT", out, (DWORD)outlen);
 	if (n > 0 && n < outlen)
 		return 0;
-	if (GetEnvironmentVariableA("USERNAME", user, sizeof(user)) == 0)
-		return -1;
-	if ((size_t)snprintf(out, outlen,
-	    "Z:\\Users\\%s\\Library\\Application Support\\t150ffb\\endpoint",
-	    user) >= outlen)
-		return -1;
 
-	return 0;
+	/*
+	 * The USERNAME guess only holds outside CrossOver: a bottle's Windows
+	 * user is named "crossover" whoever owns the Mac, which test 17's log
+	 * proved by watching the proxy look in Z:\Users\crossover. So the
+	 * guess is checked against the filesystem, and when it misses, every
+	 * home under Z:\Users is tried, because the one running the daemon
+	 * has the endpoint file and the others have nothing.
+	 */
+	if (GetEnvironmentVariableA("USERNAME", user, sizeof(user)) > 0 &&
+	    endpoint_under(user, out, outlen) == 0)
+		return 0;
+
+	if ((h = FindFirstFileA("Z:\\Users\\*", &fd)) == INVALID_HANDLE_VALUE)
+		return -1;
+	do {
+		if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+			continue;
+		if (strcmp(fd.cFileName, ".") == 0 ||
+		    strcmp(fd.cFileName, "..") == 0)
+			continue;
+		if (endpoint_under(fd.cFileName, out, outlen) == 0) {
+			found = 0;
+			break;
+		}
+	} while (FindNextFileA(h, &fd));
+	FindClose(h);
+
+	return found;
 }
 
 static int
@@ -124,8 +162,11 @@ read_endpoint(unsigned short *port, char *token, size_t tokenlen)
 	unsigned long p;
 	FILE *fp;
 
-	if (endpoint_path(path, sizeof(path)) != 0)
+	if (endpoint_path(path, sizeof(path)) != 0) {
+		t150_log("no endpoint under Z:\\Users, is t150d running? "
+		    "staying out of the way\n");
 		return -1;
+	}
 	if ((fp = fopen(path, "r")) == NULL) {
 		t150_log("no endpoint at %s, staying out of the way\n", path);
 		return -1;

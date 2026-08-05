@@ -412,9 +412,14 @@ touching the registry. Exporting `WINEDLLOVERRIDES` does nothing: CrossOver's
 wine wrapper deletes it from the environment and honours only `--dll`.
 
 **The proxy's environment.** `T150_DEBUG=1` makes it say what it is doing
-on stderr, and `T150_ENDPOINT` points it at the daemon's endpoint file,
-whose default guess is
-`Z:\Users\<you>\Library\Application Support\t150ffb\endpoint`.
+on stderr, and `T150_ENDPOINT` points it at the daemon's endpoint file.
+Unset, the proxy finds the file itself: it tries
+`Z:\Users\<USERNAME>\Library\Application Support\t150ffb\endpoint` and then
+every home under `Z:\Users`, because a CrossOver bottle's Windows user is
+named `crossover` whoever owns the Mac, which is exactly how test 17's
+proxy missed a running daemon (A36). A proxy from release 0.1.3 or older
+only makes the first guess, so with one of those, set `T150_ENDPOINT`
+explicitly.
 
 Stderr goes nowhere when Steam relaunches the game, which test 16 showed is
 where the interesting lines vanish. `T150_LOG` names a file the proxy
