@@ -4,11 +4,14 @@
  * Only the wheel gets wrapped, and only its force feedback surface is
  * touched, with one measured exception: the pedals. The T150's descriptor
  * labels them backwards, Y is the brake and Rz the accelerator, where every
- * game and preset is built for the common convention of Y gas, Rz brake, so
- * a stock game brakes on the accelerator and finds the throttle held at
- * rest. On Windows the vendor driver relabels; here the wrap swaps the two
- * values in the state a game reads. T150_PEDALS=raw turns it off. Everything
- * else is forwarded straight through. RESEARCH.md A37 is the measurement.
+ * game and preset is built for the common convention of Y gas, Rz brake,
+ * and its firmware rests a released pedal at logical max, so a stock game
+ * brakes on the accelerator and drives itself on a throttle it reads as
+ * held open. On Windows the vendor driver corrects both; here the wrap
+ * swaps the two values and mirrors them inside the game's own axis range,
+ * so a released pedal reads zero. T150_PEDALS takes "raw", "swap" or
+ * "invert" to get less than both. Everything else is forwarded straight
+ * through. RESEARCH.md A37 and A38 are the measurements.
  *
  * Copyright (c) 2026 Renaud Allard
  * SPDX-License-Identifier: BSD-2-Clause
@@ -59,6 +62,27 @@ from_iface(IDirectInputDevice8W *p)
 }
 
 #define INNER(self) (from_iface(self)->inner)
+
+/*
+ * The pedal transforms apply only to the two stock joystick formats,
+ * recognised by their state sizes, where Y and Rz live at fixed offsets. A
+ * game that built its own format gets its data untouched, because offsets
+ * there mean whatever the game said they mean. Both stock structs start with
+ * the same axis block, so the offsets are one pair.
+ *
+ * The swap corrects the descriptor's backwards labels, brake on Y and
+ * accelerator on Rz where games expect the opposite. The inversion corrects
+ * the rest position: the firmware reports a released pedal at logical max,
+ * so a game reads the throttle as held open and the car drives itself,
+ * which test 20's video shows happening. Together they present the pedals
+ * the way the vendor driver does on Windows.
+ */
+#define STATE_DIJOYSTATE	80u
+#define STATE_DIJOYSTATE2	272u
+#define OFS_Y			4u
+#define OFS_RZ			20u
+#define PEDAL_Y			0
+#define PEDAL_RZ		1
 
 /*
  * The effects we offer. Everything the daemon can render or downgrade is
@@ -246,6 +270,33 @@ dev_SetProperty(IDirectInputDevice8W *self, REFGUID prop, LPCDIPROPHEADER hdr)
 		}
 	}
 
+	/*
+	 * The pedal inversion mirrors values inside the range the game set,
+	 * so remember it. Device-wide sets cover both pedals; a per-offset
+	 * set names one, and its offsets are only meaningful under the stock
+	 * formats, which is the only time the transform runs anyway.
+	 */
+	if (prop == DIPROP_RANGE && hdr != NULL &&
+	    hdr->dwSize >= sizeof(DIPROPRANGE)) {
+		const DIPROPRANGE *r = (const DIPROPRANGE *)hdr;
+		struct t150_device *dd = from_iface(self);
+
+		if (hdr->dwHow == DIPH_DEVICE) {
+			dd->range_min[PEDAL_Y] = r->lMin;
+			dd->range_max[PEDAL_Y] = r->lMax;
+			dd->range_min[PEDAL_RZ] = r->lMin;
+			dd->range_max[PEDAL_RZ] = r->lMax;
+		} else if (hdr->dwHow == DIPH_BYOFFSET &&
+		    hdr->dwObj == OFS_Y) {
+			dd->range_min[PEDAL_Y] = r->lMin;
+			dd->range_max[PEDAL_Y] = r->lMax;
+		} else if (hdr->dwHow == DIPH_BYOFFSET &&
+		    hdr->dwObj == OFS_RZ) {
+			dd->range_min[PEDAL_RZ] = r->lMin;
+			dd->range_max[PEDAL_RZ] = r->lMax;
+		}
+	}
+
 	return IDirectInputDevice8_SetProperty(INNER(self), prop, hdr);
 }
 
@@ -268,23 +319,18 @@ dev_Unacquire(IDirectInputDevice8W *self)
 	return IDirectInputDevice8_Unacquire(INNER(self));
 }
 
-/*
- * The pedal swap applies only to the two stock joystick formats, recognised
- * by their state sizes, where Y and Rz live at fixed offsets. A game that
- * built its own format gets its data untouched, because offsets there mean
- * whatever the game said they mean. Both stock structs start with the same
- * axis block, so the offsets are one pair.
- */
-#define STATE_DIJOYSTATE	80u
-#define STATE_DIJOYSTATE2	272u
-#define OFS_Y			4u
-#define OFS_RZ			20u
-
 static int
-swap_applies(const struct t150_device *d, DWORD len)
+pedals_apply(const struct t150_device *d, DWORD len)
 {
-	return d->pedal_swap && len == d->df_size &&
+	return (d->pedal_swap || d->pedal_invert) && len == d->df_size &&
 	    (len == STATE_DIJOYSTATE || len == STATE_DIJOYSTATE2);
+}
+
+/* Mirror a value inside the range the game configured for that axis. */
+static LONG
+pedal_flip(const struct t150_device *d, int axis, LONG v)
+{
+	return d->range_min[axis] + d->range_max[axis] - v;
 }
 
 static HRESULT WINAPI
@@ -294,13 +340,20 @@ dev_GetDeviceState(IDirectInputDevice8W *self, DWORD len, LPVOID data)
 	HRESULT hr;
 
 	hr = IDirectInputDevice8_GetDeviceState(d->inner, len, data);
-	if (hr == DI_OK && swap_applies(d, len)) {
+	if (hr == DI_OK && pedals_apply(d, len)) {
 		LONG *y = (LONG *)((char *)data + OFS_Y);
 		LONG *rz = (LONG *)((char *)data + OFS_RZ);
-		LONG tmp = *y;
 
-		*y = *rz;
-		*rz = tmp;
+		if (d->pedal_swap) {
+			LONG tmp = *y;
+
+			*y = *rz;
+			*rz = tmp;
+		}
+		if (d->pedal_invert) {
+			*y = pedal_flip(d, PEDAL_Y, *y);
+			*rz = pedal_flip(d, PEDAL_RZ, *rz);
+		}
 	}
 
 	return hr;
@@ -321,16 +374,30 @@ dev_GetDeviceData(IDirectInputDevice8W *self, DWORD len,
 
 	/*
 	 * Buffered events carry the offset the value belongs to, so the swap
-	 * here is a relabel: a change on Y is reported as a change on Rz and
-	 * the other way round, matching what GetDeviceState now returns.
+	 * here is a relabel, a change on Y reported as a change on Rz and the
+	 * other way round, and the inversion mirrors the value inside the
+	 * destination axis's range, matching what GetDeviceState returns.
 	 */
 	if (data != NULL && inout != NULL &&
-	    swap_applies(d, d->df_size)) {
+	    pedals_apply(d, d->df_size)) {
 		for (i = 0; i < *inout; i++) {
+			int axis;
+
 			if (data[i].dwOfs == OFS_Y)
-				data[i].dwOfs = OFS_RZ;
+				axis = PEDAL_Y;
 			else if (data[i].dwOfs == OFS_RZ)
-				data[i].dwOfs = OFS_Y;
+				axis = PEDAL_RZ;
+			else
+				continue;
+
+			if (d->pedal_swap) {
+				axis = axis == PEDAL_Y ? PEDAL_RZ : PEDAL_Y;
+				data[i].dwOfs = axis == PEDAL_Y ? OFS_Y :
+				    OFS_RZ;
+			}
+			if (d->pedal_invert)
+				data[i].dwData = (DWORD)pedal_flip(d, axis,
+				    (LONG)data[i].dwData);
 		}
 	}
 
@@ -631,18 +698,40 @@ t150_device_wrap(IDirectInputDevice8W *inner, int wide, void **out)
 	d->autocenter = DIPROPAUTOCENTER_ON;
 
 	/*
-	 * The pedal swap is on unless asked off: the raw labels are the
-	 * measured mistake, so raw is the opt-out rather than the default.
+	 * Both pedal corrections are on unless asked off: the raw labels and
+	 * the rest-at-max are the measured mistakes, so raw is the opt-out
+	 * rather than the default. T150_PEDALS takes "raw" for neither, and
+	 * "swap" or "invert" for just one, which exists for diagnosis.
 	 */
 	{
 		char v[8];
 		DWORD n = GetEnvironmentVariableA("T150_PEDALS", v, sizeof(v));
 
-		d->pedal_swap = !(n > 0 && n < sizeof(v) &&
-		    strcmp(v, "raw") == 0);
+		d->pedal_swap = 1;
+		d->pedal_invert = 1;
+		if (n > 0 && n < sizeof(v)) {
+			if (strcmp(v, "raw") == 0)
+				d->pedal_swap = d->pedal_invert = 0;
+			else if (strcmp(v, "swap") == 0)
+				d->pedal_invert = 0;
+			else if (strcmp(v, "invert") == 0)
+				d->pedal_swap = 0;
+		}
 	}
-	if (!d->pedal_swap)
-		t150_log("pedal swap off, the wheel's raw labels apply\n");
+
+	/* Until the game sets its own, DirectInput's default axis range. */
+	d->range_min[PEDAL_Y] = 0;
+	d->range_max[PEDAL_Y] = 65535;
+	d->range_min[PEDAL_RZ] = 0;
+	d->range_max[PEDAL_RZ] = 65535;
+
+	/*
+	 * One line that says which build is in the bottle and what it is
+	 * doing to the pedals, because test 20 was spent unable to tell two
+	 * proxy versions apart from their logs.
+	 */
+	t150_log("proxy %s, pedal swap %s, invert %s\n", T150_PROXY_VERSION,
+	    d->pedal_swap ? "on" : "off", d->pedal_invert ? "on" : "off");
 
 	*out = d;
 

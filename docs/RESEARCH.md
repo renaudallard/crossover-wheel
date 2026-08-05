@@ -1014,6 +1014,40 @@ one: both paddles, the PS-layout face buttons, Share and Options, R2, L2,
 L3, R3, PS, and the hat "good". A21's loss, open since the first session,
 was an SDL-path casualty; the wheel's own descriptor carries all thirteen
 into the bottle correctly.
+
+**A38. The join carried live force feedback, and the pedals need the
+direction fix too.** Test 20, with the 0.1.5 proxy confirmed in the
+bottle.
+
+- **The proxy connected to the daemon and wrapped the wheel in Assetto
+  Corsa**, three times across two daemon instances, the last on the live
+  daemon's port, and the tester's screen recording shows the game's own
+  force feedback meter alive and swinging between roughly 5 and 65
+  percent while driving. The game generated effects into a wrapped,
+  daemon-connected wheel. Whether the wheel pushed back in the tester's
+  hands went unrecorded, which is the one question left.
+- **The pedal symptoms decode as the swap working against a stale game
+  config.** Assetto Corsa's `controls.ini` still carried the pre-swap
+  assignment, throttle on the Rz object and brake on the Y object, so the
+  swap re-crossed them: the game's throttle read the physical brake,
+  resting at max, "release and it accelerates", and the physical
+  accelerator fed the game's brake, "press it and the car stops". The
+  recording's pedal bars agree, the brake bar never lighting and the
+  throttle bar full at rest.
+- **Rest-at-max is a fault of its own.** With bindings refreshed the car
+  still drives itself, so the game does not rest-calibrate, and the
+  earlier read that direction was not the problem is withdrawn: the
+  perception changed with the config underneath it. The proxy now mirrors
+  the pedal values inside the game's own axis range, tracked from
+  `DIPROP_RANGE`, so a released pedal reads zero. `T150_PEDALS` accepts
+  `raw`, `swap` or `invert` for less than both corrections.
+- **Two proxy builds were indistinguishable in the log**, which cost this
+  test its interpretation until the tester confirmed the version by hand.
+  The proxy now logs `git describe` and its pedal settings at wrap time,
+  and CI fetches tags so release builds stamp a real version.
+
+After the DLL update, the game's pedals must be reassigned once, since
+every stored binding predates the corrected layout.
 is above the USB layer.** A18 is answered, and against the wheel.
 
 `probe_intr -R` read the interrupt IN pipe with the device captured. The mask

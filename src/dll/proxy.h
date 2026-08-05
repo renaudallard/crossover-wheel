@@ -14,6 +14,11 @@
 #ifndef T150_PROXY_H
 #define T150_PROXY_H
 
+/* The Makefile stamps this from git describe; a bare compile still builds. */
+#ifndef T150_PROXY_VERSION
+#define T150_PROXY_VERSION "unknown"
+#endif
+
 #define DIRECTINPUT_VERSION 0x0800
 
 /* COBJMACROS gets the IClassFactory_* call helpers; dinput.h has its own. */
@@ -62,7 +67,10 @@ struct t150_device {
 	DWORD			 gain;		/* last DIPROP_FFGAIN seen */
 	DWORD			 autocenter;	/* last DIPROP_AUTOCENTER seen */
 	int			 pedal_swap;	/* present Y as gas, Rz as brake */
+	int			 pedal_invert;	/* pedals rest at zero, not max */
 	DWORD			 df_size;	/* dwDataSize of the game's data format */
+	LONG			 range_min[2];	/* game-set axis range, Y then Rz */
+	LONG			 range_max[2];
 };
 
 HRESULT	t150_device_wrap(IDirectInputDevice8W *inner, int wide, void **out);

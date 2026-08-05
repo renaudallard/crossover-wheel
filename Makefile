@@ -75,7 +75,10 @@ DLL_BIN	   = $(BIN)/t150-dinput8.dll
 DLL_CHECK_BIN = $(BIN)/dll_check.exe
 DLL_SRCS   = src/dll/main.c src/dll/device.c src/dll/effect.c \
 	     src/dll/client.c src/lib/proto.c
-DLL_CPPFLAGS = -Iinclude -Isrc/dll
+# The proxy logs this at wrap time, so a log always says which build is in
+# the bottle. git describe is factual and needs no version decision.
+DLL_VERSION := $(shell git describe --tags --always 2>/dev/null || echo unknown)
+DLL_CPPFLAGS = -Iinclude -Isrc/dll -DT150_PROXY_VERSION=\"$(DLL_VERSION)\"
 DLL_CFLAGS   = -O2 -std=c11 $(WARNINGS)
 DLL_LIBS     = -ldxguid -luuid -lole32 -lws2_32
 

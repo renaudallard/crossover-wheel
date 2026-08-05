@@ -17,7 +17,12 @@ jobs:
     name: cross build the proxy
     runs-on: ubuntu-latest
     steps:
+      # The proxy stamps git describe into its wrap-time log line, and a
+      # shallow tagless checkout would stamp "unknown".
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - name: install the cross compiler
         run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
       - name: build the proxy and its test
