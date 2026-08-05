@@ -2,8 +2,13 @@
  * device.c - the wrapped IDirectInputDevice8.
  *
  * Only the wheel gets wrapped, and only its force feedback surface is
- * touched. Everything else is forwarded straight through, which is why axes,
- * pedals and buttons keep working exactly as they did without this DLL.
+ * touched, with one measured exception: the pedals. The T150's descriptor
+ * labels them backwards, Y is the brake and Rz the accelerator, where every
+ * game and preset is built for the common convention of Y gas, Rz brake, so
+ * a stock game brakes on the accelerator and finds the throttle held at
+ * rest. On Windows the vendor driver relabels; here the wrap swaps the two
+ * values in the state a game reads. T150_PEDALS=raw turns it off. Everything
+ * else is forwarded straight through. RESEARCH.md A37 is the measurement.
  *
  * Copyright (c) 2026 Renaud Allard
  * SPDX-License-Identifier: BSD-2-Clause
@@ -263,24 +268,92 @@ dev_Unacquire(IDirectInputDevice8W *self)
 	return IDirectInputDevice8_Unacquire(INNER(self));
 }
 
+/*
+ * The pedal swap applies only to the two stock joystick formats, recognised
+ * by their state sizes, where Y and Rz live at fixed offsets. A game that
+ * built its own format gets its data untouched, because offsets there mean
+ * whatever the game said they mean. Both stock structs start with the same
+ * axis block, so the offsets are one pair.
+ */
+#define STATE_DIJOYSTATE	80u
+#define STATE_DIJOYSTATE2	272u
+#define OFS_Y			4u
+#define OFS_RZ			20u
+
+static int
+swap_applies(const struct t150_device *d, DWORD len)
+{
+	return d->pedal_swap && len == d->df_size &&
+	    (len == STATE_DIJOYSTATE || len == STATE_DIJOYSTATE2);
+}
+
 static HRESULT WINAPI
 dev_GetDeviceState(IDirectInputDevice8W *self, DWORD len, LPVOID data)
 {
-	return IDirectInputDevice8_GetDeviceState(INNER(self), len, data);
+	struct t150_device *d = from_iface(self);
+	HRESULT hr;
+
+	hr = IDirectInputDevice8_GetDeviceState(d->inner, len, data);
+	if (hr == DI_OK && swap_applies(d, len)) {
+		LONG *y = (LONG *)((char *)data + OFS_Y);
+		LONG *rz = (LONG *)((char *)data + OFS_RZ);
+		LONG tmp = *y;
+
+		*y = *rz;
+		*rz = tmp;
+	}
+
+	return hr;
 }
 
 static HRESULT WINAPI
 dev_GetDeviceData(IDirectInputDevice8W *self, DWORD len,
     LPDIDEVICEOBJECTDATA data, LPDWORD inout, DWORD flags)
 {
-	return IDirectInputDevice8_GetDeviceData(INNER(self), len, data, inout,
+	struct t150_device *d = from_iface(self);
+	HRESULT hr;
+	DWORD i;
+
+	hr = IDirectInputDevice8_GetDeviceData(d->inner, len, data, inout,
 	    flags);
+	if (hr != DI_OK && hr != DI_BUFFEROVERFLOW)
+		return hr;
+
+	/*
+	 * Buffered events carry the offset the value belongs to, so the swap
+	 * here is a relabel: a change on Y is reported as a change on Rz and
+	 * the other way round, matching what GetDeviceState now returns.
+	 */
+	if (data != NULL && inout != NULL &&
+	    swap_applies(d, d->df_size)) {
+		for (i = 0; i < *inout; i++) {
+			if (data[i].dwOfs == OFS_Y)
+				data[i].dwOfs = OFS_RZ;
+			else if (data[i].dwOfs == OFS_RZ)
+				data[i].dwOfs = OFS_Y;
+		}
+	}
+
+	return hr;
 }
 
 static HRESULT WINAPI
 dev_SetDataFormat(IDirectInputDevice8W *self, LPCDIDATAFORMAT df)
 {
-	return IDirectInputDevice8_SetDataFormat(INNER(self), df);
+	struct t150_device *d = from_iface(self);
+	HRESULT hr;
+
+	hr = IDirectInputDevice8_SetDataFormat(d->inner, df);
+	if (hr == DI_OK && df != NULL) {
+		d->df_size = df->dwDataSize;
+		if (d->pedal_swap && df->dwDataSize != STATE_DIJOYSTATE &&
+		    df->dwDataSize != STATE_DIJOYSTATE2)
+			t150_log("custom data format (%lu bytes), pedals "
+			    "left as the wheel labels them\n",
+			    (unsigned long)df->dwDataSize);
+	}
+
+	return hr;
 }
 
 static HRESULT WINAPI
@@ -556,6 +629,21 @@ t150_device_wrap(IDirectInputDevice8W *inner, int wide, void **out)
 	d->wide = wide;
 	d->gain = T150_DI_MAX;
 	d->autocenter = DIPROPAUTOCENTER_ON;
+
+	/*
+	 * The pedal swap is on unless asked off: the raw labels are the
+	 * measured mistake, so raw is the opt-out rather than the default.
+	 */
+	{
+		char v[8];
+		DWORD n = GetEnvironmentVariableA("T150_PEDALS", v, sizeof(v));
+
+		d->pedal_swap = !(n > 0 && n < sizeof(v) &&
+		    strcmp(v, "raw") == 0);
+	}
+	if (!d->pedal_swap)
+		t150_log("pedal swap off, the wheel's raw labels apply\n");
+
 	*out = d;
 
 	return DI_OK;

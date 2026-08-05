@@ -61,6 +61,8 @@ struct t150_device {
 	uint16_t		 slots;		/* one bit per slot in use */
 	DWORD			 gain;		/* last DIPROP_FFGAIN seen */
 	DWORD			 autocenter;	/* last DIPROP_AUTOCENTER seen */
+	int			 pedal_swap;	/* present Y as gas, Rz as brake */
+	DWORD			 df_size;	/* dwDataSize of the game's data format */
 };
 
 HRESULT	t150_device_wrap(IDirectInputDevice8W *inner, int wide, void **out);

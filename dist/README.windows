@@ -21,6 +21,12 @@ lib/wine/x86_64-windows, never the dinput8.dll already in the bottle's
 system32, which is an empty placeholder. Set T150_DEBUG=1 in the bottle to
 make it say what it is doing on stderr, and T150_LOG to a file path to have
 every process append the same lines there, which is the only way to see it
-from a game Steam relaunched. The README in the repository has the exact
-commands as CrossOver 26 resolves them, and docs/PROBES.md question 8 is
-the test.
+from a game Steam relaunched.
+
+The proxy also corrects the T150's pedals: the wheel's own descriptor
+labels them backwards, brake on Y and accelerator on Rz, where games
+expect the opposite, so the proxy swaps the two values the way the vendor
+driver does on Windows. T150_PEDALS=raw restores the raw labels.
+
+The README in the repository has the exact commands as CrossOver 26
+resolves them, and docs/PROBES.md question 8 is the test.

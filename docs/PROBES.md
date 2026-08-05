@@ -429,12 +429,13 @@ centre can be trusted.
 
 ## Question 6: do the wheel's buttons reach the wire?
 
-**Answered, and against the wheel: it sends them.** In firmware mode
-CrossOver lists the wheel but registers none of its buttons, though the
-wheel's own report descriptor declares thirteen of them in report `0x07`,
-after four 16-bit axes and before the hat. This run showed all thirteen
-changing on the wire, so the loss is above the USB layer. RESEARCH.md A21.
-Rerun it to reproduce that, or against a different wheel.
+**Answered twice over.** The wheel sends all thirteen buttons, this run
+showed them changing on the wire (RESEARCH.md A21), and the loss above the
+USB layer is solved: on the hidraw route every button arrives in the
+bottle with its identity intact, paddles, face buttons and hat all named
+correctly by the tester (A37). Rerun this only against a different wheel,
+or to name which report field is which control, one control at a time,
+which is how test 19 unmasked the pedals.
 
 ```sh
 sudo ./build/bin/probe_intr -R 15

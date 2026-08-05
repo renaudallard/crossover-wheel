@@ -16,9 +16,12 @@ installed.** Its descriptor contains a Generic Desktop / Joystick application
 collection with a 16-bit X axis, 8-bit Y, Rz and slider, thirteen buttons and
 a hat, so the steering and pedals already reach games.
 
-**The buttons do not, and A21 shows the wheel is not to blame.** They are
-declared, they change on the interrupt IN pipe when pressed, and CrossOver
-registers none of them. Something between macOS HID and winebus drops them.
+**The buttons were lost for a long time and A21 showed the wheel was not
+to blame.** They are declared, they change on the interrupt IN pipe when
+pressed, and for many sessions CrossOver registered none of them. Solved:
+on the hidraw route with the B10 knob, all thirteen arrive in the bottle
+with their identities intact (A37). The remaining pedal mislabel is the
+descriptor's own and the proxy corrects it.
 
 > Decoded from `t150_driver/traffic/old_caps/hid_report_fw35`. Corroborated
 > for Logitech by CrossWheel's troubleshooting page: "macOS recognizes the
@@ -983,6 +986,34 @@ owns the input state.
 The end to end join is now blocked by nothing measured: the wheel is in
 the bottle, the proxy runs in the game and logs what it does, the daemon
 drives the wheel, and the one wrong path between them is fixed.
+
+**A37. The pedals are labelled backwards in the wheel's own descriptor,
+and the hidraw route delivers every button correctly.** Test 19, one
+pedal at a time under `probe_intr -R`, hands off the rim:
+
+- accelerator: report bytes 5 and 6, the second pedal field, usage
+  **Rz**, DirectInput axis 2
+- brake: report bytes 3 and 4, the first pedal field, usage **Y**,
+  DirectInput axis 1
+- hands off: "nothing ever changed"
+
+`joy.cpl` inside the bottle shows the same, axis 1 brake and axis 2
+accelerator, so the mapping survives to DirectInput unchanged. The common
+convention games and presets are built for, the G29 family and the
+corrected T300RS layout hid-tmff2 ships, is the opposite: **Y gas, Rz
+brake**. So a stock game brakes on the accelerator and reads the brake,
+resting at 1023, as a throttle held open, which is tests 16 and 17's
+"accelerates alone" and "accelerator is brake" in one mislabel. On
+Windows the vendor driver relabels the fields; in the bottle the proxy
+now does, swapping the Y and Rz values in the stock joystick data formats
+and relabelling buffered events to match. `T150_PEDALS=raw` turns it off,
+and a custom data format is left untouched with a log line saying so.
+
+**The buttons are whole.** On the hidraw route the tester named every
+one: both paddles, the PS-layout face buttons, Share and Options, R2, L2,
+L3, R3, PS, and the hat "good". A21's loss, open since the first session,
+was an SDL-path casualty; the wheel's own descriptor carries all thirteen
+into the bottle correctly.
 is above the USB layer.** A18 is answered, and against the wheel.
 
 `probe_intr -R` read the interrupt IN pipe with the device captured. The mask

@@ -56,10 +56,11 @@ CrossOver 26 bundles, 2.30.12, is the last release whose HIDAPI layer
 still claims every Thrustmaster device as a possible PlayStation pad and
 drops it. `SDL_JOYSTICK_HIDAPI=0` in the bottle's environment fixes it,
 confirmed on hardware in test 16, and belongs in `cxbottle.conf` so every
-launch gets it. The input arrives with rough edges, inverted pedals and
-phantom axes, still being pinned between the game's own configuration,
-Steam Input, and the SDL descriptor.
-[`docs/RESEARCH.md`](docs/RESEARCH.md) B10, B11 and A35.
+launch gets it. On the hidraw route the buttons arrive whole, all
+thirteen with their identities, and the one remaining input fault was
+measured to its cause: the T150's own descriptor labels the pedals
+backwards, which the proxy now corrects.
+[`docs/RESEARCH.md`](docs/RESEARCH.md) B10, B11, A35 and A37.
 
 **Does not work: force feedback, because the T150 brings no PID
 descriptor.** Wine's DirectInput sets `DIDC_FORCEFEEDBACK` only from a
@@ -168,11 +169,14 @@ and stay running, and test 17 missed it on one wrong path, the proxy
 guessing the daemon's home from a bottle username that is always
 `crossover` (A36), now fixed. Nothing measured blocks the join any more.
 
-**2. Clean up the input.** Pedals arrive inverted, which is the game's
-own axis setup, never yet run. The `Hidraw` route (B10) measured better
-than the SDL descriptor in test 17's A/B, no phantom acceleration and
-consistent steering, so keep it on. The durable fix to offer CodeWeavers
-is the allowlist line B12 describes.
+**2. Verify the pedal swap in a game.** Test 19 measured the cause of
+every pedal symptom: the T150's own descriptor labels the pedals
+backwards, Y is the brake and Rz the accelerator, where games are built
+for Y gas, Rz brake (A37). The proxy now swaps the two values, the job
+the vendor driver does on Windows; `T150_PEDALS=raw` restores the raw
+labels. The buttons are already whole on the `Hidraw` route, all
+thirteen named correctly, so keep that route on. The durable fix to
+offer CodeWeavers is the allowlist line B12 describes.
 
 **3. Play the effects nobody has played yet.** A constant and two periodics
 have moved the wheel. Springs, dampers, envelopes, ramps and per-effect
