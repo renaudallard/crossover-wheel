@@ -29,9 +29,10 @@ extension approval.
 > crossed the loopback, and the daemon has never rendered one. Only a constant
 > force and one periodic have ever been played, so springs, dampers,
 > envelopes and per-effect gain are still arithmetic derived from a Linux
-> driver rather than measured. And the wheel currently does not reach the
-> bottle at all, which is now the blocker for the end to end path (A34,
-> B10).
+> driver rather than measured. The wheel reaches the bottle again with
+> `SDL_JOYSTICK_HIDAPI=0` set (A35), and the proxy has loaded inside a
+> real game; what has still never happened is the game and the daemon
+> running at the same time.
 
 **Picking this up?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first. It is
 written for someone starting with no context: what is decided, what is
@@ -48,15 +49,17 @@ which half.
 ordinary joystick once it is in firmware mode, and early sessions had
 CrossOver passing it into the bottle, steering and pedals working in games.
 
-**Does not work, and now the blocker: the wheel no longer reaches the
-bottle at all.** Measured across test 13 and test 15, and not the wheel's
-fault: it puts every axis and all thirteen buttons on the wire, and
-CrossOver's controller panel and the game both see nothing. Something
-between macOS HID and winebus drops the whole device, where earlier it only
-dropped the buttons. Until that is solved, no game can create a DirectInput
-device for the proxy to wrap, so the end to end path is gated on it. The
-investigation from CrossOver 26's own source is in
-[`docs/RESEARCH.md`](docs/RESEARCH.md) B10.
+**Broke, was diagnosed, and works again: the wheel in the bottle.** Tests
+13 and 15 measured the wheel absent from the bottle entirely, axes
+included. The cause was read out of the shipped software: the SDL that
+CrossOver 26 bundles, 2.30.12, is the last release whose HIDAPI layer
+still claims every Thrustmaster device as a possible PlayStation pad and
+drops it. `SDL_JOYSTICK_HIDAPI=0` in the bottle's environment fixes it,
+confirmed on hardware in test 16, and belongs in `cxbottle.conf` so every
+launch gets it. The input arrives with rough edges, inverted pedals and
+phantom axes, still being pinned between the game's own configuration,
+Steam Input, and the SDL descriptor.
+[`docs/RESEARCH.md`](docs/RESEARCH.md) B10, B11 and A35.
 
 **Does not work: force feedback, because the T150 brings no PID
 descriptor.** Wine's DirectInput sets `DIDC_FORCEFEEDBACK` only from a
@@ -156,27 +159,23 @@ everything below is read through that: a symmetric force about a displaced
 centre looks asymmetric. Unplug it from mains and USB, let it sweep, and
 start from there, and again after any run that worked against a stop.
 
-**1. Where CrossOver loses the wheel.** This gates everything below it:
-test 15 ran a game with the daemon live and the game saw no wheel, because
-the wheel no longer appears inside the bottle at all, axes included, where
-early sessions had steering and pedals working. The wheel is innocent:
-`probe_intr -R` proved every axis and all thirteen buttons reach the wire.
-CrossOver 26's own source narrows the rest: pads survive through
-CodeWeavers' own Xbox bus and the hidraw allowlist, so a broken SDL chain
-blanks exactly the generic-joystick class the T150 is in. And the SDL that
-CrossOver ships, 2.30.12, still has the HIDAPI layer claim Thrustmaster
-devices as possible PlayStation pads and skip them on the normal path, a
-bug SDL fixed only after that release, and the one the sibling T300RS's
-macOS driver works around with `SDL_JOYSTICK_HIDAPI=0`.
-[`docs/RESEARCH.md`](docs/RESEARCH.md) B10 and B11 have the analysis and
-the three experiments, cheapest first, that decide it.
+**1. The game and the daemon at the same time.** Everything else has now
+happened separately: the wheel is back in the bottle
+(`SDL_JOYSTICK_HIDAPI=0`, A35), the proxy loads inside Assetto Corsa and
+chain-loads the builtin, and the daemon drives the wheel. Test 16 missed
+the join only because the daemon was stopped before the game started, and
+the proxy looks for the endpoint exactly once, when the game creates its
+device. Start `t150d` first, leave it running, then the game; `T150_LOG`
+now records what the proxy does even when Steam relaunches the game.
 
-**2. A game through the proxy**, step by step under
-[testing it today](#testing-it-today), the moment the wheel is back in the
-bottle. The chain-load is proven: the proxy loads in a real bottle and
-forwards into CrossOver's builtin (A33). What has never happened is a game
-creating a device through it and its effects crossing the loopback to the
-daemon, and finding that out needs no working force feedback at all.
+**2. Clean up the input.** Pedals arrive inverted, phantom throttle and
+clutch appear, and the in-game wheel drifts from the real one. Three
+suspects, in the order to eliminate them: Assetto Corsa's own per-axis
+setup, which has never been run for this device; Steam Input, which may be
+re-exporting the wheel as a virtual pad on top; and the SDL-synthesised
+descriptor, with the `Hidraw` knob (B10) as the A/B against the wheel's
+own. The durable fix to offer CodeWeavers is the allowlist line B12
+describes.
 
 **3. Play the effects nobody has played yet.** A constant and two periodics
 have moved the wheel. Springs, dampers, envelopes, ramps and per-effect

@@ -11,11 +11,12 @@ CrossOver on macOS, without installing anything system wide: no kext, no
 DriverKit system extension, no SIP change and no AMFI change.
 .Pp
 macOS enumerates the wheel as an ordinary joystick once it is in firmware
-mode, and early sessions had CrossOver carrying it into the bottle with
-steering and pedals working in games. The latest sessions do not: the wheel
-no longer appears inside the bottle at all, though it puts every axis and
-button on the wire, and until that input path regression is solved no game
-can reach the force feedback this project provides. RESEARCH.md A34, B10 and B11.
+mode, and CrossOver carries it into the bottle, with one caveat this
+project had to diagnose: the SDL library CrossOver 26 bundles drops
+Thrustmaster wheels, and the bottle needs
+.Ev SDL_JOYSTICK_HIDAPI Ns =0
+in its environment before the wheel appears at all. With it set, games see
+the wheel again. RESEARCH.md A35, B10 and B11.
 .Pp
 Force feedback itself is missing for a structural reason: the wheel's
 descriptor contains no Physical Interface Device collection, and Wine

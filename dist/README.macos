@@ -31,17 +31,19 @@ an effect by an earlier tool would otherwise keep rendering it. If a wheel
 is ever moving on its own, starting and stopping t150d is the rescue, and a
 replug lets it re-find its centre.
 
+TWO THINGS EVERY BOTTLE NEEDS. The SDL library CrossOver 26 ships drops
+Thrustmaster wheels, so the wheel only appears inside a bottle with
+SDL_JOYSTICK_HIDAPI=0 set in its environment; put it in the bottle's
+cxbottle.conf, the repository README shows the exact lines. And start
+t150d before the game, then leave it running: the proxy looks for the
+daemon once, when the game creates its wheel, and never again.
+
 WHAT DOES NOT WORK YET. No game has reached the wheel through this.
 t150boot, t150ctl and t150d have all run against a real wheel and worked,
-and the proxy loads in a real bottle and chain-loads CrossOver's builtin,
-but no game has created a device through it and the daemon has never
-rendered an effect a client asked for. The current blocker is that the
-wheel does not appear inside the bottle at all: the SDL library CrossOver
-ships claims Thrustmaster devices as possible PlayStation pads and drops
-them. Setting SDL_JOYSTICK_HIDAPI=0 in the bottle's environment is the
-candidate fix; docs/RESEARCH.md B11 has the story. Springs, dampers,
-envelopes and per-effect gain are still derived from a Linux driver rather
-than measured.
+and the proxy loads inside a real game and chain-loads CrossOver's
+builtin, but the game and the daemon have not yet been running at the same
+time, so no effect has crossed. Springs, dampers, envelopes and per-effect
+gain are still derived from a Linux driver rather than measured.
 
 docs/PROBES.md in the repository is the procedure, and what each outcome
 means.

@@ -913,7 +913,43 @@ and non-blocking in every document since A21, now gates the project's goal.
 Note the regression shape: A1-era sessions had steering and pedals working
 in games, so the wheel did reach the bottle once on this machine and does
 not now. B8 and B9 were researched assuming the wheel arrives without
-force feedback; the measured reality is that nothing arrives.
+force feedback; the measured reality is that nothing arrives. Resolved in
+test 16: A35.
+
+**A35. The wheel is back in the bottle, and the proxy has run inside a
+real game.** Test 16.
+
+- **`SDL_JOYSTICK_HIDAPI=0` restored the wheel.** The tester reports every
+  earlier step succeeding, and Assetto Corsa listed the wheel with live
+  axes. B11's mechanism, inferred from source, is confirmed by experiment,
+  and the variable belongs in the bottle's `cxbottle.conf` permanently.
+- **The proxy loaded inside `acs.exe`, on both of the game's launches**,
+  `DINPUT8.dll` as native then `dinput8_orig.dll` as builtin, the whole
+  chain-load inside the real game this time, with live dinput traffic
+  after it. A 32-bit Steam helper got the plain builtin fallback, which is
+  the 64-bit-only design behaving as documented. One lesson for log
+  readers: the game asks for `DINPUT8.dll` in upper case, so a
+  case-sensitive search misses the most important line in the file.
+- **No force feedback was possible, and the reason is ordering, not a
+  defect.** The daemon had been stopped before the game started, in both
+  passes; the one `t150d -v` run began after the game was already up. The
+  proxy looks for the endpoint once, when the game creates its DirectInput
+  device, and a daemon that appears later is invisible to a game already
+  running. The daemon must be running before the game starts, and stay
+  running.
+- **The proxy was silent throughout, which is its own finding.** A
+  Steam-relaunched game's stderr goes nowhere, so every `T150_DEBUG` line
+  was lost. `T150_LOG` now appends the same lines to a file from every
+  process, and `--debugmsg +debugstr` surfaces the `OutputDebugString`
+  copies in a terminal run.
+- **Input arrives but rough**: pedals inverted, which is pedals resting at
+  max, phantom throttle and clutch, the in-game wheel drifting from the
+  real one, steering sometimes ignored. Three suspects, none yet tested:
+  Assetto Corsa has never been through its per-axis setup wizard for this
+  device; Steam Input may be re-exporting the wheel as its own virtual pad
+  on top of it, since Steam runs inside the bottle; and the SDL-synthesised
+  descriptor is the low-fidelity route, with the B10 `Hidraw` knob as the
+  A/B against the wheel's own descriptor.
 
 **A21. The wheel puts all thirteen buttons on the wire. Whatever loses them
 is above the USB layer.** A18 is answered, and against the wheel.
@@ -1176,9 +1212,10 @@ Two experiments decide it, both cheap:
 > `bus_xbox360.c`. The shipped Mac package carries
 > `lib64/libSDL2-2.0.0.dylib` and the winebus allowlists verbatim.
 
-**B11. The leading suspect, verified in the shipped bits: SDL 2.30.12's
-HIDAPI layer claims Thrustmaster devices and the IOKit backend then skips
-them.** CrossOver 26.3.0's `libSDL2-2.0.0.dylib` identifies itself as
+**B11. The suspect, verified in the shipped bits and then by experiment:
+SDL 2.30.12's HIDAPI layer claims Thrustmaster devices and the IOKit
+backend then skips them.** Test 16 confirmed it on hardware:
+`SDL_JOYSTICK_HIDAPI=0` put the wheel back in the bottle (A35). CrossOver 26.3.0's `libSDL2-2.0.0.dylib` identifies itself as
 `SDL-release-2.30.12`, extracted from CodeWeavers' own Mac package and read
 directly. In that exact release, every link of the following chain is in
 the source:

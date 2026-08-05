@@ -123,15 +123,16 @@ most of a session re-proving what was already proven.
 1. **Question 1**, what macOS publishes. Always.
 2. **Question 2**, the mode switch, if question 1 found `B65D`. `t150boot`,
    one command, no root.
-3. **The input path**, which test 15 promoted from side quest to the gate:
-   the wheel does not appear inside the bottle at all, so nothing below it
-   in this list can run. RESEARCH.md A34, B10 and B11.
+3. **The input path**, solved in test 16 with `SDL_JOYSTICK_HIDAPI=0` in
+   the bottle's environment, which belongs in `cxbottle.conf` so it
+   cannot be forgotten. RESEARCH.md A35, B10 and B11 if it regresses.
 4. **Question 7**, the daemon on its own backend. Half answered, and the
    precondition for question 8.
 5. **Question 8**, a game reaching the wheel. The end to end path, the one
-   nobody has run.
-6. **Question 6**, the buttons on the wire, if the input path work needs it
-   reproduced.
+   nobody has run, and now nothing gates it except starting the daemon
+   before the game.
+6. **Question 6**, the buttons on the wire, if the input cleanup work
+   needs it reproduced.
 
 The rest are answered and are kept as rerun procedures. Question 6b, the
 shipped tools, all outcomes now observed; question 4, the HID path, on a
@@ -546,10 +547,13 @@ builtin (A33), so what remains starts at the game. It needs the proxy
 installed in a bottle, which is the procedure in the README under testing it
 today.
 
-**Currently gated on the input path.** Test 15 ran the game with the daemon
-in both modes and it saw no wheel, because the wheel does not appear inside
-the bottle at all (A34): no device, so nothing for the proxy to wrap. Solve
-that first; B10 in RESEARCH.md is where the investigation stands.
+**The gate opened in test 16.** With `SDL_JOYSTICK_HIDAPI=0` in the
+bottle's environment the wheel is back (A35), and the proxy loaded inside
+Assetto Corsa itself. What kept this question unanswered was ordering: the
+daemon was stopped before the game started, and the proxy looks for the
+endpoint exactly once, when the game creates its device. Start `t150d`
+first, leave it running, then the game, with `T150_LOG` set so the proxy
+is visible through a Steam relaunch.
 
 Run it twice. First with `t150d -n`, which prints every packet instead of
 sending it, so a fault in the proxy cannot be confused with a fault at the

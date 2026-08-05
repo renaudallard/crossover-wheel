@@ -23,11 +23,10 @@ Two things are already true with nothing installed, and the design leans on
 both:
 
 - macOS enumerates the wheel as an ordinary joystick once it is in firmware
-  mode, and early sessions had the steering and pedals reaching games. The
-  latest sessions have the wheel not appearing in the bottle at all
-  (RESEARCH.md A34, B10), a regression above the USB layer that gates the
-  end to end path but does not change this design: the force feedback half
-  is unaffected and waiting.
+  mode, and CrossOver carries it into the bottle, with one measured caveat:
+  the SDL that CrossOver 26 bundles drops Thrustmaster wheels unless
+  `SDL_JOYSTICK_HIDAPI=0` is set in the bottle's environment (RESEARCH.md
+  B11, A35). With it set, the wheel reaches games again.
 - CrossOver carries it into the bottle without any driver, and it opens the
   device without seizing it, so a second process can still write to it.
 
