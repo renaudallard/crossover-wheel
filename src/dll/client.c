@@ -31,27 +31,50 @@ static HANDLE keepalive_stop;
 static int started;
 static int online;
 
+/*
+ * T150_DEBUG speaks to stderr and OutputDebugString, which is enough from a
+ * terminal and nothing at all from a game Steam relaunched, whose stderr
+ * goes nowhere anyone can see. T150_LOG names a file to append the same
+ * lines to, opened per line so any number of bottle processes can share it.
+ * Either variable alone is enough to turn logging on.
+ */
 void
 t150_log(const char *fmt, ...)
 {
-	static int checked, wanted;
+	static int checked, wanted, havelog;
+	static char logpath[MAX_PATH];
 	char buf[512];
 	va_list ap;
+	DWORD len;
 	int n;
 
 	if (!checked) {
 		checked = 1;
 		wanted = GetEnvironmentVariableA("T150_DEBUG", NULL, 0) > 0;
+		len = GetEnvironmentVariableA("T150_LOG", logpath,
+		    sizeof(logpath));
+		havelog = len > 0 && len < sizeof(logpath);
 	}
-	if (!wanted)
+	if (!wanted && !havelog)
 		return;
 
 	n = snprintf(buf, sizeof(buf), "t150-dinput8: ");
 	va_start(ap, fmt);
 	(void)vsnprintf(buf + n, sizeof(buf) - (size_t)n, fmt, ap);
 	va_end(ap);
-	OutputDebugStringA(buf);
-	fprintf(stderr, "%s", buf);
+
+	if (wanted) {
+		OutputDebugStringA(buf);
+		fprintf(stderr, "%s", buf);
+	}
+	if (havelog) {
+		FILE *fp = fopen(logpath, "a");
+
+		if (fp != NULL) {
+			(void)fputs(buf, fp);
+			(void)fclose(fp);
+		}
+	}
 }
 
 /*

@@ -19,6 +19,8 @@ builtin copied alongside as dinput8_orig.dll, and set dinput8 to
 "native,builtin". Copy the builtin from CrossOver's own
 lib/wine/x86_64-windows, never the dinput8.dll already in the bottle's
 system32, which is an empty placeholder. Set T150_DEBUG=1 in the bottle to
-make it say what it is doing. The README in the repository has the exact
+make it say what it is doing on stderr, and T150_LOG to a file path to have
+every process append the same lines there, which is the only way to see it
+from a game Steam relaunched. The README in the repository has the exact
 commands as CrossOver 26 resolves them, and docs/PROBES.md question 8 is
 the test.

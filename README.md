@@ -412,16 +412,28 @@ resolves correctly.
 touching the registry. Exporting `WINEDLLOVERRIDES` does nothing: CrossOver's
 wine wrapper deletes it from the environment and honours only `--dll`.
 
-**The proxy's environment.** `T150_DEBUG=1` makes it say what it is doing, and
-`T150_ENDPOINT` points it at the daemon's endpoint file, whose default guess
-is `Z:\Users\<you>\Library\Application Support\t150ffb\endpoint`. From a
-terminal pass them with `--env`. For a game started from the CrossOver window,
-put them in the bottle's `cxbottle.conf`, which every launch reads:
+**The proxy's environment.** `T150_DEBUG=1` makes it say what it is doing
+on stderr, and `T150_ENDPOINT` points it at the daemon's endpoint file,
+whose default guess is
+`Z:\Users\<you>\Library\Application Support\t150ffb\endpoint`.
+
+Stderr goes nowhere when Steam relaunches the game, which test 16 showed is
+where the interesting lines vanish. `T150_LOG` names a file the proxy
+appends the same lines to, from every process, so a Steam-launched game
+leaves a trace:
 
 ```ini
 [EnvironmentVariables]
+"SDL_JOYSTICK_HIDAPI" = "0"
 "T150_DEBUG" = "1"
+"T150_LOG" = "Z:\\Users\\<you>\\Library\\Application Support\\t150ffb\\proxy.log"
 ```
+
+That is the bottle's `cxbottle.conf`, which every launch reads, including
+from the CrossOver window; from a terminal, `--env` sets the same things for
+one run. The `SDL_JOYSTICK_HIDAPI` line is what puts the wheel in the
+bottle at all, see the input path section. The proxy's `OutputDebugString`
+lines also surface in a terminal run with `--debugmsg +debugstr`.
 
 **Check the install without a game:**
 
