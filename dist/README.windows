@@ -23,16 +23,15 @@ make it say what it is doing on stderr, and T150_LOG to a file path to have
 every process append the same lines there, which is the only way to see it
 from a game Steam relaunched.
 
-The proxy also corrects the T150's pedals, both measured faults at once:
-the wheel's own descriptor labels them backwards, brake on Y and
-accelerator on Rz where games expect the opposite, and its firmware rests
-a released pedal at maximum, which a game reads as a throttle held open.
-The proxy swaps the two values and mirrors them so a released pedal reads
-zero, the way the vendor driver presents them on Windows. After updating
-the DLL, reassign the pedals once in the game's own controls screen.
-T150_PEDALS accepts raw, swap or invert to get less than both
-corrections. The proxy logs its version and pedal settings when it wraps
-the wheel.
+The proxy also corrects the T150's pedals: the wheel's own descriptor
+labels them backwards, brake on Y and accelerator on Rz where games
+expect the opposite, so the proxy swaps the two values by default. The
+firmware also rests a released pedal at maximum; games that bind pedals
+by detection handle that themselves, and for one that does not, set
+T150_PEDALS=full to add a mirror that makes a released pedal read zero.
+T150_PEDALS also accepts raw and invert. After updating the DLL,
+reassign the pedals once in the game's own controls screen. The proxy
+logs its version and pedal settings when it wraps the wheel.
 
 The README in the repository has the exact commands as CrossOver 26
 resolves them, and docs/PROBES.md question 8 is the test.

@@ -1048,6 +1048,34 @@ bottle.
 
 After the DLL update, the game's pedals must be reassigned once, since
 every stored binding predates the corrected layout.
+
+**A39. The 0.1.6 inversion default was wrong twice over, and is
+withdrawn.** Within an hour of release a tester had both pedals showing
+pressed at rest, the brake dead and the throttle backwards, a clean
+regression from 0.1.5.
+
+- **The mirror used the wrong range.** It mirrored inside ranges shadowed
+  from the game's `SetProperty(DIPROP_RANGE)` calls, tracked for
+  device-wide and by-offset addressing but not by object id, which is how
+  this game addresses its axes. The mirror then reflected real values
+  inside a stale default range and produced values outside the axis
+  entirely, clamped at the pressed end: both pedals full at rest, exactly
+  as reported. Fixed by asking DirectInput for the axis's effective range
+  instead of shadowing, `GetProperty(DIPROP_RANGE)` by offset, cached and
+  invalidated on any range change, which no addressing mode can bypass.
+- **The default was built on a misread.** A38 took "it accelerates alone"
+  as evidence that games do not handle the rest position; the regression
+  shows this game corrects pedal direction itself when the pedals are
+  bound fresh, so inverting under it re-breaks what the game fixed. The
+  earlier report is better explained by stale bindings than by a missing
+  mirror.
+
+So the default is the swap alone, the one correction measured beyond
+doubt, and the mirror is opt-in: `T150_PEDALS=full` for a game that does
+not handle direction itself, `raw` and `invert` for diagnosis. The A/B
+that should have preceded the 0.1.6 default is now the procedure: bind
+fresh on the swap default, and only if the car still drives itself with
+feet off, switch to `full` and bind fresh again.
 is above the USB layer.** A18 is answered, and against the wheel.
 
 `probe_intr -R` read the interrupt IN pipe with the device captured. The mask

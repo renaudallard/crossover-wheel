@@ -169,18 +169,16 @@ and stay running, and test 17 missed it on one wrong path, the proxy
 guessing the daemon's home from a bottle username that is always
 `crossover` (A36), now fixed. Nothing measured blocks the join any more.
 
-**2. Verify the pedal corrections in a game.** Tests 19 and 20 measured
-both pedal faults: the T150's descriptor labels the pedals backwards, Y
-the brake and Rz the accelerator where games are built for the opposite
-(A37), and its firmware rests a released pedal at maximum, so the
-throttle reads held open and the car drives itself (A38). The proxy now
-corrects both, swap plus mirror, the job the vendor driver does on
-Windows; after updating the DLL, reassign the pedals once in the game.
-`T150_PEDALS` accepts `raw`, `swap` or `invert` for less than both, and
-the proxy logs its version and pedal settings at wrap, so a log always
-says which build is in the bottle. The buttons are already whole on the
-`Hidraw` route, all thirteen named correctly, so keep that route on. The
-durable fix to offer CodeWeavers is the allowlist line B12 describes.
+**2. Verify the pedals in a game.** Test 19 measured the mislabel, brake
+on Y and accelerator on Rz where games expect the opposite (A37), and
+the proxy swaps the two values by default. The rest-at-max mirror
+shipped on by default in 0.1.6 and regressed a game that handles pedal
+direction itself at binding time (A39), so it is opt-in now,
+`T150_PEDALS=full`, for a game that does not. After any DLL update,
+reassign the pedals once in the game; the wrap log line names the build
+and its pedal settings. The buttons are already whole on the `Hidraw`
+route, so keep that route on, and the durable fix to offer CodeWeavers
+is the allowlist line B12 describes.
 
 **3. Play the effects nobody has played yet.** A constant and two periodics
 have moved the wheel. Springs, dampers, envelopes, ramps and per-effect
@@ -444,9 +442,12 @@ one run. The `SDL_JOYSTICK_HIDAPI` line is what puts the wheel in the
 bottle at all, see the input path section. The proxy's `OutputDebugString`
 lines also surface in a terminal run with `--debugmsg +debugstr`.
 
-`T150_PEDALS` controls the pedal corrections, which default to both on:
-`raw` for neither, `swap` or `invert` for just one. The proxy logs its
-version and the pedal settings when it wraps the wheel.
+`T150_PEDALS` controls the pedal corrections. The default is the swap
+alone, which fixes the backwards labels and lets the game's own binding
+detection handle direction; `full` adds the rest-at-zero mirror for a
+game that does not, `raw` turns everything off, and `invert` is the
+mirror alone, for diagnosis. The proxy logs its version and the pedal
+settings when it wraps the wheel.
 
 **Check the install without a game:**
 

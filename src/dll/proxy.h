@@ -68,8 +68,9 @@ struct t150_device {
 	DWORD			 autocenter;	/* last DIPROP_AUTOCENTER seen */
 	int			 pedal_swap;	/* present Y as gas, Rz as brake */
 	int			 pedal_invert;	/* pedals rest at zero, not max */
+	int			 ranges_stale;	/* re-ask dinput before mirroring */
 	DWORD			 df_size;	/* dwDataSize of the game's data format */
-	LONG			 range_min[2];	/* game-set axis range, Y then Rz */
+	LONG			 range_min[2];	/* dinput's effective range, Y then Rz */
 	LONG			 range_max[2];
 };
 
