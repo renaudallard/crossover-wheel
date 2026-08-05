@@ -161,21 +161,18 @@ start from there, and again after any run that worked against a stop.
 
 **1. The game and the daemon at the same time.** Everything else has now
 happened separately: the wheel is back in the bottle
-(`SDL_JOYSTICK_HIDAPI=0`, A35), the proxy loads inside Assetto Corsa and
-chain-loads the builtin, and the daemon drives the wheel. Test 16 missed
-the join only because the daemon was stopped before the game started, and
-the proxy looks for the endpoint exactly once, when the game creates its
-device. Start `t150d` first, leave it running, then the game; `T150_LOG`
-now records what the proxy does even when Steam relaunches the game.
+(`SDL_JOYSTICK_HIDAPI=0`, A35), the proxy loads inside Assetto Corsa,
+chain-loads the builtin and logs what it does, and the daemon drives the
+wheel. Test 16 missed the join on ordering, the daemon must start first
+and stay running, and test 17 missed it on one wrong path, the proxy
+guessing the daemon's home from a bottle username that is always
+`crossover` (A36), now fixed. Nothing measured blocks the join any more.
 
-**2. Clean up the input.** Pedals arrive inverted, phantom throttle and
-clutch appear, and the in-game wheel drifts from the real one. Three
-suspects, in the order to eliminate them: Assetto Corsa's own per-axis
-setup, which has never been run for this device; Steam Input, which may be
-re-exporting the wheel as a virtual pad on top; and the SDL-synthesised
-descriptor, with the `Hidraw` knob (B10) as the A/B against the wheel's
-own. The durable fix to offer CodeWeavers is the allowlist line B12
-describes.
+**2. Clean up the input.** Pedals arrive inverted, which is the game's
+own axis setup, never yet run. The `Hidraw` route (B10) measured better
+than the SDL descriptor in test 17's A/B, no phantom acceleration and
+consistent steering, so keep it on. The durable fix to offer CodeWeavers
+is the allowlist line B12 describes.
 
 **3. Play the effects nobody has played yet.** A constant and two periodics
 have moved the wheel. Springs, dampers, envelopes, ramps and per-effect

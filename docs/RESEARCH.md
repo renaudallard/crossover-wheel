@@ -951,7 +951,38 @@ real game.** Test 16.
   descriptor is the low-fidelity route, with the B10 `Hidraw` knob as the
   A/B against the wheel's own descriptor.
 
-**A21. The wheel puts all thirteen buttons on the wire. Whatever loses them
+**A36. The proxy missed the daemon by one path, and its new log caught the
+bug on its first run.** Test 17's `proxy.log`, three times over:
+
+```
+t150-dinput8: no endpoint at Z:\Users\crossover\Library\Application
+Support\t150ffb\endpoint, staying out of the way
+```
+
+The proxy built its default endpoint path from the bottle's `USERNAME`,
+and a CrossOver bottle names its Windows user `crossover` whoever owns the
+Mac, so every bottle's proxy looked in a home that does not exist while
+the daemon published under the real one. The proxy behaved exactly as
+designed around a wrong assumption of its own: nothing was wrapped, the
+game was left alone, and without `T150_LOG` this would have read as yet
+another silent failure. Fixed by checking the guess against the
+filesystem and then trying every home under `Z:\Users`; with a 0.1.3 or
+older proxy, `T150_ENDPOINT` set explicitly does the same.
+
+**The `Hidraw` A/B came back in favour of the wheel's own descriptor.**
+With the B10 knob on, "minus problems as before": the phantom
+acceleration is gone except in neutral, and steering stays consistent.
+Pedals remain inverted, which is the game's own axis setup, still never
+run. One observation recorded with a question mark rather than a
+conclusion: under the hidraw route the tester reports "no ffb no
+autocenter", a limp wheel, and nothing known sends the input-open on that
+path; it may be a leftover open from the session's earlier tools, and the
+next session with the daemon connected makes it moot, since the daemon
+owns the input state.
+
+The end to end join is now blocked by nothing measured: the wheel is in
+the bottle, the proxy runs in the game and logs what it does, the daemon
+drives the wheel, and the one wrong path between them is fixed.
 is above the USB layer.** A18 is answered, and against the wheel.
 
 `probe_intr -R` read the interrupt IN pipe with the device captured. The mask
