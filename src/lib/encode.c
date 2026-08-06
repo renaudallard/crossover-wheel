@@ -61,6 +61,20 @@ us_to_ms(uint32_t us)
 	return (uint16_t)((us + 500) / 1000);
 }
 
+/*
+ * The same, for the three fields the vendor's descriptor declares as 0 to
+ * 10000 rather than the full sixteen bits: envelope attack and fade times
+ * and a periodic's period. What the wheel does with a larger value is
+ * untested, so this keeps it in the range the firmware advertises.
+ */
+static uint16_t
+us_to_ms_bounded(uint32_t us)
+{
+	uint16_t ms = us_to_ms(us);
+
+	return ms > T150_FF_TIME_MAX ? T150_FF_TIME_MAX : ms;
+}
+
 static void
 put_le16(uint8_t *buf, uint16_t v)
 {
@@ -76,6 +90,8 @@ first_class(uint8_t kind, uint8_t *out)
 	case T150_EFFECT_CONSTANT:
 		*out = T150_FF_FIRST_CONSTANT;
 		return 0;
+	case T150_EFFECT_SQUARE:
+	case T150_EFFECT_TRIANGLE:
 	case T150_EFFECT_SINE:
 	case T150_EFFECT_SAWTOOTH_UP:
 	case T150_EFFECT_SAWTOOTH_DOWN:
@@ -96,6 +112,12 @@ commit_type(uint8_t kind, uint16_t *out)
 	switch (kind) {
 	case T150_EFFECT_CONSTANT:
 		*out = T150_FF_TYPE_CONSTANT;
+		return 0;
+	case T150_EFFECT_SQUARE:
+		*out = T150_FF_TYPE_SQUARE;
+		return 0;
+	case T150_EFFECT_TRIANGLE:
+		*out = T150_FF_TYPE_TRIANGLE;
 		return 0;
 	case T150_EFFECT_SINE:
 		*out = T150_FF_TYPE_SINE;
@@ -121,9 +143,6 @@ uint8_t
 t150_effect_downgrade(uint8_t kind)
 {
 	switch (kind) {
-	case T150_EFFECT_SQUARE:
-	case T150_EFFECT_TRIANGLE:
-		return T150_EFFECT_SINE;
 	case T150_EFFECT_FRICTION:
 	case T150_EFFECT_INERTIA:
 		return T150_EFFECT_DAMPER;
@@ -276,8 +295,8 @@ t150_enc_ff_first(uint8_t *buf, size_t buflen, const struct t150_effect *ef)
 	 * plain bug and is not reproduced here.
 	 */
 	if (ef->envelope.present && cls != T150_FF_FIRST_CONDITION) {
-		attack_ms = us_to_ms(ef->envelope.attack_time);
-		fade_ms = us_to_ms(ef->envelope.fade_time);
+		attack_ms = us_to_ms_bounded(ef->envelope.attack_time);
+		fade_ms = us_to_ms_bounded(ef->envelope.fade_time);
 		if (ef->envelope.attack_level > 0)
 			attack_level = scale_unsigned(
 			    (uint32_t)ef->envelope.attack_level, T150_DI_MAX,
@@ -289,8 +308,7 @@ t150_enc_ff_first(uint8_t *buf, size_t buflen, const struct t150_effect *ef)
 	}
 
 	buf[0] = cls;
-	buf[1] = t150_ff_pk_id0(ef->slot);
-	buf[2] = 0;
+	put_le16(buf + 1, t150_ff_pk_id0(ef->slot));
 	put_le16(buf + 3, attack_ms);
 	buf[5] = (uint8_t)attack_level;
 	put_le16(buf + 6, fade_ms);
@@ -315,6 +333,8 @@ t150_enc_ff_update(uint8_t *buf, size_t buflen, const struct t150_effect *ef)
 	case T150_EFFECT_CONSTANT:
 		len = T150_FF_UPDATE_LEN_CONSTANT;
 		break;
+	case T150_EFFECT_SQUARE:
+	case T150_EFFECT_TRIANGLE:
 	case T150_EFFECT_SINE:
 	case T150_EFFECT_SAWTOOTH_UP:
 	case T150_EFFECT_SAWTOOTH_DOWN:
@@ -331,8 +351,7 @@ t150_enc_ff_update(uint8_t *buf, size_t buflen, const struct t150_effect *ef)
 	if (buflen < len)
 		return 0;
 
-	buf[1] = t150_ff_pk_id1(ef->slot);
-	buf[2] = 0;
+	put_le16(buf + 1, t150_ff_pk_id1(ef->slot));
 
 	switch (ef->kind) {
 	case T150_EFFECT_CONSTANT: {
@@ -349,6 +368,8 @@ t150_enc_ff_update(uint8_t *buf, size_t buflen, const struct t150_effect *ef)
 		    T150_FF_LEVEL_MAX);
 		break;
 	}
+	case T150_EFFECT_SQUARE:
+	case T150_EFFECT_TRIANGLE:
 	case T150_EFFECT_SINE:
 	case T150_EFFECT_SAWTOOTH_UP:
 	case T150_EFFECT_SAWTOOTH_DOWN:
@@ -360,7 +381,7 @@ t150_enc_ff_update(uint8_t *buf, size_t buflen, const struct t150_effect *ef)
 		buf[5] = (uint8_t)scale_unsigned(
 		    ef->u.periodic.phase % T150_DI_DIR_MAX, T150_DI_DIR_MAX,
 		    T150_FF_PHASE_MAX);
-		put_le16(buf + 6, us_to_ms(ef->u.periodic.period));
+		put_le16(buf + 6, us_to_ms_bounded(ef->u.periodic.period));
 		break;
 	case T150_EFFECT_SPRING:
 	case T150_EFFECT_DAMPER: {
@@ -429,10 +450,16 @@ t150_enc_ff_commit(uint8_t *buf, size_t buflen, const struct t150_effect *ef)
 	buf[1] = ef->slot;
 	put_le16(buf + 2, type);
 	put_le16(buf + 4, length);
-	buf[9] = t150_ff_pk_id1(ef->slot);
-	buf[11] = t150_ff_pk_id0(ef->slot);
-	/* The driver sends the high byte of the delay, so the unit is 256ms. */
-	buf[13] = (uint8_t)(us_to_ms(ef->start_delay) >> 8);
+	put_le16(buf + 9, t150_ff_pk_id1(ef->slot));
+	put_le16(buf + 11, t150_ff_pk_id0(ef->slot));
+	/*
+	 * Start delay is a whole 16 bit millisecond field. This sent only its
+	 * high byte, on a reading of the Linux driver that made the unit 256
+	 * ms, so every delay under 25.6 seconds arrived as zero. The vendor's
+	 * descriptor declares 16 bits and its own capture proves it: a commit
+	 * carrying a 100 ms delay ends 64 00. RESEARCH.md A40.
+	 */
+	put_le16(buf + 13, us_to_ms(ef->start_delay));
 
 	return T150_FF_COMMIT_LEN;
 }
@@ -448,6 +475,8 @@ t150_enc_control(uint8_t *buf, size_t buflen, uint8_t slot, int play,
 	buf[1] = slot;
 	buf[2] = play ? T150_FF_CTRL_PLAY : T150_FF_CTRL_STOP;
 	buf[3] = play && iterations > 0 ? iterations : 1;
+	if (buf[3] > T150_FF_LOOP_MAX)
+		buf[3] = T150_FF_LOOP_MAX;
 
 	return T150_FF_CONTROL_LEN;
 }

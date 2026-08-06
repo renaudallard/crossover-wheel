@@ -59,18 +59,21 @@ enum t150_effect_kind {
 /*
  * Which of the above the T150 renders in hardware.
  *
- * Constant, sine, both sawtooths, spring and damper are native. Square and
- * triangle are not: the driver's supported effect list names neither, and
- * the protocol declares no type code for either. Ramp, friction and inertia
- * are not in the wire protocol at all.
+ * Constant, square, triangle, sine, both sawtooths, spring and damper are
+ * native, all eight named by Thrustmaster's own Windows driver. Square and
+ * triangle were downgraded here for a long time because the Linux driver
+ * supports neither and no type code was known for them; the vendor's
+ * descriptor and type table gave both, 0x4020 and 0x4021. RESEARCH.md A40.
+ * Ramp, friction and inertia are not in the wire protocol at all.
  *
  * Refusing the rest is wrong, because a game that gets DIERR_UNSUPPORTED
  * from CreateEffect may disable force feedback outright. The daemon
- * downgrades instead, and says so in its log: square and triangle to sine,
- * friction and inertia to damper, ramp to a time-sliced constant.
+ * downgrades instead, and says so in its log: friction and inertia to
+ * damper, ramp to a time-sliced constant.
  */
 #define T150_SUPPORTS_NATIVE(k)						\
 	((k) == T150_EFFECT_CONSTANT || (k) == T150_EFFECT_SINE ||	\
+	 (k) == T150_EFFECT_SQUARE || (k) == T150_EFFECT_TRIANGLE ||	\
 	 (k) == T150_EFFECT_SAWTOOTH_UP ||				\
 	 (k) == T150_EFFECT_SAWTOOTH_DOWN ||				\
 	 (k) == T150_EFFECT_SPRING || (k) == T150_EFFECT_DAMPER)

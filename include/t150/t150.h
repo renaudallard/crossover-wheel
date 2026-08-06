@@ -122,13 +122,20 @@
 #define T150_FF_FIRST_CONDITION	0x05u
 
 /*
- * The condition trailer, and it is not one constant pair. Spring uploads end
- * 0x46 0x54, damper uploads end 0x64 0x64, and 0x54 and 0x64 are exactly the
- * spring and damper saturation maxima below. So the trailer looks like a
- * saturation hint keyed to the effect type rather than the magic numbers the
- * driver hardcodes, which sends 0x46 0x54 for both.
+ * The last two bytes of a condition upload, and they are not a trailer at
+ * all. Thrustmaster's descriptor names them: they are the positive and
+ * negative saturation of the parameter block the packet addresses, the same
+ * two fields ff_update writes at bytes 9 and 10. A condition effect is two
+ * parameter blocks, so it is two of these packets rather than an envelope
+ * and a trailer, and damper0.pcapng shows the pair varying across slots,
+ * which no fixed trailer could do.
  *
- * Measured: traffic/ffb/windows/spring0.pcapng and traffic/ffb/damper0.pcapng.
+ * The values stay as they are: 0x46 0x54 for a spring and 0x64 0x64 for a
+ * damper reproduce the vendor's own bytes exactly, and 0x54 and 0x64 are the
+ * spring and damper saturation maxima below. Only the model was wrong.
+ *
+ * Measured: traffic/ffb/windows/spring0.pcapng and traffic/ffb/damper0.pcapng,
+ * named by tmHidUsb.sys's report descriptor. RESEARCH.md A40.
  */
 #define T150_FF_FIRST_F2_SPRING	0x46u
 #define T150_FF_FIRST_F3_SPRING	0x54u
@@ -150,16 +157,19 @@
 #define T150_FF_LENGTH_INFINITE	0xffffu
 
 /*
- * ff_commit effect type codes. The driver implements no square or triangle
- * and declares no code for either. The codes are contiguous around the
- * periodics, so 0x4020, 0x4021 and 0x4025 may be the missing waveforms.
+ * ff_commit effect type codes, all eight taken from Thrustmaster's own
+ * Windows driver. Its HID PID report descriptor declares the effect type
+ * array as constant, square, triangle, sine, sawtooth up, sawtooth down,
+ * spring, damper, and it indexes a nine byte table with that position to get
+ * the low byte on the wire. The order is not numeric and could not have been
+ * guessed. RESEARCH.md A40.
  *
- * 0x4020 is one: a periodic committed with it made the wheel oscillate
- * (RESEARCH.md A28). Which waveform it is takes a run comparing it against
- * 0x4021 by feel, so neither is named here and square and triangle stay
- * downgrades.
+ * That table has no ninth entry, which is why 0x4025 renders nothing on
+ * hardware: it is not a waveform, it is off the end.
  */
 #define T150_FF_TYPE_CONSTANT	0x4000u
+#define T150_FF_TYPE_SQUARE	0x4020u
+#define T150_FF_TYPE_TRIANGLE	0x4021u
 #define T150_FF_TYPE_SINE	0x4022u
 #define T150_FF_TYPE_SAW_UP	0x4023u
 #define T150_FF_TYPE_SAW_DOWN	0x4024u
@@ -167,15 +177,20 @@
 #define T150_FF_TYPE_DAMPER	0x4041u
 
 /*
- * Wire ranges for the effect parameter fields. Each is derived from the
+ * Wire ranges for the effect parameter fields. Each was derived from the
  * divisor t150_driver applies to a full scale Linux force feedback value,
- * which is how that driver encodes the wheel's real limits: the condition
- * ones land exactly on the maxima its own struct comments document, so the
- * derivation is sound.
+ * and each is now confirmed against Thrustmaster's own Windows driver: the
+ * four divisors 0x147, 0x030c, 0x028f and 0x01ff appear in it as literal
+ * constants, and its report descriptor declares the coefficient as -100 to
+ * 100, the centre as -500 to 500 and the deadband as 0 to 1000, which is
+ * exactly what these say. RESEARCH.md A40.
  *
- * The constant level stops at 64 while a periodic magnitude reaches 127,
- * which is asymmetric and may simply be conservative. Only hardware can say,
- * and probe_setreport can ask it directly.
+ * The constant level stops at 64 while a periodic magnitude reaches 127, and
+ * the asymmetry is real but not a limit of the field: both are one signed
+ * byte. The vendor halves constant force on this model before it reaches the
+ * wire, so 64 is what a full scale constant becomes, and its own captures
+ * step 0x40, 0x20, 0x10 for 100, 50 and 25 percent. Keep 64: it reproduces
+ * the vendor's bytes.
  */
 #define T150_FF_LEVEL_MAX	64u	/* constant, from /0x01ff on an int16 */
 #define T150_FF_PERIODIC_MAX	127u	/* periodic magnitude and offset, from >>8 */
@@ -187,11 +202,21 @@
 #define T150_FF_SAT_DAMPER_MAX	0x64u	/* from /0x028f */
 
 /*
- * Envelope levels are one byte each and the driver's own comment says its
- * scaling of them is wrong, so full scale is a guess rather than a
- * transcription. See docs/PROTOCOL.md.
+ * Bounds the vendor's descriptor declares that the Linux driver never
+ * mentioned. Envelope times and a periodic's period are 0 to 10000 ms, and
+ * a control packet's iteration count stops one short of a full byte.
  */
-#define T150_FF_ENVELOPE_MAX	0xffu
+#define T150_FF_TIME_MAX	10000u
+#define T150_FF_LOOP_MAX	254u
+
+/*
+ * Envelope levels are one byte each, running to 127 rather than 255. This
+ * was 0xff on a guess, the Linux driver's own comment admitting its scaling
+ * of them was wrong. Thrustmaster's descriptor settles it: attack level and
+ * fade level are both declared 09 5b 25 7f and 09 5d 25 7f, logical maximum
+ * 127 against a physical maximum of 10000. RESEARCH.md A40.
+ */
+#define T150_FF_ENVELOPE_MAX	0x7fu
 
 /*
  * Gain full scale is 0x80, not 0xff. The driver's original setter documented
@@ -231,17 +256,25 @@
 #define T150_FF_CTRL_PLAY	0x41u
 #define T150_FF_CTRL_STOP	0x00u
 
-/* The two slot keys that correlate an effect's three upload packets. */
-static inline uint8_t
+/*
+ * The two slot keys that correlate an effect's three upload packets. They
+ * are parameter block offsets into the wheel's own effect memory, 28 bytes
+ * per slot, and they are sixteen bits wide: the vendor's descriptor declares
+ * report size 16 for them and its driver stores them as words. These
+ * returned uint8_t, which was invisible up to slot 8, the highest any
+ * capture reaches, and wrapped from slot 9 on, where 0x11a became 0x1a and
+ * collided with an earlier slot. RESEARCH.md A40.
+ */
+static inline uint16_t
 t150_ff_pk_id0(unsigned int slot)
 {
-	return (uint8_t)(slot * 0x1cu + 0x1cu);
+	return (uint16_t)(slot * 0x1cu + 0x1cu);
 }
 
-static inline uint8_t
+static inline uint16_t
 t150_ff_pk_id1(unsigned int slot)
 {
-	return (uint8_t)(slot * 0x1cu + 0x0eu);
+	return (uint16_t)(slot * 0x1cu + 0x0eu);
 }
 
 /* Rotation range accepted by the firmware. Values below the minimum are

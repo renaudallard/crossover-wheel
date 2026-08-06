@@ -257,7 +257,7 @@ test_periodic(void)
 	ef.envelope.fade_time = 250000;
 	ef.envelope.fade_level = 2500;
 	CHECK("sine first with envelope", b, t150_enc_ff_first(b, sizeof(b), &ef),
-	    0x02, 0x38, 0x00, 0x64, 0x00, 0x80, 0xfa, 0x00, 0x40);
+	    0x02, 0x38, 0x00, 0x64, 0x00, 0x40, 0xfa, 0x00, 0x20);
 
 	ef.kind = T150_EFFECT_SAWTOOTH_UP;
 	CHECK("sawtooth up commit", b, t150_enc_ff_commit(b, sizeof(b), &ef),
@@ -324,19 +324,24 @@ test_condition(void)
 
 	CHECK("damper update", b, t150_enc_ff_update(b, sizeof(b), &ef),
 	    0x05, 0x62, 0x00, 0x32, 0x32, 0x7d, 0x00, 0x64, 0x00, 0x32, 0x32);
-	/* The delay field carries the high byte only, so its unit is 256ms. */
+	/* Start delay is a whole 16 bit millisecond field: 3000 ms. */
 	CHECK("damper commit with delay", b, t150_enc_ff_commit(b, sizeof(b), &ef),
 	    0x01, 0x03, 0x41, 0x40, 0xff, 0xff, 0x00, 0x00, 0x00, 0x62, 0x00,
-	    0x70, 0x00, 0x0b, 0x00);
+	    0x70, 0x00, 0xb8, 0x0b);
 }
 
 static void
 test_downgrades(void)
 {
-	check_int("square downgrades", t150_effect_downgrade(T150_EFFECT_SQUARE),
-	    T150_EFFECT_SINE);
-	check_int("triangle downgrades",
-	    t150_effect_downgrade(T150_EFFECT_TRIANGLE), T150_EFFECT_SINE);
+	/*
+	 * Square and triangle are native, so they pass through untouched.
+	 * They were downgraded to sine until Thrustmaster's own driver named
+	 * their type codes, 0x4020 and 0x4021. RESEARCH.md A40.
+	 */
+	check_int("square is native", t150_effect_downgrade(T150_EFFECT_SQUARE),
+	    T150_EFFECT_SQUARE);
+	check_int("triangle is native",
+	    t150_effect_downgrade(T150_EFFECT_TRIANGLE), T150_EFFECT_TRIANGLE);
 	check_int("friction downgrades",
 	    t150_effect_downgrade(T150_EFFECT_FRICTION), T150_EFFECT_DAMPER);
 	check_int("inertia downgrades",
@@ -351,6 +356,65 @@ test_downgrades(void)
 	    T150_EFFECT_SPRING);
 	check_int("constant stays", t150_effect_downgrade(T150_EFFECT_CONSTANT),
 	    T150_EFFECT_CONSTANT);
+}
+
+/*
+ * Bytes taken verbatim from Thrustmaster's own Windows driver traffic, so a
+ * change to the encoders has to answer to the vendor rather than to us.
+ * Sources are the captures recovered from scarburato/t150_driver's git
+ * history, decoded in RESEARCH.md A40:
+ *
+ *   windows_spring0.pcapng   05 1c 00 00 00 00 00 00 00 46 54
+ *                            01 00 40 40 b8 0b 00 00 00 0e 00 1c 00 00 00
+ *   damper0.pcapng           05 0e 00 64 64 00 00 00 00 64 64
+ *   multiple_saw_down.pcapng 01 05 24 40 88 13 00 00 00 9a 00 a8 00 64 00
+ */
+static void
+test_vendor_bytes(void)
+{
+	struct t150_effect ef;
+	uint8_t b[32];
+
+	/* A spring at full coefficient and saturation, slot 0. */
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_SPRING;
+	ef.slot = 0;
+	ef.duration = 3000000;
+	ef.u.condition.pos_coeff = T150_DI_MAX;
+	ef.u.condition.neg_coeff = T150_DI_MAX;
+	ef.u.condition.pos_saturation = T150_DI_MAX;
+	ef.u.condition.neg_saturation = T150_DI_MAX;
+
+	CHECK("vendor spring first", b, t150_enc_ff_first(b, sizeof(b), &ef),
+	    0x05, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46, 0x54);
+	CHECK("vendor spring update", b, t150_enc_ff_update(b, sizeof(b), &ef),
+	    0x05, 0x0e, 0x00, 0x64, 0x64, 0x00, 0x00, 0x00, 0x00, 0x54, 0x54);
+	CHECK("vendor spring commit", b, t150_enc_ff_commit(b, sizeof(b), &ef),
+	    0x01, 0x00, 0x40, 0x40, 0xb8, 0x0b, 0x00, 0x00, 0x00, 0x0e, 0x00,
+	    0x1c, 0x00, 0x00, 0x00);
+
+	/* A damper, whose saturation reaches 100 where a spring stops at 84. */
+	ef.kind = T150_EFFECT_DAMPER;
+	CHECK("vendor damper update", b, t150_enc_ff_update(b, sizeof(b), &ef),
+	    0x05, 0x0e, 0x00, 0x64, 0x64, 0x00, 0x00, 0x00, 0x00, 0x64, 0x64);
+
+	/*
+	 * A sawtooth down in slot 5 with a 100 ms start delay, the packet that
+	 * proved the delay field is sixteen bits wide and not a 256 ms unit.
+	 */
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_SAWTOOTH_DOWN;
+	ef.slot = 5;
+	ef.duration = 5000000;
+	ef.start_delay = 100000;
+	CHECK("vendor sawtooth commit with delay", b,
+	    t150_enc_ff_commit(b, sizeof(b), &ef),
+	    0x01, 0x05, 0x24, 0x40, 0x88, 0x13, 0x00, 0x00, 0x00, 0x9a, 0x00,
+	    0xa8, 0x00, 0x64, 0x00);
+
+	/* Gain full scale, 43 80, from windows_spring0.pcapng. */
+	CHECK("vendor gain", b, t150_enc_gain(b, sizeof(b), T150_DI_MAX),
+	    0x43, 0x80);
 }
 
 static void
@@ -378,15 +442,8 @@ test_refusals(void)
 	/*
 	 * A kind the wheel has no type code for is refused, not guessed at.
 	 * The caller downgrades first, which is why t150_effect_downgrade
-	 * exists.
+	 * exists. Square and triangle are no longer among them.
 	 */
-	ef.kind = T150_EFFECT_SQUARE;
-	check_int("square is refused", (long)t150_enc_ff_first(b, sizeof(b), &ef), 0);
-	check_int("square update is refused",
-	    (long)t150_enc_ff_update(b, sizeof(b), &ef), 0);
-	check_int("square commit is refused",
-	    (long)t150_enc_ff_commit(b, sizeof(b), &ef), 0);
-
 	ef.kind = T150_EFFECT_RAMP;
 	check_int("ramp is refused", (long)t150_enc_ff_commit(b, sizeof(b), &ef), 0);
 	ef.kind = T150_EFFECT_NONE;
@@ -412,6 +469,7 @@ main(void)
 	test_periodic();
 	test_condition();
 	test_downgrades();
+	test_vendor_bytes();
 	test_refusals();
 
 	if (failures != 0) {

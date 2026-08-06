@@ -276,7 +276,7 @@ test_downgrade(void)
 	reset_session();
 	hello(0);
 
-	/* Square is not in the protocol, so it goes out as a sine. */
+	/* Square has its own type code, 0x4020, and is sent as itself. */
 	memset(&ef, 0, sizeof(ef));
 	ef.kind = T150_EFFECT_SQUARE;
 	ef.slot = 1;
@@ -287,10 +287,10 @@ test_downgrade(void)
 
 	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
 	    T150_ERR_NONE);
-	expect_log("square is sent as a sine",
+	expect_log("square is sent as a square",
 	    "write 9: 02 38 00 00 00 00 00 00 00\n"
 	    "write 8: 04 2a 00 7f 00 00 14 00\n"
-	    "write 15: 01 01 22 40 d0 07 00 00 00 2a 00 38 00 00 00\n");
+	    "write 15: 01 01 20 40 d0 07 00 00 00 2a 00 38 00 00 00\n");
 }
 
 static void

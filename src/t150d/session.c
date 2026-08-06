@@ -83,6 +83,8 @@ scale_effect(struct t150_effect *ef)
 	case T150_EFFECT_CONSTANT:
 		ef->u.constant.magnitude = apply_gain(ef->u.constant.magnitude, g);
 		break;
+	case T150_EFFECT_SQUARE:
+	case T150_EFFECT_TRIANGLE:
 	case T150_EFFECT_SINE:
 	case T150_EFFECT_SAWTOOTH_UP:
 	case T150_EFFECT_SAWTOOTH_DOWN:
