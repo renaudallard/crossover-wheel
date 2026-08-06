@@ -557,9 +557,12 @@ confusing session has been guessing at:
 The plain run prints the device and every object it declares: each axis and
 button with its offset, the axle number a game's configuration records, the
 declared range, and whether any axis is marked a force feedback actuator.
-`-i` asks for one control at a time and names what moved and which way, which
-settles a pedal that arrives as a button or rests at maximum without
-inference. `-f` creates a real constant force and a real damper and plays
+`-i` works through every control by name, the wheel, the pedals, both
+paddles, all thirteen buttons and the hat, one at a time. It names the
+DirectInput object each one turned out to be, records a pedal's rest
+position and full travel so an inversion is a number rather than an
+impression, asks you to confirm each identification, and prints a table of
+the whole wheel at the end with anything you disputed flagged. `-f` creates a real constant force and a real damper and plays
 them with no game involved, which is the one measurement that separates a
 game asking wrongly from a chain that does not deliver. **Hold the wheel for
 `-f`.**

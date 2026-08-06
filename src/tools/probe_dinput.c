@@ -12,7 +12,8 @@
  * Three things it does:
  *
  *   the dump         what the device and every one of its objects declare
- *   -i               press each control and be told what moved and by how much
+ *   -i               work every control by name, one at a time, confirm each
+ *                    identification, and end with a table of the whole wheel
  *   -f               create a real force feedback effect and ask whether the
  *                    wheel moved, with no game involved at all
  *
@@ -213,24 +214,106 @@ dump_caps(void)
 }
 
 /*
- * Watch until one axis or button moves far enough to be a deliberate press,
- * then report what it was. Returns 0 when something moved.
+ * The controls this wheel has, in the order it is natural to work through
+ * them, named the way the person holding it would name them. The T150's
+ * thirteen buttons were identified on hardware and are recorded in
+ * RESEARCH.md A37; asking for "button 7" instead would put the burden of
+ * the mapping back on whoever is running this, which is the thing the tool
+ * exists to remove.
+ */
+struct control {
+	const char	*prompt;
+	int		 is_axis;
+};
+
+static const struct control controls[] = {
+	{ "Turn the wheel fully right, then let it centre",	1 },
+	{ "Press the accelerator fully, then release it",	1 },
+	{ "Press the brake fully, then release it",		1 },
+	{ "Press the clutch fully if you have one, then release", 1 },
+	{ "Press the LEFT paddle",				0 },
+	{ "Press the RIGHT paddle",				0 },
+	{ "Press TRIANGLE",					0 },
+	{ "Press SQUARE",					0 },
+	{ "Press CIRCLE",					0 },
+	{ "Press CROSS",					0 },
+	{ "Press SHARE or SELECT",				0 },
+	{ "Press OPTIONS or START",				0 },
+	{ "Press R2",						0 },
+	{ "Press L2",						0 },
+	{ "Press L3",						0 },
+	{ "Press R3",						0 },
+	{ "Press the PS button",				0 },
+	{ "Push the hat UP",					0 },
+	{ "Push the hat DOWN",					0 },
+	{ "Push the hat LEFT",					0 },
+	{ "Push the hat RIGHT",					0 }
+};
+
+/* What one control turned out to be, for the table at the end. */
+struct result {
+	const char	*prompt;
+	char		 found[80];
+	char		 detail[120];
+	int		 seen;
+	int		 disputed;
+	int		 skipped;
+};
+
+static struct result results[sizeof(controls) / sizeof(controls[0])];
+
+/*
+ * Ask, and take y, n or s. Enter means yes, because the common case is the
+ * tool being right and a person working through twenty controls should not
+ * have to type for each one.
  */
 static int
-watch_one(const char *what)
+confirm(void)
 {
-	DIJOYSTATE2 rest, now;
-	int i, waited;
+	int c, first;
 
-	printf("\n%s, then hold it. Watching %d seconds.\n", what,
-	    WATCH_MS / 1000);
+	printf("      correct? [Y/n/s to skip] ");
 	fflush(stdout);
 
-	Sleep(500);
-	if (poll_state(&rest) != 0) {
-		printf("  cannot read the device\n");
+	first = c = getchar();
+	while (c != '\n' && c != EOF)
+		c = getchar();
+
+	if (first == 'n' || first == 'N')
 		return -1;
+	if (first == 's' || first == 'S')
+		return 1;
+
+	return 0;
+}
+
+/*
+ * Watch one control through a whole press and release. Axes are sampled the
+ * entire time rather than at the first movement, so the record is the real
+ * travel: where it rests, how far it goes, and which way. A pedal that rests
+ * at its maximum is then a number rather than an impression, and a pedal
+ * that only reaches half its range shows up as one too.
+ */
+static void
+watch_control(const struct control *c, struct result *r)
+{
+	DIJOYSTATE2 rest, now;
+	LONG lo[16], hi[16];
+	int i, waited, best = -1, btn = -1, pov = -1;
+
+	r->prompt = c->prompt;
+
+	printf("\n%s.\n  Watching %d seconds.\n", c->prompt, WATCH_MS / 1000);
+	fflush(stdout);
+
+	Sleep(400);
+	if (poll_state(&rest) != 0) {
+		(void)snprintf(r->found, sizeof(r->found), "device unreadable");
+		return;
 	}
+
+	for (i = 0; i < naxes; i++)
+		lo[i] = hi[i] = axis_value(&rest, axes[i].ofs);
 
 	for (waited = 0; waited < WATCH_MS; waited += POLL_MS) {
 		Sleep(POLL_MS);
@@ -238,64 +321,112 @@ watch_one(const char *what)
 			continue;
 
 		for (i = 0; i < naxes; i++) {
-			LONG a = axis_value(&rest, axes[i].ofs);
-			LONG b = axis_value(&now, axes[i].ofs);
-			LONG d = b > a ? b - a : a - b;
+			LONG v = axis_value(&now, axes[i].ofs);
 
-			if (d < MOVE_MIN)
-				continue;
-
-			printf("  %s: axis %s, ofs %lu, axle %u\n", what,
-			    axes[i].name, (unsigned long)axes[i].ofs,
-			    axle_number(axes[i].ofs));
-			printf("      released %ld, pressed %ld, so pressing "
-			    "makes it %s\n", (long)a, (long)b,
-			    b > a ? "rise" : "FALL");
-			if (b < a)
-				printf("      that is inverted for a pedal: a "
-				    "game reading it raw sees full at rest\n");
-			return 0;
+			if (v < lo[i])
+				lo[i] = v;
+			if (v > hi[i])
+				hi[i] = v;
 		}
+		for (i = 0; i < nbuttons && btn < 0; i++) {
+			int n = (int)(buttons[i].ofs - DIJOFS_BUTTON0);
 
-		for (i = 0; i < nbuttons; i++) {
-			BYTE was = rest.rgbButtons[buttons[i].ofs -
-			    DIJOFS_BUTTON0];
-			BYTE is = now.rgbButtons[buttons[i].ofs -
-			    DIJOFS_BUTTON0];
-
-			if (was == is || !(is & 0x80))
-				continue;
-
-			printf("  %s: button %lu (%s)\n", what,
-			    (unsigned long)(buttons[i].ofs - DIJOFS_BUTTON0),
-			    buttons[i].name);
-			return 0;
+			if (now.rgbButtons[n] & 0x80)
+				btn = n;
 		}
+		if (pov < 0 && LOWORD(now.rgdwPOV[0]) != 0xffff)
+			pov = (int)now.rgdwPOV[0];
 	}
 
-	printf("  nothing moved. If that was a pedal, it may be arriving as a "
-	    "button, or not at all.\n");
+	/* The axis that travelled furthest is the one that was worked. */
+	for (i = 0; i < naxes; i++)
+		if (hi[i] - lo[i] >= MOVE_MIN &&
+		    (best < 0 || hi[i] - lo[i] > hi[best] - lo[best]))
+			best = i;
 
-	return -1;
+	if (c->is_axis && best >= 0) {
+		LONG at_rest = axis_value(&rest, axes[best].ofs);
+		int inverted = at_rest > (lo[best] + hi[best]) / 2;
+
+		r->seen = 1;
+		(void)snprintf(r->found, sizeof(r->found),
+		    "axis %s, ofs %lu, axle %u", axes[best].name,
+		    (unsigned long)axes[best].ofs,
+		    axle_number(axes[best].ofs));
+		(void)snprintf(r->detail, sizeof(r->detail),
+		    "rest %ld, range %ld..%ld, pressing makes it %s%s",
+		    (long)at_rest, (long)lo[best], (long)hi[best],
+		    inverted ? "FALL" : "rise",
+		    inverted ? "  [inverted]" : "");
+		printf("  -> %s\n     %s\n", r->found, r->detail);
+	} else if (!c->is_axis && btn >= 0) {
+		r->seen = 1;
+		(void)snprintf(r->found, sizeof(r->found), "button %d", btn);
+		(void)snprintf(r->detail, sizeof(r->detail), "%s",
+		    buttons[btn].name);
+		printf("  -> %s (%s)\n", r->found, r->detail);
+	} else if (!c->is_axis && pov >= 0) {
+		r->seen = 1;
+		(void)snprintf(r->found, sizeof(r->found), "hat %d", pov / 100);
+		(void)snprintf(r->detail, sizeof(r->detail),
+		    "hat switch, %d hundredths of a degree", pov);
+		printf("  -> %s\n", r->found);
+	} else if (best >= 0) {
+		/* Asked for a button and an axis moved, or the reverse. */
+		r->seen = 1;
+		(void)snprintf(r->found, sizeof(r->found),
+		    "axis %s, ofs %lu, axle %u", axes[best].name,
+		    (unsigned long)axes[best].ofs,
+		    axle_number(axes[best].ofs));
+		(void)snprintf(r->detail, sizeof(r->detail),
+		    "an AXIS moved where a button was expected");
+		printf("  -> %s\n     %s\n", r->found, r->detail);
+	} else if (btn >= 0) {
+		r->seen = 1;
+		(void)snprintf(r->found, sizeof(r->found), "button %d", btn);
+		(void)snprintf(r->detail, sizeof(r->detail),
+		    "a BUTTON moved where an axis was expected");
+		printf("  -> %s\n     %s\n", r->found, r->detail);
+	} else {
+		(void)snprintf(r->found, sizeof(r->found), "nothing moved");
+		printf("  -> nothing moved\n");
+	}
 }
 
 static void
 identify(void)
 {
-	static const char *prompts[] = {
-		"Turn the wheel to the right",
-		"Press the accelerator",
-		"Press the brake",
-		"Press the left paddle",
-		"Press the right paddle",
-	};
-	size_t i;
+	size_t i, n = sizeof(controls) / sizeof(controls[0]);
 
 	printf("\n--- identification ---\n");
-	printf("One control at a time, and let go between them.\n");
+	printf("One control at a time. Let go of everything else, and press\n"
+	    "each one fully so its whole travel is recorded.\n");
 
-	for (i = 0; i < sizeof(prompts) / sizeof(prompts[0]); i++)
-		(void)watch_one(prompts[i]);
+	for (i = 0; i < n; i++) {
+		int c;
+
+		watch_control(&controls[i], &results[i]);
+
+		c = confirm();
+		if (c < 0)
+			results[i].disputed = 1;
+		else if (c > 0)
+			results[i].skipped = 1;
+	}
+
+	printf("\n--- what this wheel is, as DirectInput sees it ---\n\n");
+	printf("%-44s %-34s %s\n", "control", "is", "notes");
+	for (i = 0; i < n; i++) {
+		const struct result *r = &results[i];
+
+		if (r->skipped)
+			continue;
+		printf("%-44s %-34s %s%s\n", controls[i].prompt,
+		    r->seen ? r->found : "NOT SEEN", r->detail,
+		    r->disputed ? "  [DISPUTED]" : "");
+	}
+	printf("\nAnything marked DISPUTED is where the tool named a control "
+	    "and you said it was wrong.\nThat is the interesting line.\n");
 }
 
 /*
@@ -396,7 +527,8 @@ usage(void)
 	    "usage: probe_dinput [-i] [-f]\n"
 	    "\n"
 	    "  no flags   dump the device and every object it declares\n"
-	    "  -i         then ask for each control one at a time\n"
+	    "  -i         then work every control by name, one at a time,\n"
+	    "             confirming each, and print a table at the end\n"
 	    "  -f         then create a real effect and play it\n"
 	    "\n"
 	    "Run it in the bottle. With the proxy installed it measures the\n"

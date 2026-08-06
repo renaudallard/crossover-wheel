@@ -46,9 +46,15 @@ as a force feedback actuator.
 
   wine --bottle "<name>" --cx-app probe_dinput.exe
 
-Add -i and it asks you to work one control at a time and tells you which
-object moved and in which direction, which settles a pedal that arrives as
-a button or rests at maximum without guessing. Add -f and it creates a real
+Add -i and it works through every control by name, one at a time: the
+wheel, each pedal, both paddles, all thirteen buttons and the four hat
+directions. For each it says which DirectInput object moved, and for a
+pedal it records where it rests and how far it travels, so an inverted
+pedal is three numbers rather than an impression. It asks you to confirm
+each identification, Enter for yes, n if it named the wrong thing, s to
+skip a control this wheel does not have, and it ends with a table of the
+whole wheel. Anything you disputed is flagged in that table, and that is
+the line worth sending. Add -f and it creates a real
 constant force and a real damper and plays them, with no game involved, so
 a game that asks wrongly can be told apart from a chain that does not
 deliver. Hold the wheel when you use -f.
