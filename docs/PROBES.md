@@ -569,8 +569,9 @@ device's own, and the state offset is the one `c_dfDIJoystick2` assigns, so
 a button enumerated at 84 is `rgbButtons[0]`. Reading a control at the
 wrong one of the two is how this tool first reported buttons that were
 never pressed.
-`-i` works through every control by name, the wheel, the pedals, both
-paddles, all thirteen buttons and the hat, one at a time. It names the
+`-i` works through every control by name, the wheel, the pedals, all
+thirteen buttons with the paddles among them, and the hat, one at a
+time. It names the
 DirectInput object each one turned out to be, records a pedal's rest
 position and full travel so an inversion is a number rather than an
 impression, asks you to confirm each identification, and prints a table of
