@@ -204,9 +204,21 @@ dev_GetCapabilities(IDirectInputDevice8W *self, LPDIDEVCAPS caps)
 	 */
 	caps->dwFlags |= DIDC_FORCEFEEDBACK | DIDC_FFATTACK | DIDC_FFFADE |
 	    DIDC_POSNEGCOEFFICIENTS | DIDC_SATURATION | DIDC_DEADBAND;
-	caps->dwFFSamplePeriod = 1000;
-	caps->dwFFMinTimeResolution = 1000;
-	caps->dwFFDriverVersion = 1;
+
+	/*
+	 * dwFlags is at offset 4 and exists in every version of this struct,
+	 * but the three force feedback fields sit at 24, 28 and 40, past the
+	 * end of the 24-byte DIDEVCAPS_DX3 a caller is allowed to pass and
+	 * which the builtin accepts. Writing them unguarded put twelve bytes
+	 * up to twenty past such a caller's object.
+	 */
+	if (caps->dwSize >= sizeof(DIDEVCAPS)) {
+		caps->dwFFSamplePeriod = 1000;
+		caps->dwFFMinTimeResolution = 1000;
+		caps->dwFFDriverVersion = 1;
+	}
+
+	t150_log("GetCapabilities, size %lu\n", (unsigned long)caps->dwSize);
 
 	return hr;
 }
@@ -483,12 +495,35 @@ static HRESULT WINAPI
 dev_CreateEffect(IDirectInputDevice8W *self, REFGUID guid, LPCDIEFFECT eff,
     LPDIRECTINPUTEFFECT *out, LPUNKNOWN outer)
 {
+	HRESULT hr;
+
 	if (outer != NULL)
 		return CLASS_E_NOAGGREGATION;
 	if (out == NULL)
 		return E_POINTER;
 
-	return t150_effect_create(from_iface(self), guid, eff, out);
+	/*
+	 * The line that says which of the four possible failures is happening.
+	 * cAxes and cbTypeSpecificParams are the two fields that decide
+	 * whether a condition effect arrives with real coefficients or with
+	 * the zeros a caller produces when it believes the device has no
+	 * force feedback axis. RESEARCH.md B13.
+	 */
+	if (eff != NULL)
+		t150_log("CreateEffect %08lx flags 0x%08lx cAxes %lu "
+		    "typeparams %lu\n", (unsigned long)guid->Data1,
+		    (unsigned long)eff->dwFlags, (unsigned long)eff->cAxes,
+		    (unsigned long)eff->cbTypeSpecificParams);
+	else
+		t150_log("CreateEffect %08lx with no parameters\n",
+		    (unsigned long)guid->Data1);
+
+	hr = t150_effect_create(from_iface(self), guid, eff, out);
+	if (FAILED(hr))
+		t150_log("CreateEffect refused, hr 0x%08lx\n",
+		    (unsigned long)hr);
+
+	return hr;
 }
 
 static HRESULT WINAPI
@@ -498,9 +533,22 @@ dev_EnumEffects(IDirectInputDevice8W *self, LPDIENUMEFFECTSCALLBACKW cb,
 	struct t150_device *d = from_iface(self);
 	BOOL (WINAPI *fn)(const void *, void *) = (void *)cb;
 	size_t i;
+	DWORD want;
 
 	if (cb == NULL)
 		return E_POINTER;
+
+	/*
+	 * Mask before comparing, the way Wine does. This tested type against
+	 * DIEFT_ALL first and only then reduced it, so a caller asking for
+	 * DIEFT_ALL with any flag bit set, DIEFT_FFATTACK say, failed the
+	 * first test and then matched nothing: an empty enumeration returned
+	 * as DI_OK. SDL treats no supported effects as a fatal error and
+	 * abandons force feedback for the device, so this was a silent way to
+	 * lose everything. No caller is known to pass that combination today.
+	 */
+	want = DIEFT_GETTYPE(type);
+	t150_log("EnumEffects type 0x%08lx\n", (unsigned long)type);
 
 	for (i = 0; i < sizeof(effects) / sizeof(effects[0]); i++) {
 		union {
@@ -508,8 +556,7 @@ dev_EnumEffects(IDirectInputDevice8W *self, LPDIENUMEFFECTSCALLBACKW cb,
 			DIEFFECTINFOA a;
 		} info;
 
-		if (type != DIEFT_ALL &&
-		    DIEFT_GETTYPE(effects[i].type) != DIEFT_GETTYPE(type))
+		if (type != DIEFT_ALL && DIEFT_GETTYPE(effects[i].type) != want)
 			continue;
 
 		memset(&info, 0, sizeof(info));

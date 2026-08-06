@@ -31,5 +31,11 @@ game assumes the convention and cannot rebind, set T150_PEDALS to swap for
 the labels, invert for the rest position, or full for both. The proxy logs
 its version and these settings when it wraps the wheel.
 
+With T150_LOG set it also records what a game asks of it: GetCapabilities,
+the EnumEffects filter, every CreateEffect with its axis count and parameter
+size, and the first Start of each effect. That log is what tells you whether
+a game is asking for force feedback at all, which is the one thing nobody
+has been able to see.
+
 The README in the repository has the exact commands as CrossOver 26
 resolves them, and docs/PROBES.md question 8 is the test.

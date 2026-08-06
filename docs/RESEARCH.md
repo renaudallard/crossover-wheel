@@ -1560,6 +1560,68 @@ So the experiment order for the bottle, cheapest and most likely first:
 > section and its troubleshooting entry; its `Sources/ThrustmasterWheel/
 > main.swift` for what the CrossOver mode actually sends.
 
+**B13. The proxy's DirectInput surface, audited against Wine's own, and the
+uncomfortable finding that the failure has never been observed.** With the
+chain proven end to end and still no force felt, the proxy's answers to
+DirectInput were audited surface by surface against Wine's implementation,
+which is what would be answering if the proxy were not there.
+
+**The first finding was that nothing can see the failure.** The proxy logged
+at two points in the whole DLL, neither on a force feedback path, and the
+daemon logs an effect only when it downgrades one, which a spring never is.
+So four different worlds were indistinguishable: the game never calls
+`CreateEffect`; it calls it with a degenerate payload; it calls it correctly
+and the wheel is written; or the write fails. Every candidate fix was a bet
+on which. The instrumentation went in first for that reason, and it changes
+no behaviour.
+
+**The leading candidate, and why it is only a candidate.** `GetCapabilities`
+claims `DIDC_FORCEFEEDBACK` while `EnumObjects` is forwarded untouched, so
+not one axis carries `DIDFT_FFACTUATOR`. Wine sets that flag only for axes
+named in a PID Set Effect report, and the T150 has no PID collection at all.
+The consequence is exact for SDL: `naxes` stays 0, a condition effect gets
+`cbTypeSpecificParams` 0, the proxy's own size gate discards it, and a
+spring uploads with every coefficient zero. `CreateEffect` returns `DI_OK`,
+`Start` returns `DI_OK`, the wheel does nothing, which is the symptom. It is
+also why the Windows.Gaming.Input RacingWheel tab is empty: Wine's WGI wants
+exactly one actuator axis.
+
+But Assetto Corsa does not use SDL's haptic backend, and a plain DirectInput
+game is unaffected by this: the proxy's own effect path never reads `cAxes`.
+So the most concrete failure story available may not be the one happening.
+
+**A real bug found on the way.** `EnumEffects` tested `type != DIEFT_ALL`
+before reducing `type`, so a caller passing `DIEFT_ALL` with any flag bit
+set matched nothing and got an empty enumeration returned as `DI_OK`. SDL
+treats no supported effects as fatal. No known caller passes that
+combination, so it is a latent hole rather than the blocker, and it is one
+line.
+
+**Two memory-safety defects, unrelated to force feedback.**
+`GetCapabilities` wrote three fields at offsets 24, 28 and 40 into a struct
+a caller may legally declare as 24 bytes, and `GetParameters` wrote
+`dwStartDelay` past the end of a `DIEFFECT_DX5` while the inbound path
+guarded the identical field with a comment naming the hazard. Both fixed.
+
+**What the audit deliberately did not change.** Marking an actuator axis
+touches `EnumObjects`, which is how SDL and every action-mapping game
+discovers axes, and this project has already broken working pedal input
+twice by improving it unasked. It waits for evidence. So do
+`DI8DEVTYPE_DRIVING`, `DIPROP_FFLOAD` and `guidFFDriver`, none of which has
+a demonstrated victim.
+
+Three things the audit caught that a careless fix would have got wrong.
+Rewriting `dwDevType` in the enumeration thunk is dead code, because Wine
+returns before invoking the callback for a driving-class filter. A one-shot
+"mark exactly one axis" flag must be scoped to the enumeration rather than
+the device, because WGI enumerates twice. And the moment one axis is marked,
+`direction_of`'s `cAxes <= 1` shortcut fires before the polar branch, so
+every constant force would play due east; that fix has to ship in the same
+commit.
+
+> The audit ran 52 agents over six surfaces against CrossOver 26.3.0's own
+> Wine sources and SDL 2.30.12, and refuted 20 of its 45 findings.
+
 **B12. CrossOver on macOS does deliver game force feedback, for hardware
 that brings a PID descriptor, and the chain is already verified piecewise
 in this file.** An earlier draft of B11 said Wine force feedback on macOS

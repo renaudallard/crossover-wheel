@@ -22,6 +22,7 @@ struct effect_obj {
 	GUID			 guid;
 	int			 slot;
 	int			 playing;
+	int			 logged;	/* the first Start is logged, not every one */
 	struct t150_effect	 ef;
 };
 
@@ -283,7 +284,12 @@ eff_GetParameters(IDirectInputEffect *self, DIEFFECT *p, DWORD flags)
 
 	if (flags & DIEP_DURATION)
 		p->dwDuration = e->ef.duration;
-	if (flags & DIEP_STARTDELAY)
+	/*
+	 * dwStartDelay is the one field past the end of a DIEFFECT_DX5, which
+	 * is what the guard on the way in at DIEP_STARTDELAY above is for.
+	 * The way out needs the same guard, and did not have it.
+	 */
+	if ((flags & DIEP_STARTDELAY) && p->dwSize >= sizeof(DIEFFECT))
 		p->dwStartDelay = e->ef.start_delay;
 	if (flags & DIEP_GAIN)
 		p->dwGain = e->ef.gain;
@@ -414,8 +420,24 @@ eff_Start(IDirectInputEffect *self, DWORD iterations, DWORD flags)
 	 * objects pointing at slots that no longer existed. Every later
 	 * Start then failed and the game had no way to know why.
 	 */
-	if (!(flags & DIES_NODOWNLOAD) && upload(e) != 0)
+	/*
+	 * Logged once per effect rather than on every call. A game may Start
+	 * an effect as often as it updates it, and the log opens its file per
+	 * line, so logging each one would cost more than the diagnosis is
+	 * worth. What matters is whether a Start ever happens at all.
+	 */
+	if (!(flags & DIES_NODOWNLOAD) && upload(e) != 0) {
+		if (!e->logged) {
+			e->logged = 1;
+			t150_log("Start: upload failed, slot %d\n", e->slot);
+		}
 		return DIERR_INPUTLOST;
+	}
+	if (!e->logged) {
+		e->logged = 1;
+		t150_log("Start slot %d, %lu iteration(s)\n", e->slot,
+		    (unsigned long)iterations);
+	}
 
 	start[0] = (uint8_t)e->slot;
 	start[1] = iterations >= 255 ? 255 : (uint8_t)iterations;
