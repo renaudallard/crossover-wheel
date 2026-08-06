@@ -583,7 +583,11 @@ headless CI run looks like, the table says NEVER ANSWERED on every line
 rather than pretending someone agreed. `-f` creates a real constant force and a real damper and plays
 them with no game involved, which is the one measurement that separates a
 game asking wrongly from a chain that does not deliver. **Hold the wheel for
-`-f`.**
+`-f`.** Each effect waits until you say you are ready, and afterwards the
+tool asks whether you felt it, through the same channel the identification
+questions use, and writes the answer into the log, so the measurement is
+recorded rather than left in the room. It takes only y or n there: that
+answer is the measurement, so nothing stands in for it.
 
 Every run writes itself to `Z:\tmp\probe_dinput.log`, which is
 `/tmp/probe_dinput.log` from macOS, as well as to the screen, so what a

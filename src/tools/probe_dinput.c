@@ -14,8 +14,9 @@
  *   the dump         what the device and every one of its objects declare
  *   -i               work every control by name, one at a time, confirm each
  *                    identification, and end with a table of the whole wheel
- *   -f               create a real force feedback effect and ask whether the
- *                    wheel moved, with no game involved at all
+ *   -f               create two real force feedback effects, ask after
+ *                    each whether the wheel moved, and write the answers
+ *                    down, with no game involved at all
  *
  * The last is the measurement this project has been unable to make. A game
  * asking wrongly and a chain that does not deliver look identical from
@@ -387,6 +388,69 @@ ready(const char *what)
 }
 
 /*
+ * Ask a yes or no question about what the wheel just did, and write the
+ * answer down. The observation only the person holding the wheel can make
+ * is the measurement, and a question that is asked but not recorded might
+ * as well not have been asked. It insists on y or n where the confirms
+ * take a bare Enter: this answer is the measurement, so nothing stands in
+ * for it.
+ */
+static void
+answer(const char *question)
+{
+	char text[300];
+	const char *said = NULL;
+	int c, first;
+
+	out("  ---> %s?\n", question);
+
+	while (!ask_by_box && said == NULL) {
+		out("       [y/n] ");
+		first = c = getchar();
+		while (c != '\n' && c != EOF)
+			c = getchar();
+		if (first == EOF) {
+			ask_by_box = 1;
+			out("\nstdin cannot answer; asking on screen "
+			    "instead\n");
+		} else if (first == 'y' || first == 'Y') {
+			said = "yes";
+		} else if (first == 'n' || first == 'N') {
+			said = "no";
+		}
+	}
+
+	if (said == NULL && !nobody_to_ask) {
+		(void)snprintf(text, sizeof(text), "%s?", question);
+		switch (ask_box(text, MB_YESNO)) {
+		case IDYES:
+			said = "yes";
+			break;
+		case IDNO:
+			said = "no";
+			break;
+		default:
+			stop_asking();
+		}
+	}
+
+	out("       answer: %s\n", said != NULL ? said : "never given");
+}
+
+/*
+ * Tell the person a failure happened. out() already put it on stdout and
+ * in the log, but a run whose questions travel by box has nobody looking
+ * at either, and a person told to hold the wheel deserves to hear why
+ * nothing is coming.
+ */
+static void
+tell_box(const char *text)
+{
+	if (ask_by_box && !nobody_to_ask && ask_box(text, MB_OK) <= 0)
+		stop_asking();
+}
+
+/*
  * The controls this wheel has, in the order it is natural to work through
  * them, named the way the person holding it would name them. The T150's
  * thirteen buttons were identified on hardware and are recorded in
@@ -709,9 +773,10 @@ ffb_test(void)
 	LONG dir = 0;
 	IDirectInputEffect *e = NULL;
 	HRESULT hr;
+	char text[200];
 
 	out("\n--- force feedback self test ---\n");
-	out("HOLD THE WHEEL. Two effects, a few seconds each.\n");
+	ready("HOLD THE WHEEL. Two effects, a few seconds each.");
 
 	memset(&cf, 0, sizeof(cf));
 	cf.lMagnitude = 8000;		/* 80 percent, one direction */
@@ -735,17 +800,28 @@ ffb_test(void)
 		    (unsigned long)hr);
 		out("  the proxy is not accepting effects; nothing below "
 		    "this can work\n");
+		(void)snprintf(text, sizeof(text),
+		    "CreateEffect failed, 0x%08lx.\n\nThe proxy is not "
+		    "accepting effects; nothing more can run.",
+		    (unsigned long)hr);
+		tell_box(text);
 		return -1;
 	}
 
 	hr = IDirectInputEffect_Start(e, 1, 0);
 	out("  constant force: Start %s (0x%08lx)\n",
 	    SUCCEEDED(hr) ? "accepted" : "FAILED", (unsigned long)hr);
-	out("  ---> did the wheel pull to one side just now?\n");
+	if (FAILED(hr)) {
+		(void)snprintf(text, sizeof(text),
+		    "The constant force did not start, 0x%08lx.\n\n"
+		    "Answer for what you felt anyway.", (unsigned long)hr);
+		tell_box(text);
+	}
 	Sleep(3000);
 	(void)IDirectInputEffect_Stop(e);
 	IDirectInputEffect_Release(e);
 	e = NULL;
+	answer("did the wheel pull to one side just now");
 
 	memset(&cond, 0, sizeof(cond));
 	cond.lPositiveCoefficient = 8000;
@@ -761,19 +837,31 @@ ffb_test(void)
 	if (FAILED(hr) || e == NULL) {
 		out("  damper: CreateEffect failed, 0x%08lx\n",
 		    (unsigned long)hr);
+		(void)snprintf(text, sizeof(text),
+		    "Damper CreateEffect failed, 0x%08lx. Nothing more "
+		    "can run.", (unsigned long)hr);
+		tell_box(text);
 		return -1;
 	}
+
+	ready("Now the damper. Turn the wheel while it runs.");
 
 	hr = IDirectInputEffect_Start(e, 1, 0);
 	out("  damper: Start %s (0x%08lx)\n",
 	    SUCCEEDED(hr) ? "accepted" : "FAILED", (unsigned long)hr);
-	out("  ---> turn the wheel now. Is it heavier than before?\n");
+	if (FAILED(hr)) {
+		(void)snprintf(text, sizeof(text),
+		    "The damper did not start, 0x%08lx.\n\n"
+		    "Answer for what you felt anyway.", (unsigned long)hr);
+		tell_box(text);
+	}
 	Sleep(5000);
 	(void)IDirectInputEffect_Stop(e);
 	IDirectInputEffect_Release(e);
+	answer("was the wheel heavier to turn while it ran");
 
-	out("\n  Both effects were accepted. Whether the wheel moved is\n"
-	    "  the answer, and only you can see it.\n");
+	out("\n  The answers above are the measurement, and only the person\n"
+	    "  holding the wheel could make it.\n");
 
 	return 0;
 }
@@ -795,7 +883,8 @@ usage(void)
 	    "  no flags   dump the device and every object it declares\n"
 	    "  -i         then work every control by name, one at a time,\n"
 	    "             confirming each, and print a table at the end\n"
-	    "  -f         then create a real effect and play it\n"
+	    "  -f         then create two real effects, play them, and\n"
+	    "             write down whether you felt each\n"
 	    "\n"
 	    "Run it in the bottle. With the proxy installed it measures the\n"
 	    "proxy; add --dll dinput8=b to the wine command to measure\n"
