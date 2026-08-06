@@ -567,6 +567,11 @@ them with no game involved, which is the one measurement that separates a
 game asking wrongly from a chain that does not deliver. **Hold the wheel for
 `-f`.**
 
+Every run writes itself to `Z:\tmp\probe_dinput.log`, which is
+`/tmp/probe_dinput.log` from macOS, as well as to the screen, so what a
+session found survives the terminal it was found in. `-o` chooses another
+path.
+
 Adding `--dll dinput8=b` to any of those forces CrossOver's builtin instead
 of the proxy, so running a pair measures exactly what the proxy changes.
 

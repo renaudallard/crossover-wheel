@@ -44,6 +44,40 @@
 
 #include "t150/t150.h"
 
+#include <stdarg.h>
+
+/*
+ * Everything this prints goes to a file as well as to the screen, and it
+ * does so without being asked. A run of this tool is evidence, and evidence
+ * that lives only in a terminal has been lost to a closed window, a
+ * truncated scrollback and an interrupted tail more than once in this
+ * project's history. The default sits on the host filesystem through Wine's
+ * Z: mapping, so it can be read from macOS without hunting through the
+ * bottle; -o puts it anywhere else.
+ */
+#define LOG_DEFAULT	"Z:\\tmp\\probe_dinput.log"
+
+static FILE *logfp;
+
+static void
+out(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	(void)vprintf(fmt, ap);
+	va_end(ap);
+	(void)fflush(stdout);
+
+	if (logfp == NULL)
+		return;
+
+	va_start(ap, fmt);
+	(void)vfprintf(logfp, fmt, ap);
+	va_end(ap);
+	(void)fflush(logfp);
+}
+
 /* How long to watch for movement when asking for one control. */
 #define WATCH_MS	6000
 #define POLL_MS		20
@@ -117,7 +151,7 @@ on_object(const DIDEVICEOBJECTINSTANCEA *o, void *ctx)
 		(void)IDirectInputDevice8_GetProperty(dev, DIPROP_RANGE,
 		    &r.diph);
 
-		printf("  axis   ofs %3lu (axle %u)  %-6s  range %ld..%ld  "
+		out("  axis   ofs %3lu (axle %u)  %-6s  range %ld..%ld  "
 		    "usage %02x/%02x  %s%s\n", (unsigned long)o->dwOfs,
 		    axle_number(o->dwOfs), guid_axis_name(&o->guidType),
 		    (long)r.lMin, (long)r.lMax, o->wUsagePage, o->wUsage,
@@ -132,7 +166,7 @@ on_object(const DIDEVICEOBJECTINSTANCEA *o, void *ctx)
 			naxes++;
 		}
 	} else if (o->dwType & DIDFT_BUTTON) {
-		printf("  button ofs %3lu (button %lu)  %s\n",
+		out("  button ofs %3lu (button %lu)  %s\n",
 		    (unsigned long)o->dwOfs,
 		    (unsigned long)(o->dwOfs - DIJOFS_BUTTON0), o->tszName);
 
@@ -143,7 +177,7 @@ on_object(const DIDEVICEOBJECTINSTANCEA *o, void *ctx)
 			nbuttons++;
 		}
 	} else if (o->dwType & DIDFT_POV) {
-		printf("  hat    ofs %3lu  %s\n", (unsigned long)o->dwOfs,
+		out("  hat    ofs %3lu  %s\n", (unsigned long)o->dwOfs,
 		    o->tszName);
 	}
 
@@ -154,7 +188,7 @@ static BOOL CALLBACK
 on_effect(const DIEFFECTINFOA *e, void *ctx)
 {
 	(void)ctx;
-	printf("  effect %08lx  %s\n", (unsigned long)e->guid.Data1,
+	out("  effect %08lx  %s\n", (unsigned long)e->guid.Data1,
 	    e->tszName);
 	return DIENUM_CONTINUE;
 }
@@ -199,10 +233,10 @@ dump_caps(void)
 	memset(&caps, 0, sizeof(caps));
 	caps.dwSize = sizeof(caps);
 	if (SUCCEEDED(IDirectInputDevice8_GetCapabilities(dev, &caps))) {
-		printf("device type 0x%08lx   axes %lu  buttons %lu  povs %lu\n",
+		out("device type 0x%08lx   axes %lu  buttons %lu  povs %lu\n",
 		    (unsigned long)caps.dwDevType, (unsigned long)caps.dwAxes,
 		    (unsigned long)caps.dwButtons, (unsigned long)caps.dwPOVs);
-		printf("force feedback %s\n",
+		out("force feedback %s\n",
 		    (caps.dwFlags & DIDC_FORCEFEEDBACK) ?
 		    "claimed (DIDC_FORCEFEEDBACK)" : "NOT claimed");
 	}
@@ -210,7 +244,7 @@ dump_caps(void)
 	memset(&inst, 0, sizeof(inst));
 	inst.dwSize = sizeof(inst);
 	if (SUCCEEDED(IDirectInputDevice8_GetDeviceInfo(dev, &inst)))
-		printf("product     %s\n", inst.tszProductName);
+		out("product     %s\n", inst.tszProductName);
 }
 
 /*
@@ -272,7 +306,7 @@ confirm(void)
 {
 	int c, first;
 
-	printf("      correct? [Y/n/s to skip] ");
+	out("      correct? [Y/n/s to skip] ");
 	fflush(stdout);
 
 	first = c = getchar();
@@ -303,7 +337,7 @@ watch_control(const struct control *c, struct result *r)
 
 	r->prompt = c->prompt;
 
-	printf("\n%s.\n  Watching %d seconds.\n", c->prompt, WATCH_MS / 1000);
+	out("\n%s.\n  Watching %d seconds.\n", c->prompt, WATCH_MS / 1000);
 	fflush(stdout);
 
 	Sleep(400);
@@ -358,19 +392,19 @@ watch_control(const struct control *c, struct result *r)
 		    (long)at_rest, (long)lo[best], (long)hi[best],
 		    inverted ? "FALL" : "rise",
 		    inverted ? "  [inverted]" : "");
-		printf("  -> %s\n     %s\n", r->found, r->detail);
+		out("  -> %s\n     %s\n", r->found, r->detail);
 	} else if (!c->is_axis && btn >= 0) {
 		r->seen = 1;
 		(void)snprintf(r->found, sizeof(r->found), "button %d", btn);
 		(void)snprintf(r->detail, sizeof(r->detail), "%s",
 		    buttons[btn].name);
-		printf("  -> %s (%s)\n", r->found, r->detail);
+		out("  -> %s (%s)\n", r->found, r->detail);
 	} else if (!c->is_axis && pov >= 0) {
 		r->seen = 1;
 		(void)snprintf(r->found, sizeof(r->found), "hat %d", pov / 100);
 		(void)snprintf(r->detail, sizeof(r->detail),
 		    "hat switch, %d hundredths of a degree", pov);
-		printf("  -> %s\n", r->found);
+		out("  -> %s\n", r->found);
 	} else if (best >= 0) {
 		/* Asked for a button and an axis moved, or the reverse. */
 		r->seen = 1;
@@ -380,16 +414,16 @@ watch_control(const struct control *c, struct result *r)
 		    axle_number(axes[best].ofs));
 		(void)snprintf(r->detail, sizeof(r->detail),
 		    "an AXIS moved where a button was expected");
-		printf("  -> %s\n     %s\n", r->found, r->detail);
+		out("  -> %s\n     %s\n", r->found, r->detail);
 	} else if (btn >= 0) {
 		r->seen = 1;
 		(void)snprintf(r->found, sizeof(r->found), "button %d", btn);
 		(void)snprintf(r->detail, sizeof(r->detail),
 		    "a BUTTON moved where an axis was expected");
-		printf("  -> %s\n     %s\n", r->found, r->detail);
+		out("  -> %s\n     %s\n", r->found, r->detail);
 	} else {
 		(void)snprintf(r->found, sizeof(r->found), "nothing moved");
-		printf("  -> nothing moved\n");
+		out("  -> nothing moved\n");
 	}
 }
 
@@ -398,8 +432,8 @@ identify(void)
 {
 	size_t i, n = sizeof(controls) / sizeof(controls[0]);
 
-	printf("\n--- identification ---\n");
-	printf("One control at a time. Let go of everything else, and press\n"
+	out("\n--- identification ---\n");
+	out("One control at a time. Let go of everything else, and press\n"
 	    "each one fully so its whole travel is recorded.\n");
 
 	for (i = 0; i < n; i++) {
@@ -414,18 +448,18 @@ identify(void)
 			results[i].skipped = 1;
 	}
 
-	printf("\n--- what this wheel is, as DirectInput sees it ---\n\n");
-	printf("%-44s %-34s %s\n", "control", "is", "notes");
+	out("\n--- what this wheel is, as DirectInput sees it ---\n\n");
+	out("%-44s %-34s %s\n", "control", "is", "notes");
 	for (i = 0; i < n; i++) {
 		const struct result *r = &results[i];
 
 		if (r->skipped)
 			continue;
-		printf("%-44s %-34s %s%s\n", controls[i].prompt,
+		out("%-44s %-34s %s%s\n", controls[i].prompt,
 		    r->seen ? r->found : "NOT SEEN", r->detail,
 		    r->disputed ? "  [DISPUTED]" : "");
 	}
-	printf("\nAnything marked DISPUTED is where the tool named a control "
+	out("\nAnything marked DISPUTED is where the tool named a control "
 	    "and you said it was wrong.\nThat is the interesting line.\n");
 }
 
@@ -446,8 +480,8 @@ ffb_test(void)
 	IDirectInputEffect *e = NULL;
 	HRESULT hr;
 
-	printf("\n--- force feedback self test ---\n");
-	printf("HOLD THE WHEEL. Two effects, a few seconds each.\n");
+	out("\n--- force feedback self test ---\n");
+	out("HOLD THE WHEEL. Two effects, a few seconds each.\n");
 
 	memset(&cf, 0, sizeof(cf));
 	cf.lMagnitude = 8000;		/* 80 percent, one direction */
@@ -467,17 +501,17 @@ ffb_test(void)
 	hr = IDirectInputDevice8_CreateEffect(dev, &GUID_ConstantForce, &ef,
 	    &e, NULL);
 	if (FAILED(hr) || e == NULL) {
-		printf("  constant force: CreateEffect failed, 0x%08lx\n",
+		out("  constant force: CreateEffect failed, 0x%08lx\n",
 		    (unsigned long)hr);
-		printf("  the proxy is not accepting effects; nothing below "
+		out("  the proxy is not accepting effects; nothing below "
 		    "this can work\n");
 		return -1;
 	}
 
 	hr = IDirectInputEffect_Start(e, 1, 0);
-	printf("  constant force: Start %s (0x%08lx)\n",
+	out("  constant force: Start %s (0x%08lx)\n",
 	    SUCCEEDED(hr) ? "accepted" : "FAILED", (unsigned long)hr);
-	printf("  ---> did the wheel pull to one side just now?\n");
+	out("  ---> did the wheel pull to one side just now?\n");
 	Sleep(3000);
 	(void)IDirectInputEffect_Stop(e);
 	IDirectInputEffect_Release(e);
@@ -495,20 +529,20 @@ ffb_test(void)
 
 	hr = IDirectInputDevice8_CreateEffect(dev, &GUID_Damper, &ef, &e, NULL);
 	if (FAILED(hr) || e == NULL) {
-		printf("  damper: CreateEffect failed, 0x%08lx\n",
+		out("  damper: CreateEffect failed, 0x%08lx\n",
 		    (unsigned long)hr);
 		return -1;
 	}
 
 	hr = IDirectInputEffect_Start(e, 1, 0);
-	printf("  damper: Start %s (0x%08lx)\n",
+	out("  damper: Start %s (0x%08lx)\n",
 	    SUCCEEDED(hr) ? "accepted" : "FAILED", (unsigned long)hr);
-	printf("  ---> turn the wheel now. Is it heavier than before?\n");
+	out("  ---> turn the wheel now. Is it heavier than before?\n");
 	Sleep(5000);
 	(void)IDirectInputEffect_Stop(e);
 	IDirectInputEffect_Release(e);
 
-	printf("\n  Both effects were accepted. Whether the wheel moved is\n"
+	out("\n  Both effects were accepted. Whether the wheel moved is\n"
 	    "  the answer, and only you can see it.\n");
 
 	return 0;
@@ -524,8 +558,10 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: probe_dinput [-i] [-f]\n"
+	    "usage: probe_dinput [-i] [-f] [-o FILE]\n"
 	    "\n"
+	    "  -o FILE    write the run to FILE as well as to the screen\n"
+	    "             (default " LOG_DEFAULT ")\n"
 	    "  no flags   dump the device and every object it declares\n"
 	    "  -i         then work every control by name, one at a time,\n"
 	    "             confirming each, and print a table at the end\n"
@@ -542,6 +578,7 @@ main(int argc, char *argv[])
 {
 	GUID inst;
 	HRESULT hr;
+	const char *logpath = LOG_DEFAULT;
 	int i, want_id = 0, want_ff = 0;
 
 	for (i = 1; i < argc; i++) {
@@ -549,20 +586,34 @@ main(int argc, char *argv[])
 			want_id = 1;
 		else if (strcmp(argv[i], "-f") == 0)
 			want_ff = 1;
+		else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc)
+			logpath = argv[++i];
 		else
 			usage();
 	}
 
+	/*
+	 * A run that cannot be written down is worth less than one that can,
+	 * but not nothing, so a log that will not open is a warning rather
+	 * than a refusal.
+	 */
+	if ((logfp = fopen(logpath, "w")) == NULL)
+		printf("cannot write %s, this run will only be on screen\n",
+		    logpath);
+	else
+		printf("writing this run to %s\n", logpath);
+
+	out("probe_dinput %s\n", T150_PROXY_VERSION);
+
 	if (FAILED(CoInitializeEx(NULL, COINIT_APARTMENTTHREADED))) {
-		fprintf(stderr, "CoInitializeEx failed\n");
+		out("CoInitializeEx failed\n");
 		return 1;
 	}
 
 	hr = DirectInput8Create(GetModuleHandleA(NULL), DIRECTINPUT_VERSION,
 	    &IID_IDirectInput8A, (void **)&di, NULL);
 	if (FAILED(hr) || di == NULL) {
-		fprintf(stderr, "DirectInput8Create failed, 0x%08lx\n",
-		    (unsigned long)hr);
+		out("DirectInput8Create failed, 0x%08lx\n", (unsigned long)hr);
 		return 1;
 	}
 
@@ -570,21 +621,20 @@ main(int argc, char *argv[])
 	(void)IDirectInput8_EnumDevices(di, DI8DEVCLASS_GAMECTRL, on_device,
 	    &inst, DIEDFL_ATTACHEDONLY);
 	if (IsEqualGUID(&inst, &GUID_NULL)) {
-		fprintf(stderr, "no T150 found. Is the wheel in firmware mode "
-		    "and does the bottle see it at all?\n");
+		out("no T150 found. Is the wheel in firmware mode and does the "
+		    "bottle see it at all?\n");
 		return 1;
 	}
 
 	hr = IDirectInput8_CreateDevice(di, &inst, &dev, NULL);
 	if (FAILED(hr) || dev == NULL) {
-		fprintf(stderr, "CreateDevice failed, 0x%08lx\n",
-		    (unsigned long)hr);
+		out("CreateDevice failed, 0x%08lx\n", (unsigned long)hr);
 		return 1;
 	}
 
 	hr = IDirectInputDevice8_SetDataFormat(dev, &c_dfDIJoystick2);
 	if (FAILED(hr))
-		printf("SetDataFormat failed, 0x%08lx\n", (unsigned long)hr);
+		out("SetDataFormat failed, 0x%08lx\n", (unsigned long)hr);
 
 	/*
 	 * Force feedback needs an exclusive acquisition, and exclusive needs a
@@ -596,27 +646,27 @@ main(int argc, char *argv[])
 	hr = IDirectInputDevice8_SetCooperativeLevel(dev, GetConsoleWindow(),
 	    DISCL_EXCLUSIVE | DISCL_BACKGROUND);
 	if (FAILED(hr))
-		printf("SetCooperativeLevel(exclusive) failed, 0x%08lx. Force "
+		out("SetCooperativeLevel(exclusive) failed, 0x%08lx. Force "
 		    "feedback will not work; run this from a terminal.\n",
 		    (unsigned long)hr);
 
 	hr = IDirectInputDevice8_Acquire(dev);
 	if (FAILED(hr))
-		printf("Acquire failed, 0x%08lx\n", (unsigned long)hr);
+		out("Acquire failed, 0x%08lx\n", (unsigned long)hr);
 
 	dump_caps();
-	printf("\nobjects:\n");
+	out("\nobjects:\n");
 	(void)IDirectInputDevice8_EnumObjects(dev, on_object, NULL,
 	    DIDFT_ALL);
-	printf("\neffects the device says it supports:\n");
+	out("\neffects the device says it supports:\n");
 	(void)IDirectInputDevice8_EnumEffects(dev, on_effect, NULL, DIEFT_ALL);
 
-	printf("\n%d axis(es), %d button(s)\n", naxes, nbuttons);
+	out("\n%d axis(es), %d button(s)\n", naxes, nbuttons);
 	for (i = 0; i < naxes; i++)
 		if (axes[i].is_ff)
 			break;
 	if (i == naxes)
-		printf("no axis is marked as a force feedback actuator\n");
+		out("no axis is marked as a force feedback actuator\n");
 
 	if (want_id)
 		identify();
@@ -627,6 +677,11 @@ main(int argc, char *argv[])
 	IDirectInputDevice8_Release(dev);
 	IDirectInput8_Release(di);
 	CoUninitialize();
+
+	if (logfp != NULL) {
+		out("\nend of run. Send %s.\n", logpath);
+		(void)fclose(logfp);
+	}
 
 	return 0;
 }
