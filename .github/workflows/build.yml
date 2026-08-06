@@ -55,6 +55,156 @@ jobs:
       - name: check the proxy
         shell: pwsh
         run: .\dll_check.exe .\t150-dinput8.dll
+      # probe_dinput is handed to a person with a wheel and one session to
+      # spend, so a fault on the way to the first line of output costs a whole
+      # session. No runner has a wheel, but everything before the wheel is
+      # found is the same here as on the Mac: the imports resolve, the proxy
+      # loads, COM starts, DirectInput8Create goes through the proxy and
+      # EnumDevices runs. That is the whole startup path.
+      - name: the probe starts and reaches the point where a wheel would be
+        shell: pwsh
+        run: |
+          Copy-Item .\t150-dinput8.dll .\dinput8.dll
+          $log = Join-Path $env:RUNNER_TEMP "probe.log"
+          $out = & .\probe_dinput.exe -o $log 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if ($code -ne 1) {
+              throw "probe_dinput exited $code, expected 1 (no wheel attached)"
+          }
+          if ($out -notmatch "no T150 found") {
+              throw "probe_dinput did not reach device enumeration"
+          }
+          if (-not (Test-Path $log)) { throw "probe_dinput wrote no log" }
+          exit 0
+      - name: an unknown flag is refused rather than ignored
+        shell: pwsh
+        run: |
+          & .\probe_dinput.exe --nonsense 2>&1 | Out-String | Write-Host
+          if ($LASTEXITCODE -ne 2) {
+              throw "usage exit was $LASTEXITCODE, expected 2"
+          }
+          exit 0
+
+  wine:
+    name: run the probe under Wine
+    needs: dll
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: proxy-windows
+      - name: install wine
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wine libsdl2-2.0-0
+          wine --version
+      # Without a wheel the probe stops at "no T150 found", which leaves
+      # everything that has ever gone wrong in it untested. A uinput device
+      # carrying the wheel's real ids gets Wine to hand the probe a device to
+      # describe, so the enumeration and the state reads run here.
+      - name: attach a wheel shaped device
+        run: |
+          sudo modprobe uinput
+          cc -Wall -Wextra -std=c11 -D_POSIX_C_SOURCE=200809L \
+              -o "$RUNNER_TEMP/fake_wheel" tests/fake_wheel.c
+          sudo chmod 666 /dev/uinput
+          # Wine opens the event node O_RDWR, so read access is not enough
+          # and a device it cannot open for writing is skipped without a
+          # word. The rule has to be in place before the device exists,
+          # because udev sets the mode back when it processes it.
+          echo 'KERNEL=="event*", MODE="0666"' |
+              sudo tee /etc/udev/rules.d/99-fake-wheel.rules
+          sudo udevadm control --reload-rules
+          "$RUNNER_TEMP/fake_wheel" &
+          echo "FAKE_WHEEL_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 20); do
+              test -n "$(grep -l 'T150' /sys/class/input/*/device/name \
+                  2>/dev/null)" && break
+              sleep 1
+          done
+          grep -l "T150" /sys/class/input/*/device/name ||
+              { echo "the fake wheel never appeared" >&2; exit 1; }
+          sudo udevadm settle
+          ls -l /dev/input/event*
+      # A CrossOver bottle is a Wine prefix, and CrossOver 26 is Wine 11, so
+      # this is the only place outside the Mac where the probe meets the
+      # loader that will actually run it. Installing the proxy the way the
+      # bottle installs it, over dinput8 with the builtin renamed beside it,
+      # means the chain load is exercised too.
+      - name: install the proxy into a prefix the way a bottle does
+        env:
+          WINEPREFIX: ${{ runner.temp }}/prefix
+          WINEARCH: win64
+          WINEDEBUG: -all
+        run: |
+          wineboot -i
+          wineserver -w
+          sys="$WINEPREFIX/drive_c/windows/system32"
+          builtin=$(find /usr/lib -path '*x86_64-windows/dinput8.dll' |
+              head -n 1)
+          test -n "$builtin" || { echo "no builtin dinput8" >&2; exit 1; }
+          cp "$builtin" "$sys/dinput8_orig.dll"
+          cp t150-dinput8.dll "$sys/dinput8.dll"
+          cp probe_dinput.exe "$WINEPREFIX/drive_c/"
+      # dinput8=n so the file just installed is the one that loads, rather
+      # than Wine's own builtin: the proxy is the thing being tested.
+      - name: the probe describes the wheel
+        env:
+          WINEPREFIX: ${{ runner.temp }}/prefix
+          WINEDEBUG: -all
+          WINEDLLOVERRIDES: dinput8=n
+        run: |
+          set +e
+          out=$(wine "C:\\probe_dinput.exe" -o "Z:$RUNNER_TEMP/probe.log" 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          case "$out" in
+          *"Unhandled exception"*|*"page fault"*)
+              echo "probe_dinput faulted under Wine" >&2; exit 1 ;;
+          *"no T150 found"*)
+              echo "Wine never saw the fake wheel" >&2; exit 1 ;;
+          esac
+          test "$code" -eq 0 ||
+              { echo "exited $code, expected 0" >&2; exit 1; }
+          test -f "$RUNNER_TEMP/probe.log" ||
+              { echo "wrote no log" >&2; exit 1; }
+          # The fake wheel has thirteen buttons, so every one of them has to
+          # land in the button block of the state struct. This is the check
+          # that would have caught reading them at the enumeration offset,
+          # which lands somewhere else entirely and can go negative.
+          n=$(grep -c 'rgbButtons\[' "$RUNNER_TEMP/probe.log" || true)
+          test "$n" -eq 13 ||
+              { echo "$n buttons mapped into the state, expected 13" >&2
+                exit 1; }
+          ! grep -q "NOT READABLE" "$RUNNER_TEMP/probe.log" ||
+              { echo "a control has no slot in the state" >&2; exit 1; }
+      # The identification walk is where the offsets are turned into
+      # positions in the state struct, and it is the half a runner could
+      # never reach before. Nothing moves, so every control comes back "not
+      # seen"; what is being checked is that it survives asking.
+      - name: the probe walks every control without faulting
+        env:
+          WINEPREFIX: ${{ runner.temp }}/prefix
+          WINEDEBUG: -all
+          WINEDLLOVERRIDES: dinput8=n
+        run: |
+          set +e
+          out=$(wine "C:\\probe_dinput.exe" -i \
+              -o "Z:$RUNNER_TEMP/ident.log" < /dev/null 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          case "$out" in
+          *"Unhandled exception"*|*"page fault"*)
+              echo "probe_dinput faulted walking the controls" >&2; exit 1 ;;
+          esac
+          test "$code" -eq 0 ||
+              { echo "exited $code, expected 0" >&2; exit 1; }
+          grep -q "what this wheel is" "$RUNNER_TEMP/ident.log" ||
+              { echo "never printed the table" >&2; exit 1; }
 
   macos:
     name: probe tools
