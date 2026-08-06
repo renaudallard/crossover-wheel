@@ -85,17 +85,39 @@ out(const char *fmt, ...)
 /* A press has to move a good part of the range to count, not just jitter. */
 #define MOVE_MIN	2000
 
+/*
+ * Two different offsets belong to every object, and confusing them is the
+ * mistake this tool shipped with.
+ *
+ * EnumObjects reports dwOfs in the DEVICE's own format: Wine hands the
+ * instance straight to the callback without remapping it, so for this wheel
+ * the axes come back at 0, 4, 8, 12 and the buttons at small offsets just
+ * past them. That number is worth printing, because dividing it by four
+ * gives the order DirectInput enumerates the axes in, which is the number a
+ * game's configuration file tends to record.
+ *
+ * It is NOT an offset into the state struct. SetDataFormat(c_dfDIJoystick2)
+ * decides that, and there the axes sit at DIJOFS_X, DIJOFS_Y and so on with
+ * the buttons at DIJOFS_BUTTON0 and up. Reading the state at the device
+ * offset reads the wrong field, and subtracting DIJOFS_BUTTON0 from a device
+ * offset goes negative and indexes off the front of the array.
+ *
+ * So both are kept, and only state_ofs is ever used to read anything.
+ */
+#define NO_STATE_OFS	((DWORD)~0u)
+
 struct axis_seen {
-	DWORD	ofs;
+	DWORD	dev_ofs;	/* what EnumObjects reported */
+	DWORD	state_ofs;	/* where it sits in DIJOYSTATE2 */
+	DWORD	type;		/* DIDFT_*, identifies the object */
 	char	name[64];
-	LONG	rest;
-	LONG	low;
-	LONG	high;
 	int	is_ff;
 };
 
 struct button_seen {
-	DWORD	ofs;
+	DWORD	dev_ofs;
+	DWORD	state_ofs;
+	DWORD	type;
 	char	name[MAX_PATH];	/* what DIDEVICEOBJECTINSTANCE can hand back */
 };
 
@@ -158,7 +180,9 @@ on_object(const DIDEVICEOBJECTINSTANCEA *o, void *ctx)
 		    o->tszName, ff ? "  [force feedback actuator]" : "");
 
 		if (naxes < (int)(sizeof(axes) / sizeof(axes[0]))) {
-			axes[naxes].ofs = o->dwOfs;
+			axes[naxes].dev_ofs = o->dwOfs;
+			axes[naxes].state_ofs = NO_STATE_OFS;
+			axes[naxes].type = o->dwType;
 			axes[naxes].is_ff = ff;
 			(void)snprintf(axes[naxes].name,
 			    sizeof(axes[naxes].name), "%s",
@@ -166,12 +190,14 @@ on_object(const DIDEVICEOBJECTINSTANCEA *o, void *ctx)
 			naxes++;
 		}
 	} else if (o->dwType & DIDFT_BUTTON) {
-		out("  button ofs %3lu (button %lu)  %s\n",
+		out("  button ofs %3lu (instance %lu)  %s\n",
 		    (unsigned long)o->dwOfs,
-		    (unsigned long)(o->dwOfs - DIJOFS_BUTTON0), o->tszName);
+		    (unsigned long)DIDFT_GETINSTANCE(o->dwType), o->tszName);
 
 		if (nbuttons < (int)(sizeof(buttons) / sizeof(buttons[0]))) {
-			buttons[nbuttons].ofs = o->dwOfs;
+			buttons[nbuttons].dev_ofs = o->dwOfs;
+			buttons[nbuttons].state_ofs = NO_STATE_OFS;
+			buttons[nbuttons].type = o->dwType;
 			(void)snprintf(buttons[nbuttons].name,
 			    sizeof(buttons[nbuttons].name), "%s", o->tszName);
 			nbuttons++;
@@ -212,6 +238,57 @@ static LONG
 axis_value(const DIJOYSTATE2 *st, DWORD ofs)
 {
 	return *(const LONG *)((const char *)st + ofs);
+}
+
+/*
+ * Work out where each object landed in DIJOYSTATE2.
+ *
+ * The state layout is fixed and public, so rather than guess from an object
+ * where it sits, this walks the layout and asks DirectInput what is in each
+ * slot. GetObjectInfo with DIPH_BYOFFSET takes exactly that question, and
+ * answers DIERR_NOTFOUND for a slot the wheel does not fill. What comes back
+ * is matched to what EnumObjects already reported by dwType, which names an
+ * object uniquely.
+ *
+ * Every offset that reaches axis_value or rgbButtons therefore came from
+ * this table rather than from the device, and cannot be out of range.
+ */
+static const DWORD joy2_axis_ofs[] = {
+	DIJOFS_X, DIJOFS_Y, DIJOFS_Z,
+	DIJOFS_RX, DIJOFS_RY, DIJOFS_RZ,
+	DIJOFS_SLIDER(0), DIJOFS_SLIDER(1)
+};
+
+static void
+resolve_state_offsets(void)
+{
+	DIDEVICEOBJECTINSTANCEA o;
+	size_t s;
+	int i;
+
+	for (s = 0; s < sizeof(joy2_axis_ofs) / sizeof(joy2_axis_ofs[0]); s++) {
+		memset(&o, 0, sizeof(o));
+		o.dwSize = sizeof(o);
+		if (FAILED(IDirectInputDevice8_GetObjectInfo(dev, &o,
+		    joy2_axis_ofs[s], DIPH_BYOFFSET)))
+			continue;
+
+		for (i = 0; i < naxes; i++)
+			if (axes[i].type == o.dwType)
+				axes[i].state_ofs = joy2_axis_ofs[s];
+	}
+
+	for (s = 0; s < sizeof(buttons) / sizeof(buttons[0]); s++) {
+		memset(&o, 0, sizeof(o));
+		o.dwSize = sizeof(o);
+		if (FAILED(IDirectInputDevice8_GetObjectInfo(dev, &o,
+		    DIJOFS_BUTTON((int)s), DIPH_BYOFFSET)))
+			continue;
+
+		for (i = 0; i < nbuttons; i++)
+			if (buttons[i].type == o.dwType)
+				buttons[i].state_ofs = DIJOFS_BUTTON((int)s);
+	}
 }
 
 static int
@@ -322,6 +399,52 @@ confirm(void)
 }
 
 /*
+ * Where each control ended up in the state struct, which is a different
+ * number from the enumeration offset above and the one that decides which
+ * value a game reads for it. Printing both is the whole point: when they
+ * disagree in a surprising way, this is the line that says so.
+ */
+static void
+dump_state_map(void)
+{
+	int i;
+
+	out("\nwhere each control sits in the state DirectInput fills in:\n");
+
+	for (i = 0; i < naxes; i++) {
+		if (axes[i].state_ofs == NO_STATE_OFS) {
+			out("  axis   %-6s NOT READABLE, no slot in the "
+			    "state\n", axes[i].name);
+			continue;
+		}
+		out("  axis   %-6s state offset %lu\n", axes[i].name,
+		    (unsigned long)axes[i].state_ofs);
+	}
+
+	for (i = 0; i < nbuttons; i++) {
+		if (buttons[i].state_ofs == NO_STATE_OFS) {
+			out("  button %-2d     NOT READABLE, no slot in the "
+			    "state\n", i);
+			continue;
+		}
+		out("  button %-2d     rgbButtons[%lu]\n", i,
+		    (unsigned long)(buttons[i].state_ofs - DIJOFS_BUTTON0));
+	}
+}
+
+/*
+ * How an axis is named in the table at the end. The axle number comes from
+ * the enumeration offset rather than the state offset, because that is the
+ * one that matches what a game writes into its configuration.
+ */
+static void
+describe_axis(char *buf, size_t len, int i)
+{
+	(void)snprintf(buf, len, "axis %s, ofs %lu, axle %u", axes[i].name,
+	    (unsigned long)axes[i].dev_ofs, axle_number(axes[i].dev_ofs));
+}
+
+/*
  * Watch one control through a whole press and release. Axes are sampled the
  * entire time rather than at the first movement, so the record is the real
  * travel: where it rests, how far it goes, and which way. A pedal that rests
@@ -347,7 +470,8 @@ watch_control(const struct control *c, struct result *r)
 	}
 
 	for (i = 0; i < naxes; i++)
-		lo[i] = hi[i] = axis_value(&rest, axes[i].ofs);
+		lo[i] = hi[i] = axes[i].state_ofs == NO_STATE_OFS ? 0 :
+		    axis_value(&rest, axes[i].state_ofs);
 
 	for (waited = 0; waited < WATCH_MS; waited += POLL_MS) {
 		Sleep(POLL_MS);
@@ -355,7 +479,11 @@ watch_control(const struct control *c, struct result *r)
 			continue;
 
 		for (i = 0; i < naxes; i++) {
-			LONG v = axis_value(&now, axes[i].ofs);
+			LONG v;
+
+			if (axes[i].state_ofs == NO_STATE_OFS)
+				continue;
+			v = axis_value(&now, axes[i].state_ofs);
 
 			if (v < lo[i])
 				lo[i] = v;
@@ -363,10 +491,14 @@ watch_control(const struct control *c, struct result *r)
 				hi[i] = v;
 		}
 		for (i = 0; i < nbuttons && btn < 0; i++) {
-			int n = (int)(buttons[i].ofs - DIJOFS_BUTTON0);
+			DWORD n;
+
+			if (buttons[i].state_ofs == NO_STATE_OFS)
+				continue;
+			n = buttons[i].state_ofs - DIJOFS_BUTTON0;
 
 			if (now.rgbButtons[n] & 0x80)
-				btn = n;
+				btn = i;
 		}
 		if (pov < 0 && LOWORD(now.rgdwPOV[0]) != 0xffff)
 			pov = (int)now.rgdwPOV[0];
@@ -379,14 +511,11 @@ watch_control(const struct control *c, struct result *r)
 			best = i;
 
 	if (c->is_axis && best >= 0) {
-		LONG at_rest = axis_value(&rest, axes[best].ofs);
+		LONG at_rest = axis_value(&rest, axes[best].state_ofs);
 		int inverted = at_rest > (lo[best] + hi[best]) / 2;
 
 		r->seen = 1;
-		(void)snprintf(r->found, sizeof(r->found),
-		    "axis %s, ofs %lu, axle %u", axes[best].name,
-		    (unsigned long)axes[best].ofs,
-		    axle_number(axes[best].ofs));
+		describe_axis(r->found, sizeof(r->found), best);
 		(void)snprintf(r->detail, sizeof(r->detail),
 		    "rest %ld, range %ld..%ld, pressing makes it %s%s",
 		    (long)at_rest, (long)lo[best], (long)hi[best],
@@ -395,7 +524,8 @@ watch_control(const struct control *c, struct result *r)
 		out("  -> %s\n     %s\n", r->found, r->detail);
 	} else if (!c->is_axis && btn >= 0) {
 		r->seen = 1;
-		(void)snprintf(r->found, sizeof(r->found), "button %d", btn);
+		(void)snprintf(r->found, sizeof(r->found), "button %lu",
+		    (unsigned long)(buttons[btn].state_ofs - DIJOFS_BUTTON0));
 		(void)snprintf(r->detail, sizeof(r->detail), "%s",
 		    buttons[btn].name);
 		out("  -> %s (%s)\n", r->found, r->detail);
@@ -408,16 +538,14 @@ watch_control(const struct control *c, struct result *r)
 	} else if (best >= 0) {
 		/* Asked for a button and an axis moved, or the reverse. */
 		r->seen = 1;
-		(void)snprintf(r->found, sizeof(r->found),
-		    "axis %s, ofs %lu, axle %u", axes[best].name,
-		    (unsigned long)axes[best].ofs,
-		    axle_number(axes[best].ofs));
+		describe_axis(r->found, sizeof(r->found), best);
 		(void)snprintf(r->detail, sizeof(r->detail),
 		    "an AXIS moved where a button was expected");
 		out("  -> %s\n     %s\n", r->found, r->detail);
 	} else if (btn >= 0) {
 		r->seen = 1;
-		(void)snprintf(r->found, sizeof(r->found), "button %d", btn);
+		(void)snprintf(r->found, sizeof(r->found), "button %lu",
+		    (unsigned long)(buttons[btn].state_ofs - DIJOFS_BUTTON0));
 		(void)snprintf(r->detail, sizeof(r->detail),
 		    "a BUTTON moved where an axis was expected");
 		out("  -> %s\n     %s\n", r->found, r->detail);
@@ -658,6 +786,8 @@ main(int argc, char *argv[])
 	out("\nobjects:\n");
 	(void)IDirectInputDevice8_EnumObjects(dev, on_object, NULL,
 	    DIDFT_ALL);
+	resolve_state_offsets();
+	dump_state_map();
 	out("\neffects the device says it supports:\n");
 	(void)IDirectInputDevice8_EnumEffects(dev, on_effect, NULL, DIEFT_ALL);
 
