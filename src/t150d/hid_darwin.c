@@ -180,6 +180,13 @@ acquire(struct hid_be *h)
 	const void **items;
 	CFIndex n;
 	IOReturn r;
+	/*
+	 * Holds the longest packet this function encodes, which is four bytes
+	 * for both a control and a settings write. An encoder handed a buffer
+	 * shorter than its packet returns 0 rather than writing past the end,
+	 * and every call here is guarded on that, so this cannot overflow even
+	 * if a packet grows.
+	 */
 	uint8_t pkt[T150_FF_CONTROL_LEN];
 	size_t i, len;
 
@@ -248,6 +255,23 @@ acquire(struct hid_be *h)
 			(void)raw_write(h, pkt, len);
 		nap_ms(h->gap_ms);
 	}
+
+	/*
+	 * Release the autocenter, for the same reason the session's safe state
+	 * does: a wheel this daemon holds should be limp rather than fighting
+	 * whoever turns it. It matters more here than it looks. Closing the
+	 * input below re-arms the wheel's built-in autocenter, because the
+	 * firmware runs it whenever no application has the input open (A15),
+	 * and that spring is felt as a stiffness about a point that does not
+	 * return the wheel to centre (A17). Without this the daemon idling on
+	 * its real backend leaves a wheel that is hard to turn and never
+	 * recentres, which is exactly what a tester reported. The enable flag
+	 * is not sent with it: it is a no-op on macOS, and only the force
+	 * decides the strength.
+	 */
+	if ((len = t150_enc_autocenter_force(pkt, sizeof(pkt), 0)) > 0)
+		(void)raw_write(h, pkt, len);
+	nap_ms(h->gap_ms);
 
 	/*
 	 * Then put the input where the session believes it is. A replugged

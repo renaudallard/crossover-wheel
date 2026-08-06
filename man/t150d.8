@@ -23,11 +23,20 @@ console user, because
 is gated on that privilege, and it must not be sandboxed, because App Sandbox
 breaks IOKit HID access.
 .Pp
-When it takes the wheel it stops every effect slot and closes the wheel's
-input, before anything else touches it. Both outlive the process that set
-them, so a wheel inherited from a crashed daemon, or from a probe that never
-cleaned up after itself, can arrive still rendering that process's last
-effect. The scrub means it goes quiet at startup rather than at shutdown.
+When it takes the wheel it stops every effect slot, releases the autocenter
+and closes the wheel's input, before anything else touches it. Effects and
+the input state both outlive the process that set them, so a wheel inherited
+from a crashed daemon, or from a probe that never cleaned up after itself,
+can arrive still rendering that process's last effect. The scrub means it
+goes quiet at startup rather than at shutdown.
+.Pp
+The autocenter release is part of that and not an afterthought: the firmware
+runs its own centring spring whenever no application has the wheel's input
+open, so closing the input re-arms it, and that spring is felt as a stiffness
+about a point that never returns the wheel to centre. Without the release an
+idle
+.Nm
+would leave a wheel that is hard to turn.
 .Pp
 One client is served at a time. A second connection may displace the first,
 because the usual reason for one is a game that crashed and was restarted,

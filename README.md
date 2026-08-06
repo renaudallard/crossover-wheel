@@ -345,10 +345,12 @@ only behaviour anywhere but macOS.
 The firmware renders no effect while no input is open, which is what
 [`docs/RESEARCH.md`](docs/RESEARCH.md) A28 established, so the daemon sends
 `42 04` on hello and `42 00` when the client goes. The open also outlives the
-process that sent it (A30), so the daemon stops every slot and closes the
-input the moment it takes the wheel: one inherited from a crashed daemon, or
-from a probe that never cleaned up, arrives still rendering its last effect
-and goes quiet at startup rather than at shutdown.
+process that sent it (A30), so the daemon stops every slot, releases the
+autocenter and closes the input the moment it takes the wheel: one inherited
+from a crashed daemon, or from a probe that never cleaned up, arrives still
+rendering its last effect and goes quiet at startup rather than at shutdown.
+The autocenter release is part of that, because closing the input re-arms the
+wheel's own centring spring and would otherwise leave it stiff (A42).
 
 See [`t150d(8)`](man/t150d.8) for the endpoint file, the watchdog and the
 effect downgrades.

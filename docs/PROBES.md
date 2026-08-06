@@ -508,9 +508,11 @@ stopped a runaway effect the probes had left playing, which proves its
 packets reach the wheel. What it has never done is render an effect a client
 asked for, which is question 8. RESEARCH.md A31.
 
-The daemon also scrubs on acquire now: it stops every slot and closes the
-input the moment it takes the wheel, so a wheel inherited mid-runaway goes
-quiet at startup rather than at shutdown.
+The daemon also scrubs on acquire now: it stops every slot, releases the
+autocenter and closes the input the moment it takes the wheel, so a wheel
+inherited mid-runaway goes quiet at startup rather than at shutdown. The
+autocenter release is not optional there, since closing the input re-arms
+the wheel's own centring spring and leaves it stiff (A42).
 
 Put the wheel in firmware mode first, as in question 2, then:
 

@@ -1168,6 +1168,36 @@ motor: the descriptors read, the endpoint 0 path works unprivileged,
 > report C5 decodes from a firmware 3.5 capture. That descriptor describes
 > firmware mode, which this wheel has not yet been switched into.
 
+**A42. The daemon's own startup scrub left the wheel stiff, and A17 said so
+in advance.** Reported alongside A41: with `t150d` on its real backend, as
+distinct from `-n`, "the wheel is hard to turn and without return to
+centre."
+
+That is A17's description of the wheel's built-in autocenter, word for
+word: a spring "felt as a stiffening around a point rather than as a pull
+back to centre", where "releasing the wheel does not return it to zero".
+And the daemon was arming it. The acquire scrub added for A30 stops every
+slot and then closes the wheel's input, which is right for ending an
+inherited effect, but A15 established that the firmware runs its autocenter
+whenever no application has the input open. Closing the input therefore
+switches the spring back on at whatever force the wheel still had stored,
+which on this tester's wheel was not zero.
+
+The symptom only appears on the real backend because `-n` sends nothing,
+which is what named the cause: no other difference between the two modes
+touches the wheel.
+
+Fixed by releasing the autocenter force in the same scrub, so that acquire
+and the session's safe state mean the same thing by the same definition:
+effects stopped, autocenter zero, wheel limp. The enable flag is not sent
+with it because A15 measured it a no-op; only the force decides the
+strength.
+
+Worth noting what this cost. The scrub was added to fix a real problem, a
+wheel inherited mid-runaway, and it introduced a smaller one by adopting
+half of the safe state rather than all of it. The session's panic had the
+complete definition already, and the two paths should have shared it.
+
 **A41. Correcting the pedals by default was wrong, and the tester's own
 history says so.** Reported after 0.1.7: the car still accelerates by
 itself and the brake does nothing, and "it was working better yesterday
