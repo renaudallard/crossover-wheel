@@ -34,6 +34,7 @@ jobs:
           path: |
             build/bin/t150-dinput8.dll
             build/bin/dll_check.exe
+            build/bin/probe_dinput.exe
           if-no-files-found: error
 
   windows:

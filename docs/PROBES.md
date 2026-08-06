@@ -544,6 +544,29 @@ question 8, and the README's Test B is the step by step for it.
 
 ## Question 8: does a game reach the wheel?
 
+**Start with `probe_dinput`, not with a game.** It ships in the Windows
+archive beside the proxy and answers from inside the bottle what every
+confusing session has been guessing at:
+
+```sh
+"$CX_ROOT/bin/wine" --bottle "<name>" --cx-app probe_dinput.exe
+"$CX_ROOT/bin/wine" --bottle "<name>" --cx-app probe_dinput.exe -i
+"$CX_ROOT/bin/wine" --bottle "<name>" --cx-app probe_dinput.exe -f
+```
+
+The plain run prints the device and every object it declares: each axis and
+button with its offset, the axle number a game's configuration records, the
+declared range, and whether any axis is marked a force feedback actuator.
+`-i` asks for one control at a time and names what moved and which way, which
+settles a pedal that arrives as a button or rests at maximum without
+inference. `-f` creates a real constant force and a real damper and plays
+them with no game involved, which is the one measurement that separates a
+game asking wrongly from a chain that does not deliver. **Hold the wheel for
+`-f`.**
+
+Adding `--dll dinput8=b` to any of those forces CrossOver's builtin instead
+of the proxy, so running a pair measures exactly what the proxy changes.
+
 The end to end path, and the one nobody has run. Its first rung is climbed:
 test 14 proved the proxy loads in a real bottle and chain-loads CrossOver's
 builtin (A33), so what remains starts at the game. It needs the proxy

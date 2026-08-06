@@ -37,5 +37,25 @@ size, and the first Start of each effect. That log is what tells you whether
 a game is asking for force feedback at all, which is the one thing nobody
 has been able to see.
 
+probe_dinput.exe is in this archive too, and it is the tool to reach for
+when anything about the wheel looks wrong inside the bottle. Run it in the
+bottle with no arguments and it prints what DirectInput says the device is:
+every axis and button with its offset, the axle number a game's
+configuration records, the declared range, and whether any axis is marked
+as a force feedback actuator.
+
+  wine --bottle "<name>" --cx-app probe_dinput.exe
+
+Add -i and it asks you to work one control at a time and tells you which
+object moved and in which direction, which settles a pedal that arrives as
+a button or rests at maximum without guessing. Add -f and it creates a real
+constant force and a real damper and plays them, with no game involved, so
+a game that asks wrongly can be told apart from a chain that does not
+deliver. Hold the wheel when you use -f.
+
+Run it again with --dll dinput8=b added to the wine command to measure
+CrossOver's builtin instead of this proxy; the difference between the two
+runs is exactly what the proxy does.
+
 The README in the repository has the exact commands as CrossOver 26
 resolves them, and docs/PROBES.md question 8 is the test.

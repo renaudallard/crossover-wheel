@@ -117,7 +117,8 @@ in-bottle bus driver was considered and rejected.
 | `src/lib/proto.c` DLL to daemon protocol | written, round-trip tested on Linux |
 | `t150d` protocol, slots, downgrades, watchdog | written and tested on Linux |
 | `t150d` macOS HID backend | working: opened a real wheel unprivileged, and its shutdown stopped a runaway effect. Has not yet rendered an effect for a client |
-| `t150-dinput8.dll` the in-bottle proxy | loads and chain-loads in a real bottle, test 14. The force feedback path has never run |
+| `t150-dinput8.dll` the in-bottle proxy | loads and chain-loads in a real bottle, and a game creates effects through it, test 23b |
+| `probe_dinput.exe` the in-bottle probe | new, never yet run: what DirectInput says the wheel is, and a force feedback self test with no game involved |
 | build, CI, docs, man pages | working |
 | `t150ctl`, `t150boot` | working on hardware: `t150boot` switched a wheel, `t150ctl` talked to one. The range change has run but nobody felt it yet |
 

@@ -73,6 +73,7 @@ DLL_CC	  ?= x86_64-w64-mingw32-gcc
 HAVE_DLL_CC := $(shell command -v $(DLL_CC) >/dev/null 2>&1 && echo yes)
 DLL_BIN	   = $(BIN)/t150-dinput8.dll
 DLL_CHECK_BIN = $(BIN)/dll_check.exe
+DINPUT_PROBE_BIN = $(BIN)/probe_dinput.exe
 DLL_SRCS   = src/dll/main.c src/dll/device.c src/dll/effect.c \
 	     src/dll/client.c src/lib/proto.c
 # The proxy logs this at wrap time, so a log always says which build is in
@@ -113,7 +114,7 @@ help:
 
 daemon: $(DAEMON_BIN)
 
-dll: $(DLL_BIN) $(DLL_CHECK_BIN)
+dll: $(DLL_BIN) $(DLL_CHECK_BIN) $(DINPUT_PROBE_BIN)
 
 $(DLL_BIN): $(DLL_SRCS) src/dll/proxy.h src/dll/dinput8.def | $(BIN)
 ifneq ($(HAVE_DLL_CC),yes)
@@ -129,6 +130,13 @@ $(DLL_CHECK_BIN): tests/dll_check.c $(DLL_SRCS) src/dll/proxy.h | $(BIN)
 	$(DLL_CC) $(DLL_CPPFLAGS) $(DLL_CFLAGS) -o $@ tests/dll_check.c \
 	    src/dll/device.c src/dll/effect.c src/dll/client.c \
 	    src/lib/proto.c -static-libgcc $(DLL_LIBS)
+
+# The in-bottle diagnostic. It links no project source, only the shared
+# header for the wheel's ids, because it exists to report what DirectInput
+# says rather than what this project believes.
+$(DINPUT_PROBE_BIN): src/tools/probe_dinput.c include/t150/t150.h | $(BIN)
+	$(DLL_CC) $(DLL_CPPFLAGS) $(DLL_CFLAGS) -o $@ src/tools/probe_dinput.c \
+	    -static-libgcc -ldinput8 $(DLL_LIBS)
 
 # Guarded by the prerequisites, not by the recipe. A recipe cannot stop make
 # building what it was told the target depends on, so the old form still
