@@ -2,16 +2,19 @@
  * device.c - the wrapped IDirectInputDevice8.
  *
  * Only the wheel gets wrapped, and only its force feedback surface is
- * touched, with one measured exception: the pedals. The T150's descriptor
- * labels them backwards, Y is the brake and Rz the accelerator, where every
- * game and preset is built for the common convention of Y gas, Rz brake,
- * so the wrap swaps the two values by default, the relabel the vendor
- * driver does on Windows. The firmware also rests a released pedal at
- * logical max; games that bind pedals by detection handle that themselves,
- * so the mirror that corrects it is opt-in, T150_PEDALS=full, for a game
- * that does not. T150_PEDALS also takes raw, swap or invert. Everything
- * else is forwarded straight through. RESEARCH.md A37 through A39 are the
- * measurements.
+ * touched. Input is forwarded untouched, which is what makes this safe to
+ * leave installed.
+ *
+ * The pedals are the one thing that could justify an exception and do not.
+ * The T150's descriptor labels them backwards, Y the brake and Rz the
+ * accelerator where the common convention is the reverse, and its firmware
+ * rests a released pedal at logical maximum. A game that binds pedals by
+ * asking the player to press them resolves both by itself, and correcting
+ * them underneath such a game re-crosses what it got right, which is
+ * measured twice over in RESEARCH.md A39 and A41. So T150_PEDALS is opt-in
+ * for a game that assumes the convention and cannot rebind: swap for the
+ * labels, invert for the rest position, full for both. A37 is the
+ * measurement of what is actually wrong with the descriptor.
  *
  * Copyright (c) 2026 Renaud Allard
  * SPDX-License-Identifier: BSD-2-Clause
@@ -713,26 +716,33 @@ t150_device_wrap(IDirectInputDevice8W *inner, int wide, void **out)
 	d->autocenter = DIPROPAUTOCENTER_ON;
 
 	/*
-	 * The swap corrects the measured mislabel and is on by default. The
-	 * inversion is opt-in: shipped on by default in 0.1.6 it regressed a
-	 * game that handles pedal direction itself at binding time, so the
-	 * default defers to the game and "full" turns the mirror on for one
-	 * that does not. T150_PEDALS takes raw, swap, invert or full.
+	 * Both corrections are off by default, and that is a decision taken
+	 * twice the hard way. The swap and the mirror each shipped on, and
+	 * each regressed a working setup: a game that binds pedals by asking
+	 * the player to press them has already resolved both the labels and
+	 * the direction, and rewriting its input underneath re-crosses what it
+	 * got right. Assetto Corsa bound this wheel correctly against the raw
+	 * layout and every default here has made it worse.
+	 *
+	 * So the proxy stays what it says it is, a force feedback proxy that
+	 * forwards input untouched, and the corrections are there for a game
+	 * that assumes the common convention and offers no way to rebind:
+	 * swap for the labels, invert for the rest position, full for both.
+	 * RESEARCH.md A41.
 	 */
 	{
 		char v[8];
 		DWORD n = GetEnvironmentVariableA("T150_PEDALS", v, sizeof(v));
 
-		d->pedal_swap = 1;
+		d->pedal_swap = 0;
 		d->pedal_invert = 0;
 		if (n > 0 && n < sizeof(v)) {
-			if (strcmp(v, "raw") == 0)
-				d->pedal_swap = 0;
-			else if (strcmp(v, "invert") == 0) {
-				d->pedal_swap = 0;
+			if (strcmp(v, "swap") == 0)
+				d->pedal_swap = 1;
+			else if (strcmp(v, "invert") == 0)
 				d->pedal_invert = 1;
-			} else if (strcmp(v, "full") == 0)
-				d->pedal_invert = 1;
+			else if (strcmp(v, "full") == 0)
+				d->pedal_swap = d->pedal_invert = 1;
 		}
 	}
 

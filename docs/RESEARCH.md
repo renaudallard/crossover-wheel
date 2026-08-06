@@ -1168,6 +1168,48 @@ motor: the descriptors read, the endpoint 0 path works unprivileged,
 > report C5 decodes from a firmware 3.5 capture. That descriptor describes
 > firmware mode, which this wheel has not yet been switched into.
 
+**A41. Correcting the pedals by default was wrong, and the tester's own
+history says so.** Reported after 0.1.7: the car still accelerates by
+itself and the brake does nothing, and "it was working better yesterday
+morning."
+
+Yesterday morning is test 17, and what it ran was the hidraw route with a
+proxy from before the swap existed. Its verdict then was the best this
+project has had: "minus problems as before... no acceleration without i
+press buttons except in N position." Test 20's capture of Assetto Corsa's
+`controls.ini` explains why. It reads `THROTTLE AXLE=2` and `BRAKES
+AXLE=1`, which against the raw wheel is Rz for the accelerator and Y for
+the brake, exactly what A37 measured. **The game was already correct**,
+because it binds pedals by asking the player to press them, and a
+detection binding resolves the labels and the direction together without
+knowing or caring what the descriptor claims.
+
+So each correction this project added underneath re-crossed a correct
+binding. 0.1.5's swap moved the brake onto the axis the game reads as
+throttle, and a released brake rests at maximum, which is the car
+accelerating by itself. 0.1.6's mirror compounded it. 0.1.7 removed the
+mirror and kept the swap, which is why the symptom survived.
+
+The lesson is the same one A39 recorded, one layer up, and it is now taken
+properly: **the proxy forwards input untouched by default.** It is a force
+feedback proxy, its own file header says everything else is forwarded
+straight through, and twice it has broken a working setup by not meaning
+it. `T150_PEDALS` keeps swap, invert and full for a game that assumes the
+common convention and offers no way to rebind, which is a real case and a
+different one.
+
+A37 stands as a measurement: the descriptor really does label the pedals
+against the convention. What was wrong was concluding that this project
+should be the one to fix it, unasked, for every game.
+
+**Unrelated, and worth recording so it is not chased twice.** The same
+report mentions a warning about 100 percent CPU. That is Assetto Corsa's
+own "CPU OCCUPANCY > 99%" banner and it is visible in every frame of the
+video recorded during test 20, before any of these changes, so it is the
+game under CrossOver on Rosetta rather than anything this project does.
+The proxy's per-poll work is a two-value swap, and its log file is written
+at connect and wrap only, six lines in a whole session.
+
 **A40. Thrustmaster's own Windows driver, decompiled, confirms the encoders
 and corrects four things.** The T150's Windows package, `2026_TTRS_1.exe`,
 is an InstallShield v31 installer whose payload splits into a header

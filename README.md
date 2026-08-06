@@ -60,7 +60,7 @@ confirmed on hardware in test 16, and belongs in `cxbottle.conf` so every
 launch gets it. On the hidraw route the buttons arrive whole, all
 thirteen with their identities, and the one remaining input fault was
 measured to its cause: the T150's own descriptor labels the pedals
-backwards, which the proxy now corrects.
+backwards, which `T150_PEDALS` can correct for a game that needs it.
 [`docs/RESEARCH.md`](docs/RESEARCH.md) B10, B11, A35 and A37.
 
 **Does not work: force feedback, because the T150 brings no PID
@@ -170,16 +170,15 @@ and stay running, and test 17 missed it on one wrong path, the proxy
 guessing the daemon's home from a bottle username that is always
 `crossover` (A36), now fixed. Nothing measured blocks the join any more.
 
-**2. Verify the pedals in a game.** Test 19 measured the mislabel, brake
-on Y and accelerator on Rz where games expect the opposite (A37), and
-the proxy swaps the two values by default. The rest-at-max mirror
-shipped on by default in 0.1.6 and regressed a game that handles pedal
-direction itself at binding time (A39), so it is opt-in now,
-`T150_PEDALS=full`, for a game that does not. After any DLL update,
-reassign the pedals once in the game; the wrap log line names the build
-and its pedal settings. The buttons are already whole on the `Hidraw`
-route, so keep that route on, and the durable fix to offer CodeWeavers
-is the allowlist line B12 describes.
+**2. Leave the pedals alone unless a game forces the issue.** Test 19
+measured the mislabel, brake on Y and accelerator on Rz where games expect
+the opposite (A37), and correcting it by default regressed a working setup
+twice: Assetto Corsa had bound the raw layout correctly by detection, and
+both the swap and the mirror re-crossed it (A39, A41). The proxy forwards
+input untouched now, with `T150_PEDALS` there for a game that assumes the
+convention and cannot rebind. The buttons are already whole on the
+`Hidraw` route, so keep that route on, and the durable fix to offer
+CodeWeavers is the allowlist line B12 describes.
 
 **3. Play the effects nobody has played yet.** A constant and two periodics
 have moved the wheel. Springs, dampers, envelopes, ramps and per-effect
@@ -443,12 +442,14 @@ one run. The `SDL_JOYSTICK_HIDAPI` line is what puts the wheel in the
 bottle at all, see the input path section. The proxy's `OutputDebugString`
 lines also surface in a terminal run with `--debugmsg +debugstr`.
 
-`T150_PEDALS` controls the pedal corrections. The default is the swap
-alone, which fixes the backwards labels and lets the game's own binding
-detection handle direction; `full` adds the rest-at-zero mirror for a
-game that does not, `raw` turns everything off, and `invert` is the
-mirror alone, for diagnosis. The proxy logs its version and the pedal
-settings when it wraps the wheel.
+`T150_PEDALS` turns on the pedal corrections, and the default is none of
+them: input is forwarded untouched. The T150 labels its pedals against the
+common convention and rests them at maximum, but a game that binds pedals
+by asking you to press them resolves both by itself, and correcting them
+underneath such a game re-crosses what it got right. Set `swap` for the
+labels, `invert` for the rest position or `full` for both, in a game that
+assumes the convention and cannot rebind. The proxy logs its version and
+these settings when it wraps the wheel.
 
 **Check the install without a game:**
 
