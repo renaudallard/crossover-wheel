@@ -549,14 +549,26 @@ archive beside the proxy and answers from inside the bottle what every
 confusing session has been guessing at:
 
 ```sh
-"$CX_ROOT/bin/wine" --bottle "<name>" --cx-app probe_dinput.exe
-"$CX_ROOT/bin/wine" --bottle "<name>" --cx-app probe_dinput.exe -i
-"$CX_ROOT/bin/wine" --bottle "<name>" --cx-app probe_dinput.exe -f
+"$CX_ROOT/bin/wine" --bottle "<name>" --no-gui --cx-app probe_dinput.exe
+"$CX_ROOT/bin/wine" --bottle "<name>" --no-gui --cx-app probe_dinput.exe -i
+"$CX_ROOT/bin/wine" --bottle "<name>" --no-gui --cx-app probe_dinput.exe -f
 ```
+
+Name the executable rather than giving a path to it: the wrapper then
+searches the bottle and says `could not find 'probe_dinput.exe'` when it is
+not installed, where a drive-letter path is passed to the loader unchecked
+and fails less clearly. `--no-gui` puts a wrapper error in the terminal
+instead of a dialog box.
 
 The plain run prints the device and every object it declares: each axis and
 button with its offset, the axle number a game's configuration records, the
 declared range, and whether any axis is marked a force feedback actuator.
+It then prints where each control sits in the state struct a game reads.
+That second number is not the first one: the enumeration offset is the
+device's own, and the state offset is the one `c_dfDIJoystick2` assigns, so
+a button enumerated at 84 is `rgbButtons[0]`. Reading a control at the
+wrong one of the two is how this tool first reported buttons that were
+never pressed.
 `-i` works through every control by name, the wheel, the pedals, both
 paddles, all thirteen buttons and the hat, one at a time. It names the
 DirectInput object each one turned out to be, records a pedal's rest

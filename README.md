@@ -118,7 +118,7 @@ in-bottle bus driver was considered and rejected.
 | `t150d` protocol, slots, downgrades, watchdog | written and tested on Linux |
 | `t150d` macOS HID backend | working: opened a real wheel unprivileged, and its shutdown stopped a runaway effect. Has not yet rendered an effect for a client |
 | `t150-dinput8.dll` the in-bottle proxy | loads and chain-loads in a real bottle, and a game creates effects through it, test 23b |
-| `probe_dinput.exe` the in-bottle probe | new, never yet run: what DirectInput says the wheel is, and a force feedback self test with no game involved |
+| `probe_dinput.exe` the in-bottle probe | runs under Wine in CI against a wheel shaped uinput device: enumerates it, maps every control into the state struct and walks all twenty one controls. Not yet run on real hardware |
 | build, CI, docs, man pages | working |
 | `t150ctl`, `t150boot` | working on hardware: `t150boot` switched a wheel, `t150ctl` talked to one. The range change has run but nobody felt it yet |
 
@@ -288,6 +288,18 @@ Development happens on Linux; the Mac is only needed to run the probes and
 the daemon. Because the probe sources cannot be compiled on Linux, CI builds
 them on `macos-latest` on every push and attaches them as an artifact, so a
 Mac is not needed to get a binary either.
+
+CI also runs the in-bottle probe rather than only compiling it. It runs on
+`windows-latest` against a real loader, and on `ubuntu-latest` under Wine,
+which is what a CrossOver bottle is. The Wine job creates a uinput device
+carrying the wheel's own USB ids, `tests/fake_wheel.c`, so the probe has
+something to enumerate: without one it stops at "no T150 found" and the half
+of it that has actually been wrong never runs. With the device present it
+enumerates every object, maps each one into the state struct and walks all
+twenty one controls, and the job fails if a control does not land where the
+data format puts it. That check exists because the probe first shipped
+reading buttons at their enumeration offset, which is a different number and
+can be negative.
 
 ## Setting the wheel up
 

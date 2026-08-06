@@ -42,9 +42,16 @@ when anything about the wheel looks wrong inside the bottle. Run it in the
 bottle with no arguments and it prints what DirectInput says the device is:
 every axis and button with its offset, the axle number a game's
 configuration records, the declared range, and whether any axis is marked
-as a force feedback actuator.
+as a force feedback actuator. It then prints where each control sits in the
+state struct a game reads, which is a different number from the enumeration
+offset beside it and the one that decides which value a game gets.
 
-  wine --bottle "<name>" --cx-app probe_dinput.exe
+  wine --bottle "<name>" --no-gui --cx-app probe_dinput.exe
+
+Give the name of the executable rather than a path to it. The wrapper then
+searches the bottle for it and says so plainly if it is not there, instead
+of handing an unchecked path to the loader. --no-gui puts any error from
+the wrapper in the terminal rather than in a dialog box.
 
 Every run writes itself to Z:\tmp\probe_dinput.log, which is
 /tmp/probe_dinput.log seen from macOS, as well as to the screen. Send that
