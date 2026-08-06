@@ -325,6 +325,68 @@ dump_caps(void)
 }
 
 /*
+ * Where answers come from. A run from a terminal answers on stdin. A run
+ * started from the CrossOver GUI has nothing behind stdin at all: Wine
+ * creates no console for it, and getchar() answers EOF without a person
+ * anywhere near the question. This tool shipped taking that EOF for a yes,
+ * twenty one times in a row, and wrote a table that looked confirmed by a
+ * person who was never asked. So EOF is never an answer here. The first
+ * one moves every question into a message box, which a bottle can always
+ * draw; and when even the box cannot appear, which is what a headless CI
+ * run looks like, the answer is recorded as never given rather than
+ * invented.
+ */
+static int ask_by_box;
+static int nobody_to_ask;
+
+static int
+ask_box(const char *text, UINT type)
+{
+	return MessageBoxA(NULL, text, "probe_dinput",
+	    type | MB_SETFOREGROUND);
+}
+
+static void
+stop_asking(void)
+{
+	nobody_to_ask = 1;
+	out("nothing can show a question; answers from here on are "
+	    "recorded as never given\n");
+}
+
+/*
+ * Wait until the person says they are ready. This is also the moment the
+ * tool learns whether stdin can answer at all, before the first watch
+ * rather than six seconds into it.
+ */
+static void
+ready(const char *what)
+{
+	char text[300];
+	int c;
+
+	out("\n%s\n", what);
+
+	if (!ask_by_box) {
+		out("Press Enter to start.\n");
+		c = getchar();
+		while (c != '\n' && c != EOF)
+			c = getchar();
+		if (c == '\n')
+			return;
+		ask_by_box = 1;
+		out("stdin cannot answer; asking on screen instead\n");
+	}
+
+	if (nobody_to_ask)
+		return;
+
+	(void)snprintf(text, sizeof(text), "%s\n\nOK starts.", what);
+	if (ask_box(text, MB_OK) <= 0)
+		stop_asking();
+}
+
+/*
  * The controls this wheel has, in the order it is natural to work through
  * them, named the way the person holding it would name them. The T150's
  * thirteen buttons were identified on hardware and are recorded in
@@ -369,6 +431,7 @@ struct result {
 	int		 seen;
 	int		 disputed;
 	int		 skipped;
+	int		 unanswered;
 };
 
 static struct result results[sizeof(controls) / sizeof(controls[0])];
@@ -376,26 +439,52 @@ static struct result results[sizeof(controls) / sizeof(controls[0])];
 /*
  * Ask, and take y, n or s. Enter means yes, because the common case is the
  * tool being right and a person working through twenty controls should not
- * have to type for each one.
+ * have to type for each one. When stdin cannot answer, the same question
+ * goes out as a message box instead.
+ * Returns 0 for yes, -1 for no, 1 for skip, 2 for nobody answered.
  */
 static int
-confirm(void)
+confirm(const struct result *r)
 {
+	char text[512];
 	int c, first;
 
-	out("      correct? [Y/n/s to skip] ");
-	fflush(stdout);
+	if (!ask_by_box) {
+		out("      correct? [Y/n/s to skip] ");
 
-	first = c = getchar();
-	while (c != '\n' && c != EOF)
-		c = getchar();
+		first = c = getchar();
+		while (c != '\n' && c != EOF)
+			c = getchar();
 
-	if (first == 'n' || first == 'N')
-		return -1;
-	if (first == 's' || first == 'S')
-		return 1;
+		if (first != EOF) {
+			if (first == 'n' || first == 'N')
+				return -1;
+			if (first == 's' || first == 'S')
+				return 1;
+			return 0;
+		}
+		ask_by_box = 1;
+		out("\nstdin cannot answer; asking on screen instead\n");
+	}
 
-	return 0;
+	if (!nobody_to_ask) {
+		(void)snprintf(text, sizeof(text),
+		    "%s.\n\n%s\n%s\n\n"
+		    "Yes means correct, No means wrong, Cancel skips it.",
+		    r->prompt, r->found, r->detail);
+		switch (ask_box(text, MB_YESNOCANCEL)) {
+		case IDYES:
+			return 0;
+		case IDNO:
+			return -1;
+		case IDCANCEL:
+			return 1;
+		default:
+			stop_asking();
+		}
+	}
+
+	return 2;
 }
 
 /*
@@ -558,22 +647,33 @@ watch_control(const struct control *c, struct result *r)
 static void
 identify(void)
 {
+	char text[256];
 	size_t i, n = sizeof(controls) / sizeof(controls[0]);
 
 	out("\n--- identification ---\n");
-	out("One control at a time. Let go of everything else, and press\n"
-	    "each one fully so its whole travel is recorded.\n");
+	ready("One control at a time. Let go of everything else, and press\n"
+	    "each one fully so its whole travel is recorded.");
 
 	for (i = 0; i < n; i++) {
 		int c;
 
+		if (ask_by_box && !nobody_to_ask) {
+			(void)snprintf(text, sizeof(text),
+			    "%s.\n\nOK starts a %d second watch.",
+			    controls[i].prompt, WATCH_MS / 1000);
+			if (ask_box(text, MB_OK) <= 0)
+				stop_asking();
+		}
+
 		watch_control(&controls[i], &results[i]);
 
-		c = confirm();
+		c = confirm(&results[i]);
 		if (c < 0)
 			results[i].disputed = 1;
-		else if (c > 0)
+		else if (c == 1)
 			results[i].skipped = 1;
+		else if (c == 2)
+			results[i].unanswered = 1;
 	}
 
 	out("\n--- what this wheel is, as DirectInput sees it ---\n\n");
@@ -583,12 +683,14 @@ identify(void)
 
 		if (r->skipped)
 			continue;
-		out("%-44s %-34s %s%s\n", controls[i].prompt,
+		out("%-44s %-34s %s%s%s\n", controls[i].prompt,
 		    r->seen ? r->found : "NOT SEEN", r->detail,
-		    r->disputed ? "  [DISPUTED]" : "");
+		    r->disputed ? "  [DISPUTED]" : "",
+		    r->unanswered ? "  [NEVER ANSWERED]" : "");
 	}
 	out("\nAnything marked DISPUTED is where the tool named a control "
-	    "and you said it was wrong.\nThat is the interesting line.\n");
+	    "and you said it was wrong.\nThat is the interesting line. "
+	    "NEVER ANSWERED means no one could be asked.\n");
 }
 
 /*

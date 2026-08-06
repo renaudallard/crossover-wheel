@@ -184,8 +184,14 @@ jobs:
       # The identification walk is where the offsets are turned into
       # positions in the state struct, and it is the half a runner could
       # never reach before. Nothing moves, so every control comes back "not
-      # seen"; what is being checked is that it survives asking.
+      # seen"; what is being checked is that it survives asking. The runner
+      # has no one to answer with: no stdin and no display, so every row
+      # must say NEVER ANSWERED, which is the proof the tool no longer
+      # agrees with itself when nobody is there. The timeout is the guard
+      # against the opposite failure, a question that waits forever in a
+      # place with no one to answer it.
       - name: the probe walks every control without faulting
+        timeout-minutes: 10
         env:
           WINEPREFIX: ${{ runner.temp }}/prefix
           WINEDEBUG: -all
@@ -205,6 +211,10 @@ jobs:
               { echo "exited $code, expected 0" >&2; exit 1; }
           grep -q "what this wheel is" "$RUNNER_TEMP/ident.log" ||
               { echo "never printed the table" >&2; exit 1; }
+          n=$(grep -c '\[NEVER ANSWERED\]' "$RUNNER_TEMP/ident.log" || true)
+          test "$n" -eq 21 ||
+              { echo "$n rows marked never answered, expected all 21:" \
+                    "the walk invented answers nobody gave" >&2; exit 1; }
 
   macos:
     name: probe tools

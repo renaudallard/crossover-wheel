@@ -574,7 +574,13 @@ paddles, all thirteen buttons and the hat, one at a time. It names the
 DirectInput object each one turned out to be, records a pedal's rest
 position and full travel so an inversion is a number rather than an
 impression, asks you to confirm each identification, and prints a table of
-the whole wheel at the end with anything you disputed flagged. `-f` creates a real constant force and a real damper and plays
+the whole wheel at the end with anything you disputed flagged. The
+questions wait for you. From a terminal they are asked on it; started from
+the CrossOver GUI there is no terminal behind the program, so they arrive
+as dialog boxes instead, and each control waits behind an OK so the watch
+starts when you are ready. When nothing can ask at all, which is what a
+headless CI run looks like, the table says NEVER ANSWERED on every line
+rather than pretending someone agreed. `-f` creates a real constant force and a real damper and plays
 them with no game involved, which is the one measurement that separates a
 game asking wrongly from a chain that does not deliver. **Hold the wheel for
 `-f`.**

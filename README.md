@@ -118,7 +118,7 @@ in-bottle bus driver was considered and rejected.
 | `t150d` protocol, slots, downgrades, watchdog | written and tested on Linux |
 | `t150d` macOS HID backend | working: opened a real wheel unprivileged, and its shutdown stopped a runaway effect. Has not yet rendered an effect for a client |
 | `t150-dinput8.dll` the in-bottle proxy | loads and chain-loads in a real bottle, and a game creates effects through it, test 23b |
-| `probe_dinput.exe` the in-bottle probe | runs under Wine in CI against a wheel shaped uinput device: enumerates it, maps every control into the state struct and walks all twenty one controls. Not yet run on real hardware |
+| `probe_dinput.exe` the in-bottle probe | runs under Wine in CI against a wheel shaped uinput device: enumerates it, maps every control into the state struct and walks all twenty one controls, recording them as never answered since CI has nobody to ask. Not yet run on real hardware |
 | build, CI, docs, man pages | working |
 | `t150ctl`, `t150boot` | working on hardware: `t150boot` switched a wheel, `t150ctl` talked to one. The range change has run but nobody felt it yet |
 
