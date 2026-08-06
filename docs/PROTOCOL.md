@@ -307,27 +307,30 @@ f0  id  effect_type:u16  length:u16  f1:u16  f2  pk_id1  f3  pk_id0  f4  delay  
 ```
 
 `f0` is `0x01`, `id` is the slot, and `f1` through `f5` are 0. `length` is the
-duration in milliseconds, with `0xFFFF` meaning endless. `delay` is a single
-byte holding the *high* byte of the start delay in milliseconds.
+duration in milliseconds, with `0xFFFF` meaning endless. `delay` is a 16-bit
+little-endian millisecond value in the last two bytes.
 
 | `effect_type` | Effect |
 | --- | --- |
 | `0x4000` | constant |
+| `0x4020` | **square** |
+| `0x4021` | **triangle** |
 | `0x4022` | sine |
 | `0x4023` | sawtooth up |
 | `0x4024` | sawtooth down |
 | `0x4040` | spring |
 | `0x4041` | damper |
 
-The codes are contiguous around the periodics, so `0x4020`, `0x4021` and
-`0x4025` looked like the waveforms the Linux driver never implemented. Two
-of the three are real: **`0x4020` oscillates** (RESEARCH.md A28) and
-**`0x4021` oscillates smoothly** (A34), so neither is obviously a square.
-**`0x4025` renders nothing**: uploaded over a playing `0x4021` it stopped
-the motion and produced no force, so it is not a waveform the firmware
-renders (A34). Which shapes `0x4020` and `0x4021` actually are needs a
-back-to-back comparison by feel, so square and triangle stay downgrades
-until then.
+**All eight come from Thrustmaster's own driver.** Its HID PID report
+descriptor declares the effect type array as constant, square, triangle,
+sine, sawtooth up, sawtooth down, spring, damper, and the driver indexes a
+nine-byte table with that position to get the low byte: `00 00 20 21 22 23
+24 40 41`. Six of the eight are codes this project had already; the two new
+ones are square and triangle, in an order that is not numeric and could not
+have been guessed. RESEARCH.md A40.
+
+That also settles `0x4025`, which renders nothing on hardware (A34): the
+table has no ninth entry, so it is not a waveform at all.
 
 **Effect control**, 4 bytes, starts or stops an uploaded effect:
 
@@ -368,15 +371,16 @@ comments document, which is good evidence the derivation is sound, but no
 comment documents a constant's ceiling. It may just be conservative.
 `probe_setreport` can compare `0x40` against `0x7f` directly.
 
-The **envelope levels are a guess.** The driver divides by `0x1fff`, which
-would give a range of 0 to 4, and its own comment says the field is wrong.
-The encoder maps to the full byte instead, which is the least surprising
-reading of a one-byte field, and nothing confirms it.
+The **envelope levels run to 127.** The Linux driver divides by `0x1fff`,
+which would give a range of 0 to 4, and its own comment says the field is
+wrong; this project guessed the full byte, 255. Both are wrong. The vendor's
+descriptor declares attack level and fade level as logical maximum 127
+against a physical maximum of 10000, and that is what the encoder now uses.
 
-The **start delay carries only the high byte** of a millisecond value, so its
-unit is 256 ms. That is what the driver sends. It is coarse enough to be
-suspicious, and harmless in practice because almost every effect starts at
-once.
+The **start delay is a whole 16-bit millisecond field.** It was read here as
+a single high byte, making the unit 256 ms, which meant every delay under
+25.6 seconds was sent as zero. The descriptor declares 16 bits and a vendor
+capture carries a 100 ms delay as `64 00` in the last two bytes.
 
 One more asymmetry, in the encoder rather than the protocol: the direction is
 projected onto the X axis for a constant force and ignored for everything
@@ -398,17 +402,18 @@ still bite.
 | Sine, sawtooth up, sawtooth down | yes | pass through |
 | Spring | yes | pass through |
 | Damper | yes | pass through |
-| Square | no | downgrade to sine |
-| Triangle | no | downgrade to sine |
+| Square | yes, `0x4020` | pass through |
+| Triangle | yes, `0x4021` | pass through |
 | Friction | no | downgrade to damper |
 | Inertia | no | downgrade to damper |
 | Ramp | not in the protocol | synthesize as a time-sliced constant |
 
-Square and triangle were previously recorded here as native. They are not.
-`t150_driver`'s supported effect list is `FF_GAIN`, `FF_PERIODIC`, `FF_SINE`,
-`FF_SAW_UP`, `FF_SAW_DOWN`, `FF_CONSTANT`, `FF_SPRING` and `FF_DAMPER`, and
-`ff_commit` has no type code for either waveform. Whether the firmware knows
-them anyway is the `0x4020`/`0x4021` question above.
+Square and triangle went back and forth here: recorded as native, then
+withdrawn because `t150_driver` supports neither and no type code was known,
+now native again on the vendor's own authority. The Linux driver's list
+(`FF_GAIN`, `FF_PERIODIC`, `FF_SINE`, `FF_SAW_UP`, `FF_SAW_DOWN`,
+`FF_CONSTANT`, `FF_SPRING`, `FF_DAMPER`) is a limit of that driver, not of
+the firmware.
 
 Downgrading rather than refusing is deliberate: a game that gets
 `DIERR_UNSUPPORTED` from `CreateEffect` may disable force feedback outright,

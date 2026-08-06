@@ -85,12 +85,13 @@ range visibly changed went unrecorded.
 The four measurement tools. They are what proved the wheel obeys.
 .El
 .Sh IMPLEMENTATION NOTES
-The T150 renders constant force, sine, both sawtooths, spring and damper in
-hardware. Square and triangle are not in its protocol despite being
-periodics, and neither are friction, inertia and ramp. Refusing those
-outright risks a game disabling force feedback altogether, so the daemon
-downgrades them instead: square and triangle to sine, friction and inertia to
-damper, and ramp to a time-sliced constant.
+The T150 renders constant force, square, triangle, sine, both sawtooths,
+spring and damper in hardware, all eight named by Thrustmaster's own driver.
+Friction, inertia and ramp are not in its protocol. Refusing those outright
+risks a game disabling force feedback altogether, so the daemon downgrades
+them instead: friction and inertia to damper, and ramp to a time-sliced
+constant. Square and triangle were downgraded to sine until the vendor's
+driver gave their type codes.
 .Pp
 Nothing in this stack learns that a game has exited: Wine's
 .Pa hidclass.sys
@@ -144,12 +145,14 @@ describes, and nothing at all about whether the wheel honours them.
 .Sh AUTHORS
 .An Renaud Allard
 .Sh CAVEATS
-The T150 wire protocol is not published by Thrustmaster. It is derived from
-the Linux drivers cited in
-.Pa docs/PROTOCOL.md
-and from a firmware 3.5 descriptor capture, and only part of it has been felt
-on a wheel: the settings, a constant force and one periodic. Springs, dampers,
-envelopes, ramps and per-effect gain are still arithmetic nobody has tested
-against hardware.
+The T150 wire protocol is not published by Thrustmaster, but it is no longer
+guessed at. Every packet layout and scaling constant this project uses has
+been checked against Thrustmaster's own Windows driver, whose HID PID report
+descriptor declares each field, and against its captured traffic; that
+exercise corrected four of them. RESEARCH.md A40.
+.Pp
+What is still untested is the feel: only the settings, a constant force and
+two periodics have been played on a wheel. Springs, dampers, envelopes and
+ramps encode correctly and nobody has felt them.
 .Pa docs/PROBES.md
-is the procedure that would settle them.
+is the procedure that would settle that.

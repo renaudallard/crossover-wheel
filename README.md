@@ -27,9 +27,10 @@ extension approval.
 > hardware and worked (A31), and the proxy loads and chain-loads in a real
 > bottle (A33), but no game has created a device through it, no effect has
 > crossed the loopback, and the daemon has never rendered one. Only a constant
-> force and one periodic have ever been played, so springs, dampers,
-> envelopes and per-effect gain are still arithmetic derived from a Linux
-> driver rather than measured. The wheel reaches the bottle again with
+> force and two periodics have been played on a wheel, though the encoders
+> themselves are no longer guesswork: every packet layout and constant is
+> now checked against Thrustmaster's own Windows driver, which corrected
+> four of them (A40). The wheel reaches the bottle again with
 > `SDL_JOYSTICK_HIDAPI=0` set (A35), and the proxy has loaded inside a
 > real game; what has still never happened is the game and the daemon
 > running at the same time.
@@ -875,11 +876,11 @@ games. The one exception is Euro Truck Simulator 2 and American Truck
 Simulator, which load third-party telemetry plugins, and even there the game
 sends no forces, so any plugin has to invent them from telemetry.
 
-The T150 renders constant force, sine, both sawtooths, spring and damper in
-hardware. Square and triangle are not in its protocol despite being periodics,
-and neither are friction, inertia or ramp. Those are downgraded rather than
-refused, because a game that gets a refusal from `CreateEffect` may disable
-force feedback altogether.
+The T150 renders constant force, square, triangle, sine, both sawtooths,
+spring and damper in hardware, all eight named by Thrustmaster's own Windows
+driver. Friction, inertia and ramp are not in its protocol. Those are
+downgraded rather than refused, because a game that gets a refusal from
+`CreateEffect` may disable force feedback altogether.
 
 ## Prior art
 

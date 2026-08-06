@@ -3,3 +3,6 @@ tmp/
 *.o
 *.core
 core
+
+# The vendor driver package, kept locally for protocol verification.
+2026_TTRS_1.exe

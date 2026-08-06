@@ -93,16 +93,15 @@ expected to send
 often enough to stay ahead of this. The same safe state is entered when a
 client disconnects, when one displaces another, and on the way out.
 .Sh EFFECTS
-The wheel renders constant force, sine, both sawtooths, spring and damper.
-Square and triangle are not in its protocol, and neither are friction,
-inertia or ramp.
+The wheel renders constant force, square, triangle, sine, both sawtooths,
+spring and damper. Friction, inertia and ramp are not in its protocol.
 .Nm
 downgrades those rather than refusing them, because a game that gets
 .Dv DIERR_UNSUPPORTED
 from
 .Fn CreateEffect
-may switch force feedback off altogether: square and triangle become sine,
-friction and inertia become damper, and a ramp becomes a constant that
+may switch force feedback off altogether: friction and inertia become damper,
+and a ramp becomes a constant that
 .Nm
 re-sends as it slides.
 .Pp
@@ -135,5 +134,6 @@ rendered anything on hardware.
 .Pp
 Only a constant force and one periodic have ever been played. Springs,
 dampers, envelopes, ramps and per-effect gain are arithmetic derived from
-a Linux driver rather than measured, so expect to find at least one of them
-wrong.
+a Linux driver, and now checked against Thrustmaster's own Windows driver
+field by field, so the bytes are right even though nobody has felt these
+effects on a wheel.

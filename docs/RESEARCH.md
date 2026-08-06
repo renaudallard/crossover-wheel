@@ -1168,6 +1168,88 @@ motor: the descriptors read, the endpoint 0 path works unprivileged,
 > report C5 decodes from a firmware 3.5 capture. That descriptor describes
 > firmware mode, which this wheel has not yet been switched into.
 
+**A40. Thrustmaster's own Windows driver, decompiled, confirms the encoders
+and corrects four things.** The T150's Windows package, `2026_TTRS_1.exe`,
+is an InstallShield v31 installer whose payload splits into a header
+cabinet and two data volumes; `unshield` extracts 252 files from it. The
+force feedback stack for `USB\VID_044f&PID_b677` is `tmPID64.DLL`, a COM
+in-proc server implementing `IDirectInputEffectDriver`, over `tmHidUsb.sys`.
+
+**The find that made the rest possible is a report descriptor.**
+`tmHidUsb.sys` carries an 891-byte HID **Physical Interface Device**
+descriptor at file offset `0x81670`, opening `05 0f 09 21 a1 02 85 0b`.
+The wheel exposes no PID collection itself, which is this project's founding
+measurement; Thrustmaster keeps one driver-side and it names every field
+this project reverse engineered. Its report lengths are 15, 9, 4, 8, 11 and
+4, exactly our `T150_FF_COMMIT_LEN`, `FIRST_LEN`, `UPDATE_LEN_CONSTANT`,
+`_PERIODIC`, `_CONDITION` and `CONTROL_LEN`, and its report ids 0x0b to 0x0f
+map to our wire classes 0x01 to 0x05 by the driver's own `sub dl,0xa`.
+
+**Confirmed, first-hand rather than transcribed.** The four divisors this
+header cites from the Linux driver appear as literal constants in the
+vendor's DLL, `mov edx,0x147`, `mov edx,0x30c`, `mov edx,0x28f` and
+`0x1ff`. The descriptor independently declares the coefficient as -100 to
+100, the centre as -500 to 500, the deadband as 0 to 1000, the phase as 0
+to 255, the damper saturation as 0 to 100 and the gain as 0 to 0x80 against
+10000. Every packet length and class byte matches. So do the condition
+bytes: `05 1c 00 00 00 00 00 00 00 46 54` for a spring and `64 64` for a
+damper come out of our encoder byte for byte, and `tests/encode_check.c`
+now pins them to the vendor's captures.
+
+**Corrected, four of them.**
+
+- **Start delay is a whole 16-bit millisecond field**, not the high byte of
+  one. This project read the Linux driver as making the unit 256 ms, so
+  every delay under 25.6 seconds was sent as zero. The descriptor declares
+  16 bits and `multiple_saw_down.pcapng` carries a 100 ms delay as
+  `01 05 24 40 88 13 00 00 00 9a 00 a8 00 64 00`.
+- **Envelope levels run to 127**, not 255. `09 5b 25 7f 75 08` for attack
+  level and `09 5d 25 7f 75 08` for fade level, logical maximum 127 against
+  a physical maximum of 10000. Our 0xff was a guess and this header said so.
+- **Square is `0x4020` and triangle is `0x4021`, both native.** The
+  descriptor's effect type array is constant, square, triangle, sine,
+  sawtooth up, sawtooth down, spring, damper, and the driver indexes a
+  nine-byte table with that position for the low byte: `00 00 20 21 22 23 24
+  40 41`. Six of the eight were already ours, under an ordering that is not
+  numeric and could not have been guessed. Both downgrades are removed. This
+  also settles A34's puzzle: `0x4025` renders nothing because the table has
+  no entry for it.
+- **The slot keys are sixteen bits.** They are parameter block offsets, 28
+  bytes per slot, declared report size 16 and stored by the driver as words.
+  Ours returned `uint8_t`, which is invisible through slot 8, the highest
+  any capture reaches, and wraps from slot 9: 0x11a became 0x1a, a slot 0
+  key, so two live effects would have addressed the same block.
+
+**Explained rather than changed.** The constant level stopping at 64 while a
+periodic reaches 127 is not a field limit: both are one signed byte. The
+vendor halves constant force on this model before it reaches the wire, and
+`constant0.pcapng` steps 0x40, 0x20, 0x10 for 100, 50 and 25 percent. Our
+64 reproduces the vendor's bytes and stays.
+
+**Also corrected in the model, not the bytes.** The 11-byte condition
+packet's last two bytes are not a trailer keyed to the effect type: they are
+the positive and negative saturation of the parameter block the packet
+addresses, and a condition is two such packets rather than an envelope plus
+a trailer. `damper0.pcapng` shows the pair varying across slots, which no
+fixed trailer could do. The emitted values are unchanged.
+
+**Left alone deliberately.** The vendor converts a DirectInput ramp into a
+sawtooth periodic and folds per-effect gain into magnitudes; this project
+slices a ramp into constants and keeps gain separate because the wheel has
+one device gain. Both are defensible and neither is a defect. Spring
+saturation is the one genuine unknown left: the descriptor declares 0 to
+100 for both conditions, while the vendor's spring captures never exceed
+0x54 and its damper captures reach 0x64, so our asymmetric maxima
+reproduce observed traffic and may still be a driver-side ratio rather than
+a firmware limit.
+
+> `2026_TTRS_1.exe`, InstallShield v31, extracted with `unshield` built from
+> source. `FFB_Drivers_Win10/amd64/tmPID64.DLL` and `tmHidUsb.sys`, the
+> latter's descriptor at file `0x81670` and effect type table at `0x81548`.
+> Captures as in A40's vectors. The exercise ran 93 agents and refuted 52 of
+> 86 candidate findings; what survived was re-verified by hand before any
+> code changed.
+
 ---
 
 ## B. How CrossOver handles HID and force feedback
