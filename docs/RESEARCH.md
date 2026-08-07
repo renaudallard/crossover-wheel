@@ -21,7 +21,10 @@ to blame.** They are declared, they change on the interrupt IN pipe when
 pressed, and for many sessions CrossOver registered none of them. Solved:
 on the hidraw route with the B10 knob, all thirteen arrive in the bottle
 with their identities intact (A37). The remaining pedal mislabel is the
-descriptor's own and the proxy corrects it.
+descriptor's own, and the proxy leaves it alone: a game that binds pedals
+by asking you to press them resolves the labels itself, and correcting them
+underneath twice broke a working setup. `T150_PEDALS` is there for a game
+that cannot rebind, and it is off by default (A41).
 
 > Decoded from `t150_driver/traffic/old_caps/hid_report_fw35`. Corroborated
 > for Logitech by CrossWheel's troubleshooting page: "macOS recognizes the
