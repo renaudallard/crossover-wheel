@@ -1073,8 +1073,24 @@ main(int argc, char *argv[])
 	for (i = 0; i < naxes; i++)
 		if (axes[i].is_ff)
 			break;
-	if (i == naxes)
-		out("no axis is marked as a force feedback actuator\n");
+
+	/*
+	 * A device that claims force feedback and marks no axis to apply it
+	 * to is a shape no real wheel has, and callers are entitled not to
+	 * expect it: SDL counts actuator axes, finds none, and then builds
+	 * effects with no axes at all. Saying the two facts on separate
+	 * lines left a reader to notice the contradiction, and nobody did
+	 * for four releases.
+	 */
+	if (i == naxes && ff_claimed)
+		out("no axis is marked as a force feedback actuator, and the "
+		    "device claims\nforce feedback: a game that looks for the "
+		    "actuator will find none and may\nturn force feedback off "
+		    "or send effects with no axis. RESEARCH.md B13.\n");
+	else if (i == naxes)
+		out("no axis is marked as a force feedback actuator, which "
+		    "matches a device\nthat does not claim force feedback "
+		    "either\n");
 
 	if (want_id)
 		identify();
