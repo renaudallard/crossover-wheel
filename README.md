@@ -24,10 +24,12 @@ extension approval.
 >
 > **What is not finished.** No game has reached the wheel end to end.
 > `t150boot`, `t150ctl` and the daemon's macOS backend have all now touched
-> hardware and worked (A31), and the proxy loads and chain-loads in a real
-> bottle (A33), but no game has created a device through it, no effect has
-> crossed the loopback, and the daemon has never rendered one. Only a constant
-> force and two periodics have been played on a wheel, though the encoders
+> hardware and worked (A31), the proxy loads and chain-loads in a real
+> bottle (A33), and an effect has crossed the loopback and been felt: a
+> constant force and a damper, played through the whole chain by
+> `probe_dinput -f` with no game involved (A43). What no game has done yet
+> is ask for one. A constant force, a damper and two periodics have been
+> played on a wheel, though the encoders
 > themselves are no longer guesswork: every packet layout and constant is
 > now checked against Thrustmaster's own Windows driver, which corrected
 > four of them (A40). The wheel reaches the bottle again with
@@ -135,8 +137,10 @@ without a Mac, which is what `socket_check` does, including holding a socket
 open and going quiet to prove the wheel gets released.
 
 The proxy is written and cross builds to an x86_64 PE with the right five
-exports and no import of `dinput8` to recurse into. **No line of it has ever
-executed.** There is no Wine on the development machine and no Mac here, so
+exports and no import of `dinput8` to recurse into. It has now executed on
+hardware: it wrapped the wheel, claimed force feedback and carried two
+effects to the daemon that were felt (A43). There is no Wine on the
+development machine and no Mac here, so
 the checks that exist run in CI on Windows: they unit test the DirectInput
 conversion, then load the DLL with a copy of the system `dinput8` beside it
 and confirm both entry points chain-load. Whether a Wine bottle resolves the
@@ -172,17 +176,21 @@ guessing the daemon's home from a bottle username that is always
 `crossover` (A36), now fixed. Nothing measured blocks the join any more.
 
 **2. Leave the pedals alone unless a game forces the issue.** Test 19
-measured the mislabel, brake on Y and accelerator on Rz where games expect
-the opposite (A37), and correcting it by default regressed a working setup
-twice: Assetto Corsa had bound the raw layout correctly by detection, and
-both the swap and the mirror re-crossed it (A39, A41). The proxy forwards
+measured the mislabel, the brake on the first pedal axis and the
+accelerator on the second where games expect the opposite (A37), which
+DirectInput publishes as Y and Z (A43). Correcting it by default regressed
+a working setup twice: Assetto Corsa had bound the raw layout correctly by
+detection, and both the swap and the mirror re-crossed it (A39, A41). The
+descriptor's own usage names are not where DirectInput puts those axes,
+and reading them as if they were is what aimed the correction at an axis
+this wheel does not have (A44). The proxy forwards
 input untouched now, with `T150_PEDALS` there for a game that assumes the
 convention and cannot rebind. The buttons are already whole on the
 `Hidraw` route, so keep that route on, and the durable fix to offer
 CodeWeavers is the allowlist line B12 describes.
 
-**3. Play the effects nobody has played yet.** A constant and two periodics
-have moved the wheel. Springs, dampers, envelopes, ramps and per-effect
+**3. Play the effects nobody has played yet.** A constant, a damper and two
+periodics have moved the wheel. Springs, envelopes, ramps and per-effect
 gain have never touched hardware, and every one of them is arithmetic this
 project derived from a driver rather than measured. `probe_setreport -x`
 plays any of them in a line, and the encoders' own golden vectors say what

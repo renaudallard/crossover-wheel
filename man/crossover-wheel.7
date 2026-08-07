@@ -39,8 +39,9 @@ unprivileged macOS daemon that owns the wheel through
 The macOS daemon. Owns the wheel, encodes effects, writes output reports.
 The protocol, the slot table, the downgrades and the watchdog work, and the
 HID backend has opened a real wheel unprivileged; its shutdown packets
-visibly stopped a runaway effect, so its writes reach the firmware. What it
-has never done is render an effect a client asked for.
+visibly stopped a runaway effect, so its writes reach the firmware. It has
+rendered effects a client asked for, a constant force and a damper, and
+both were felt on the wheel.
 .Fl n
 swaps the backend for a log, which is how the rest of the stack is exercised
 without hardware.
@@ -106,9 +107,10 @@ switched a wheel,
 .Nm t150ctl
 talked to one, the daemon opened one unprivileged and stopped a runaway
 effect on its way out, and the proxy loaded in a CrossOver bottle and
-chain-loaded the builtin behind it. What has not happened is a game reaching
-the wheel: no device has been created through the proxy, no effect has
-crossed the loopback, and the daemon has never rendered one for a client.
+chain-loaded the builtin behind it. An effect has since crossed the loopback
+and been felt on the wheel, played by the in-bottle probe with no game
+involved. What has not happened is a game reaching the wheel: no game has
+created a device through the proxy and asked for a force.
 .Pp
 The measurement the project was gated on has been made and it succeeded: an
 unprivileged
@@ -151,8 +153,8 @@ been checked against Thrustmaster's own Windows driver, whose HID PID report
 descriptor declares each field, and against its captured traffic; that
 exercise corrected four of them. RESEARCH.md A40.
 .Pp
-What is still untested is the feel: only the settings, a constant force and
-two periodics have been played on a wheel. Springs, dampers, envelopes and
-ramps encode correctly and nobody has felt them.
+What is still untested is the feel of most of them: the settings, a constant
+force, a damper and two periodics have been played on a wheel. Springs,
+envelopes and ramps encode correctly and nobody has felt them.
 .Pa docs/PROBES.md
 is the procedure that would settle that.

@@ -290,9 +290,10 @@ the system `dinput8` beside it and confirms both entry points chain-load.
 And the chain-load in a real bottle is now verified too: test 14 loaded the
 proxy as `native` in a CrossOver 26 bottle, chain-loaded the builtin from
 `dinput8_orig.dll`, and forwarded `DllRegisterServer` into it, with the
-builtin's imports visibly resolving (RESEARCH.md A33). What has never run is
-the force feedback path: no game has created a device through the proxy, and
-no effect has crossed the loopback to the daemon.
+builtin's imports visibly resolving (RESEARCH.md A33). The force feedback
+path has since run end to end: an effect crossed the loopback and was felt
+on the wheel, played by the in-bottle probe (A43). What has never run is a
+game doing it: no game has created a device through the proxy.
 
 **M5. First force feedback in a real game.** An installer that finds the
 bottle under `~/Library/Application Support/CrossOver/Bottles`, honouring the

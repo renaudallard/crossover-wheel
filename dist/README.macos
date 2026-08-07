@@ -40,9 +40,10 @@ daemon once, when the game creates its wheel, and never again.
 
 WHAT DOES NOT WORK YET. No game has reached the wheel through this.
 t150boot, t150ctl and t150d have all run against a real wheel and worked,
-and the proxy loads inside a real game and chain-loads CrossOver's
-builtin, but the game and the daemon have not yet been running at the same
-time, so no effect has crossed. Springs, dampers, envelopes and per-effect
+the proxy loads inside a real game and chain-loads CrossOver's builtin,
+and an effect has crossed to the daemon and been felt: a constant force
+and a damper, played by probe_dinput -f with no game involved. What has
+not happened is a game asking for one. Springs, envelopes and per-effect
 gain are checked against Thrustmaster's own Windows driver but nobody has
 felt them on a wheel yet.
 

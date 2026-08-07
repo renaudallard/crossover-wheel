@@ -146,14 +146,14 @@ with the device left to macOS, which is the transport this daemon uses. Both
 were measured; the procedure is in
 .Pa docs/PROBES.md .
 .Pp
-What has not been measured is this daemon driving a wheel end to end. The
-backend has opened a real wheel unprivileged, and its shutdown packets
-visibly stopped a runaway effect, so its writes reach the firmware; but no
-client has yet asked it for an effect, so the encode and slot path has never
-rendered anything on hardware.
+This daemon has driven a wheel end to end. A client asked it for a constant
+force and for a damper, the encode and slot path rendered both, and the
+person holding the wheel felt them, which is RESEARCH.md A43. What has not
+happened is a game asking: the client that did it was
+.Xr t150-probe 1 Ns 's
+in-bottle probe, run deliberately rather than a game playing.
 .Pp
-Only a constant force and one periodic have ever been played. Springs,
-dampers, envelopes, ramps and per-effect gain are arithmetic derived from
+Springs, envelopes, ramps and per-effect gain are arithmetic derived from
 a Linux driver, and now checked against Thrustmaster's own Windows driver
-field by field, so the bytes are right even though nobody has felt these
+field by field, so the bytes are right even though nobody has felt those
 effects on a wheel.

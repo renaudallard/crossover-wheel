@@ -505,8 +505,9 @@ LaunchAgent firing on every plug-in will mostly see.
 **Half answered by test 13.** The daemon found the wheel, opened it
 unprivileged, printed all three lines below, and on Ctrl-C its shutdown
 stopped a runaway effect the probes had left playing, which proves its
-packets reach the wheel. What it has never done is render an effect a client
-asked for, which is question 8. RESEARCH.md A31.
+packets reach the wheel. It has since rendered effects a client asked for, a
+constant force and a damper that were both felt, which is the first half of
+question 8. What no game has done yet is ask. RESEARCH.md A31 and A43.
 
 The daemon also scrubs on acquire now: it stops every slot, releases the
 autocenter and closes the input the moment it takes the wheel, so a wheel
@@ -594,8 +595,8 @@ Every run writes itself to a file under `Z:\tmp`, which is `/tmp` from
 macOS, as well as to the screen, so what a session found survives the
 terminal it was found in. The name follows the mode,
 `probe_dinput-dump.log`, `-controls.log` and `-ffb.log`, so the three runs
-above leave three files instead of overwriting one. `-o` chooses another
-path. Each log now names which `dinput8` answered it, so a run can be
+above leave three files instead of overwriting one, and `-i -f` in a single
+run writes `-controls-ffb.log`. `-o` chooses another path. Each log now names which `dinput8` answered it, so a run can be
 attributed without the terminal it came from.
 
 Adding `--dll dinput8=b` to any of those forces CrossOver's builtin instead

@@ -7,9 +7,10 @@ devices pass through untouched, and with no daemon answering it wraps
 nothing and is transparent.
 
 It loads in a real CrossOver bottle and chain-loads the builtin behind it;
-that was proven with regsvr32 under loader tracing. What has never run is
-the force feedback path: no game has created a device through it and no
-effect has crossed to the daemon yet.
+that was proven with regsvr32 under loader tracing. The force feedback
+path has run end to end: probe_dinput -f created a constant force and a
+damper through this proxy and both were felt on the wheel. What has never
+run is a game doing it, rather than the probe.
 
 It serves 64-bit games only: a 32-bit process is redirected to syswow64 and
 never sees it.
@@ -24,7 +25,8 @@ every process append the same lines there, which is the only way to see it
 from a game Steam relaunched.
 
 Input is forwarded untouched. The T150 labels its pedals against the
-common convention, brake on Y and accelerator on Rz, and rests a released
+common convention, the brake on the first axis and the accelerator on the
+second, which DirectInput publishes as Y and Z, and rests a released
 pedal at maximum, but a game that binds pedals by asking you to press them
 resolves both by itself, so the proxy leaves them alone by default. If a
 game assumes the convention and cannot rebind, set T150_PEDALS to swap for
@@ -55,8 +57,9 @@ the wrapper in the terminal rather than in a dialog box.
 
 Every run writes itself to a file under Z:\tmp, which is /tmp seen from
 macOS, as well as to the screen: probe_dinput-dump.log for the plain run,
--controls.log for -i and -ffb.log for -f, so running all three leaves all
-three rather than each overwriting the last. Send those files rather than
+-controls.log for -i, -ffb.log for -f and -controls-ffb.log if you pass
+both at once, so running all three leaves all three rather than each
+overwriting the last. Send those files rather than
 a copied terminal: they are complete, they survive the window being
 closed, and -o puts a run somewhere else if you prefer.
 
