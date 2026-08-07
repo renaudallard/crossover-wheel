@@ -672,7 +672,7 @@ main(int argc, char *argv[])
 	}
 
 
-	t150_session_end(&sess, "shutting down");
+	t150_session_shutdown(&sess, "shutting down");
 	if (cfd != -1)
 		(void)close(cfd);
 	if (pfd_pend != -1)

@@ -461,6 +461,41 @@ test_session_end_closes_the_input(void)
 	expect_log("the watchdog leaves the input open",
 	    "write 4: 40 03 00 00\n"
 	    "write 4: 40 04 00 00\n");
+
+	/*
+	 * A goodbye is the graceful way out, and it has to close the input
+	 * like any other. The client clears its own hello on the way, so
+	 * anything that decides by asking whether it is still there skips
+	 * the close and leaves the wheel's input open for good.
+	 */
+	reset_session();
+	hello(0);
+	frame(T150_OP_BYE, NULL, 0, 0, T150_OP_OK, T150_ERR_NONE);
+	drain_log();
+	t150_session_end(&sess, "test");
+	expect_log("a goodbye still closes the wheel's input",
+	    "write 4: 40 03 00 00\n"
+	    "write 4: 40 04 00 00\n"
+	    "write 2: 42 00\n");
+
+	/*
+	 * A connection that never said hello never had the wheel's input
+	 * opened for it and never sent anything to render, so there is
+	 * nothing of its doing to undo. Any local process can open the port,
+	 * and doing so must not reach the hardware.
+	 */
+	reset_session();
+	drain_log();
+	t150_session_end(&sess, "test");
+	expect_log("a client that never said hello leaves the wheel alone", "");
+
+	/* A rejected hello is no hello: same silence. */
+	reset_session();
+	frame(T150_OP_HELLO, (const uint8_t *)"wrongwrongwrongwrongwrongwrong12",
+	    T150_TOKEN_LEN, 0, T150_OP_ERROR, T150_ERR_BAD_TOKEN);
+	drain_log();
+	t150_session_end(&sess, "test");
+	expect_log("a rejected hello leaves the wheel alone", "");
 }
 
 /*

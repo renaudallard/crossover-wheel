@@ -101,6 +101,15 @@ expected to send
 .Dv T150_OP_KEEPALIVE
 often enough to stay ahead of this. The same safe state is entered when a
 client disconnects, when one displaces another, and on the way out.
+.Pp
+A connection that never proved the token is the exception. Its input was
+never opened and it sent nothing to render, so there is nothing of its doing
+to undo, and it leaves without the wheel being written to at all. Anything on
+the machine can open the port, and connecting to it must not reach the
+hardware. The release on the way out is unconditional, because the wheel's
+input is also opened and closed on
+.Nm Ns 's
+own account.
 .Sh EFFECTS
 The wheel renders constant force, square, triangle, sine, both sawtooths,
 spring and damper. Friction, inertia and ramp are not in its protocol.

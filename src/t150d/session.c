@@ -164,25 +164,26 @@ t150_session_init(struct t150_session *s, struct t150_backend *be,
 }
 
 /*
- * The client is gone for good, as opposed to merely quiet. Everything the
- * watchdog does, and then close the wheel's input so it goes back to holding
- * its own autocenter rather than waiting for effects nobody will send.
+ * Whether this session ever reached the wheel. One that had the wheel's
+ * input opened for it owes a close; one that emitted anything may have left
+ * a force or an autocenter behind. A connection that did neither, which is
+ * any process that opens the port and goes away again, touched nothing, and
+ * undoing nothing is three HID writes the wheel should not receive on its
+ * account.
+ *
+ * The open is tracked rather than inferred from hello, because a client that
+ * says goodbye clears hello itself and the close is still owed at that
+ * point. Inferring it left the wheel's input open after every graceful
+ * disconnect, which is the failure the abrupt path was written to avoid.
  */
-void
-t150_session_end(struct t150_session *s, const char *why)
+static int
+session_touched_wheel(const struct t150_session *s)
 {
-	uint8_t pkt[PKT_MAX];
-	size_t n;
-
-	t150_session_panic(s, why);
-
-	n = t150_enc_input_close(pkt, sizeof(pkt));
-	(void)s->be->write(s->be->priv, pkt, n);
-	s->hello = 0;
+	return s->input_open || s->armed;
 }
 
-void
-t150_session_panic(struct t150_session *s, const char *why)
+static void
+session_safe_state(struct t150_session *s, const char *why)
 {
 	uint8_t pkt[PKT_MAX];
 	size_t i, n;
@@ -213,6 +214,58 @@ t150_session_panic(struct t150_session *s, const char *why)
 	(void)s->be->write(s->be->priv, pkt, n);
 
 	s->armed = 0;
+}
+
+/*
+ * Everything the watchdog does, and then close the wheel's input so it goes
+ * back to holding its own autocenter rather than waiting for effects nobody
+ * will send.
+ */
+static void
+session_release(struct t150_session *s, const char *why, int force)
+{
+	uint8_t pkt[PKT_MAX];
+	size_t n;
+
+	session_safe_state(s, why);
+
+	if (force || s->input_open) {
+		n = t150_enc_input_close(pkt, sizeof(pkt));
+		(void)s->be->write(s->be->priv, pkt, n);
+	}
+	s->input_open = 0;
+	s->hello = 0;
+}
+
+/* The client is gone for good, as opposed to merely quiet. */
+void
+t150_session_end(struct t150_session *s, const char *why)
+{
+	if (!session_touched_wheel(s))
+		return;
+
+	session_release(s, why, 0);
+}
+
+/*
+ * We are the ones going away. This one is unconditional: the backend opens
+ * and closes the wheel's input on its own account as well, so the last thing
+ * the daemon does is state the safe state outright rather than reason about
+ * who owed it.
+ */
+void
+t150_session_shutdown(struct t150_session *s, const char *why)
+{
+	session_release(s, why, 1);
+}
+
+void
+t150_session_panic(struct t150_session *s, const char *why)
+{
+	if (!session_touched_wheel(s))
+		return;
+
+	session_safe_state(s, why);
 }
 
 /* Constant-time enough for a token that is not a security boundary anyway. */
@@ -501,6 +554,7 @@ t150_session_frame(struct t150_session *s, uint8_t op, const uint8_t *payload,
 		 */
 		n = t150_enc_input_open(pkt, sizeof(pkt));
 		(void)emit(s, pkt, n);
+		s->input_open = 1;
 		reply_ok(rep);
 		return 0;
 	}

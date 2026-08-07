@@ -71,6 +71,7 @@ struct t150_session {
 	uint64_t		 last_frame_ms;
 	int			 hello;
 	int			 armed;		/* the wheel may be holding a force */
+	int			 input_open;	/* we opened the wheel's input and owe it a close */
 	int			 verbose;
 	char			 token[T150_TOKEN_LEN + 1];
 };
@@ -110,7 +111,18 @@ void	t150_session_panic(struct t150_session *s, const char *why);
  * The client has gone for good rather than gone quiet: panic, then close the
  * wheel's input so it returns to its own autocenter. The wheel renders no
  * effect while no input is open, so whatever opens one has to close it.
+ *
+ * Both of these do nothing for a session that never reached the wheel, which
+ * is any connection that did not get past hello. Undoing what such a client
+ * did means sending nothing, and any local process can open the port.
  */
 void	t150_session_end(struct t150_session *s, const char *why);
+
+/*
+ * The same release, for the daemon on its way out rather than for a client.
+ * Unconditional: the backend opens the wheel's input on its own account too,
+ * so leaving is the one moment to say the safe state outright.
+ */
+void	t150_session_shutdown(struct t150_session *s, const char *why);
 
 #endif /* T150D_H */
