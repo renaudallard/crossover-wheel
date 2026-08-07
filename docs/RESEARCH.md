@@ -1678,6 +1678,41 @@ twice by improving it unasked. It waits for evidence. So do
 `DI8DEVTYPE_DRIVING`, `DIPROP_FFLOAD` and `guidFFDriver`, none of which has
 a demonstrated victim.
 
+**The actuator now has one, and it is worse than a silent spring.** Read
+against the SDL the bottle actually ships, `release-2.30.12`, the zero axis
+count does three things rather than one. `SDL_SYS_ToDIEFFECT` sets
+`dest->cAxes = haptic->naxes`, which is 0 because `DI_DeviceObjectCallback`
+counts an axis only `if ((dev->dwType & DIDFT_AXIS) && (dev->dwFlags &
+DIDOI_FFACTUATOR))`. Then:
+
+- a condition effect gets `cbTypeSpecificParams` of `sizeof(DICONDITION) *
+  0`, and uploads with every coefficient zero, which is the silent spring
+  already described
+- `SDL_SYS_SetDirection` returns early on `naxes == 0` leaving
+  `rglDirection` NULL, so `direction_of` in `effect.c` falls back to 9000
+  and every constant, ramp and periodic effect plays the same way round
+  regardless of what the game asked for. This one is felt, which makes it
+  harder to spot than the silence
+- `condition = SDL_malloc(sizeof(DICONDITION) * dest->cAxes)` is
+  `SDL_malloc(0)`, and `SDL_malloc` raises a zero size to 1 rather than
+  returning NULL, so the `if (!condition)` guard passes and the next line
+  memsets 24 bytes into a one-byte allocation. A 23-byte heap overflow in
+  the game's own process, on a path this proxy is the only reason to reach
+
+The third is the argument that ends the wait. A device that claims force
+feedback and marks no actuator is a shape no PID wheel produces, so callers
+are within their rights not to defend against it. Fixed by marking X, the
+wheel axis and the only one this project can move, in both `EnumObjects` and
+`GetObjectInfo`, and by answering a caller that enumerates actuators
+specifically, which the device below would answer with nothing.
+
+> SDL `release-2.30.12`, `src/haptic/windows/SDL_dinputhaptic.c`
+> `DI_DeviceObjectCallback`, `SDL_SYS_SetDirection`, `SDL_SYS_ToDIEFFECT`,
+> and `src/stdlib/SDL_malloc.c` `SDL_malloc`. The overflow is present in
+> SDL 3 as well, where the allocation became `SDL_calloc(dest->cAxes,
+> sizeof(DICONDITION))` and the unconditional memset went away, so only the
+> first two consequences remain there.
+
 Three things the audit caught that a careless fix would have got wrong.
 Rewriting `dwDevType` in the enumeration thunk is dead code, because Wine
 returns before invoking the callback for a driving-class filter. A one-shot

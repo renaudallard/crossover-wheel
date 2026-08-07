@@ -235,11 +235,92 @@ dev_GetCapabilities(IDirectInputDevice8W *self, LPDIDEVCAPS caps)
 	return hr;
 }
 
+/*
+ * Say which axis the force goes to.
+ *
+ * Claiming DIDC_FORCEFEEDBACK on the device while forwarding EnumObjects
+ * untouched leaves a device that has force feedback and no axis to apply it
+ * to, which is a shape no real wheel has and one that callers handle badly.
+ * RESEARCH.md B13 measured the cost in SDL: it counts only axes carrying
+ * DIDOI_FFACTUATOR, finds none, and then builds a condition effect with
+ * cAxes zero, so its parameter block is zero bytes, the size gate in
+ * effect.c discards it, and a spring uploads with every coefficient zero
+ * while every call returns DI_OK. The same zero also loses the direction of
+ * every constant and periodic effect, and in SDL 2.30.12, the version
+ * CrossOver 26 bundles, it walks a 24-byte memset into a one-byte
+ * allocation in the game's own heap.
+ *
+ * The wheel is X, which A43 confirmed on hardware, and it is the only thing
+ * this project can move. Marking it costs one bit in two fields and is what
+ * a PID descriptor would have said if the T150 carried one.
+ *
+ * dwSize, guidType, dwOfs, dwType and dwFlags sit at the same offsets in
+ * the A and W forms of this struct, so the marking is the same work for
+ * both and the name that follows them is copied verbatim.
+ */
+struct enum_objects {
+	LPDIENUMDEVICEOBJECTSCALLBACKW	 cb;
+	void				*ref;
+	int				 only_ff;
+};
+
+static int
+is_wheel_axis(const DIDEVICEOBJECTINSTANCEW *o)
+{
+	return IsEqualGUID(&o->guidType, &GUID_XAxis) != 0;
+}
+
+static void
+mark_actuator(DIDEVICEOBJECTINSTANCEW *o)
+{
+	o->dwType |= DIDFT_FFACTUATOR;
+	o->dwFlags |= DIDOI_FFACTUATOR;
+}
+
+static BOOL CALLBACK
+enum_objects_thunk(LPCDIDEVICEOBJECTINSTANCEW o, LPVOID ref)
+{
+	struct enum_objects *c = ref;
+	DIDEVICEOBJECTINSTANCEW tmp;
+
+	if (!is_wheel_axis(o))
+		return c->only_ff ? DIENUM_CONTINUE : c->cb(o, c->ref);
+
+	/* Anything larger than this build knows about is passed as it came. */
+	if (o->dwSize > sizeof(tmp))
+		return c->cb(o, c->ref);
+
+	memcpy(&tmp, o, o->dwSize);
+	mark_actuator(&tmp);
+
+	return c->cb(&tmp, c->ref);
+}
+
 static HRESULT WINAPI
 dev_EnumObjects(IDirectInputDevice8W *self, LPDIENUMDEVICEOBJECTSCALLBACKW cb,
     LPVOID ref, DWORD flags)
 {
-	return IDirectInputDevice8_EnumObjects(INNER(self), cb, ref, flags);
+	struct enum_objects c;
+	DWORD ask = flags;
+
+	if (cb == NULL)
+		return IDirectInputDevice8_EnumObjects(INNER(self), cb, ref,
+		    flags);
+
+	c.cb = cb;
+	c.ref = ref;
+
+	/*
+	 * A caller asking only for actuators would get nothing from the
+	 * device below, which has none, so ask it for the axes instead and
+	 * let the thunk keep the one that is.
+	 */
+	c.only_ff = (flags & DIDFT_FFACTUATOR) != 0;
+	if (c.only_ff)
+		ask = (flags & ~(DWORD)DIDFT_FFACTUATOR) | DIDFT_AXIS;
+
+	return IDirectInputDevice8_EnumObjects(INNER(self), enum_objects_thunk,
+	    &c, ask);
 }
 
 static HRESULT WINAPI
@@ -528,7 +609,15 @@ static HRESULT WINAPI
 dev_GetObjectInfo(IDirectInputDevice8W *self, LPDIDEVICEOBJECTINSTANCEW obj,
     DWORD how, DWORD flags)
 {
-	return IDirectInputDevice8_GetObjectInfo(INNER(self), obj, how, flags);
+	HRESULT hr;
+
+	hr = IDirectInputDevice8_GetObjectInfo(INNER(self), obj, how, flags);
+
+	/* The same axis EnumObjects marks, for a caller that asks directly. */
+	if (hr == DI_OK && obj != NULL && is_wheel_axis(obj))
+		mark_actuator(obj);
+
+	return hr;
 }
 
 static HRESULT WINAPI
