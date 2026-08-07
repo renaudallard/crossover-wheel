@@ -1322,6 +1322,40 @@ a firmware limit.
 > 86 candidate findings; what survived was re-verified by hand before any
 > code changed.
 
+**A43. The chain delivered a force to the wheel, with no game involved.**
+Test 27, on hardware, with the 0.1.12 probe. The daemon running, the proxy
+connected to it on port 54127, wrapped the wheel and claimed
+`DIDC_FORCEFEEDBACK`; `CreateEffect` and `Start` both returned `DI_OK` for a
+constant force and for a damper, and the person holding the wheel answered
+yes to both questions: it pulled to one side, and it was heavier to turn.
+The daemon's own log agrees from the far end, `wheel 044f:b677 open`,
+`backend macOS HID`, a client connected, and the safe state reached when it
+went away.
+
+That is the end to end path this project exists for, and every layer of it
+is now measured rather than argued: encoders to daemon to wheel, and game
+to proxy to daemon. What remains for a game is the game's own configuration.
+
+**The control map, confirmed by a person rather than by the tool.** The same
+test walked all twenty one controls with the answers actually given, one
+skip for the clutch this wheel does not have:
+
+- wheel: **X**, axle 0, rest 32767
+- accelerator: **Z**, axle 2, offset 8, rest 65535 and falls when pressed
+- brake: **Y**, axle 1, offset 4, rest 65535 and falls when pressed
+- Rx, axle 3: nothing moves it, the third pedal a T150RS does not ship
+- thirteen buttons at `rgbButtons[0]` through `[12]`, in the order the walk
+  names them, paddles first
+- hat: up 0, right 9000, down 18000, left 27000
+
+Those readings are the raw wheel: the walk ran with no daemon, so the proxy
+stayed out of the way, which the log says in as many words. That is also the
+first hardware confirmation that it does stay out of the way.
+
+**A37 named the accelerator by its descriptor usage, `Rz`, and by its
+DirectInput axle, 2. Only the second survives contact with the bottle**:
+Wine puts that axis at `DIJOFS_Z`, offset 8. A44 is what that cost.
+
 ---
 
 ## B. How CrossOver handles HID and force feedback

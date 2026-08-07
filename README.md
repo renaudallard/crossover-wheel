@@ -116,9 +116,9 @@ in-bottle bus driver was considered and rejected.
 | `src/lib/encode.c` wire encoders | written, golden-vector tested on Linux |
 | `src/lib/proto.c` DLL to daemon protocol | written, round-trip tested on Linux |
 | `t150d` protocol, slots, downgrades, watchdog | written and tested on Linux |
-| `t150d` macOS HID backend | working: opened a real wheel unprivileged, and its shutdown stopped a runaway effect. Has not yet rendered an effect for a client |
+| `t150d` macOS HID backend | working: opened a real wheel unprivileged, rendered a constant force and a damper that were felt on the wheel, and its shutdown stopped a runaway effect |
 | `t150-dinput8.dll` the in-bottle proxy | loads and chain-loads in a real bottle, and a game creates effects through it, test 23b |
-| `probe_dinput.exe` the in-bottle probe | runs under Wine in CI against a wheel shaped uinput device: enumerates it, maps every control into the state struct and walks all twenty one controls, recording them as never answered since CI has nobody to ask. Not yet run on real hardware |
+| `probe_dinput.exe` the in-bottle probe | run on hardware in test 27: it mapped the wheel, walked all twenty one controls with a person answering, and played two effects that were felt. Also runs under Wine in CI against a wheel shaped uinput device |
 | build, CI, docs, man pages | working |
 | `t150ctl`, `t150boot` | working on hardware: `t150boot` switched a wheel, `t150ctl` talked to one. The range change has run but nobody felt it yet |
 
@@ -869,8 +869,12 @@ whole class of failure:
 
 Getting to 4 with `t150d -n` means every layer works as far as the log.
 Getting to 4 with the daemon on its real backend means **the wheel should
-move**, and that is the end to end path this project was built for. Nobody
-has run it yet.
+move**, and that is the end to end path this project was built for.
+
+**It has moved.** Test 27 played a constant force and a damper through the
+whole chain with no game involved, and both were felt on the wheel
+(`docs/RESEARCH.md` A43). What has still not been run is this test, the
+same path with a game at the top of it.
 
 ## Scope
 
