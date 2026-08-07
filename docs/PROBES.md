@@ -590,10 +590,13 @@ questions use, and writes the answer into the log, so the measurement is
 recorded rather than left in the room. It takes only y or n there: that
 answer is the measurement, so nothing stands in for it.
 
-Every run writes itself to `Z:\tmp\probe_dinput.log`, which is
-`/tmp/probe_dinput.log` from macOS, as well as to the screen, so what a
-session found survives the terminal it was found in. `-o` chooses another
-path.
+Every run writes itself to a file under `Z:\tmp`, which is `/tmp` from
+macOS, as well as to the screen, so what a session found survives the
+terminal it was found in. The name follows the mode,
+`probe_dinput-dump.log`, `-controls.log` and `-ffb.log`, so the three runs
+above leave three files instead of overwriting one. `-o` chooses another
+path. Each log now names which `dinput8` answered it, so a run can be
+attributed without the terminal it came from.
 
 Adding `--dll dinput8=b` to any of those forces CrossOver's builtin instead
 of the proxy, so running a pair measures exactly what the proxy changes.

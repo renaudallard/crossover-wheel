@@ -53,10 +53,12 @@ searches the bottle for it and says so plainly if it is not there, instead
 of handing an unchecked path to the loader. --no-gui puts any error from
 the wrapper in the terminal rather than in a dialog box.
 
-Every run writes itself to Z:\tmp\probe_dinput.log, which is
-/tmp/probe_dinput.log seen from macOS, as well as to the screen. Send that
-file rather than a copied terminal: it is complete, it survives the window
-being closed, and -o puts it somewhere else if you prefer.
+Every run writes itself to a file under Z:\tmp, which is /tmp seen from
+macOS, as well as to the screen: probe_dinput-dump.log for the plain run,
+-controls.log for -i and -ffb.log for -f, so running all three leaves all
+three rather than each overwriting the last. Send those files rather than
+a copied terminal: they are complete, they survive the window being
+closed, and -o puts a run somewhere else if you prefer.
 
 Add -i and it works through every control by name, one at a time: the
 wheel, each pedal, both paddles, all thirteen buttons and the four hat

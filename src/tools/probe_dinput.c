@@ -55,8 +55,29 @@
  * project's history. The default sits on the host filesystem through Wine's
  * Z: mapping, so it can be read from macOS without hunting through the
  * bottle; -o puts it anywhere else.
+ *
+ * One name per mode, because the documented way to use this tool is three
+ * runs in a row and a single name meant each one destroyed the one before
+ * it. Test 27 survived only because that tester copied the file by hand
+ * between runs, which nothing asked them to do.
  */
-#define LOG_DEFAULT	"Z:\\tmp\\probe_dinput.log"
+#define LOG_DUMP	"Z:\\tmp\\probe_dinput-dump.log"
+#define LOG_CONTROLS	"Z:\\tmp\\probe_dinput-controls.log"
+#define LOG_FFB		"Z:\\tmp\\probe_dinput-ffb.log"
+#define LOG_BOTH	"Z:\\tmp\\probe_dinput-controls-ffb.log"
+
+static const char *
+default_log(int want_id, int want_ff)
+{
+	if (want_id && want_ff)
+		return LOG_BOTH;
+	if (want_ff)
+		return LOG_FFB;
+	if (want_id)
+		return LOG_CONTROLS;
+
+	return LOG_DUMP;
+}
 
 static FILE *logfp;
 
@@ -940,7 +961,8 @@ usage(void)
 	    "usage: probe_dinput [-i] [-f] [-o FILE]\n"
 	    "\n"
 	    "  -o FILE    write the run to FILE as well as to the screen\n"
-	    "             (default " LOG_DEFAULT ")\n"
+	    "             (default " LOG_DUMP ", and one name per mode\n"
+	    "             so three runs leave three files)\n"
 	    "  no flags   dump the device and every object it declares\n"
 	    "  -i         then work every control by name, one at a time,\n"
 	    "             confirming each, and print a table at the end\n"
@@ -958,7 +980,7 @@ main(int argc, char *argv[])
 {
 	GUID inst;
 	HRESULT hr;
-	const char *logpath = LOG_DEFAULT;
+	const char *logpath = NULL;
 	int i, want_id = 0, want_ff = 0;
 
 	for (i = 1; i < argc; i++) {
@@ -971,6 +993,9 @@ main(int argc, char *argv[])
 		else
 			usage();
 	}
+
+	if (logpath == NULL)
+		logpath = default_log(want_id, want_ff);
 
 	/*
 	 * A run that cannot be written down is worth less than one that can,
