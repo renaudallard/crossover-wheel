@@ -1359,6 +1359,37 @@ first hardware confirmation that it does stay out of the way.
 DirectInput axle, 2. Only the second survives contact with the bottle**:
 Wine puts that axis at `DIJOFS_Z`, offset 8. A44 is what that cost.
 
+**A44. `T150_PEDALS` never touched the accelerator.** The transform read and
+wrote offsets 4 and 20, `lY` and `lRz`, from the first swap commit onward.
+Offset 4 is the brake and is right. Offset 20 is an axis this wheel does not
+publish: A43's dump has X, Y, Z and Rx and nothing else, and the accelerator
+is Z at offset 8. So `swap` exchanged the real brake with an empty field,
+and `invert` mirrored the brake correctly, left the accelerator exactly as
+the wheel reports it, and flipped the absent `lRz` through its default range
+from 0 to 65535, publishing a phantom axis pinned at maximum.
+
+The mistake is one word wide. A37 recorded both the descriptor usage, `Rz`,
+and the DirectInput axle, 2, and the code took the usage. Wine does not
+place a HID usage at the state offset of the same name: it assigns the axes
+in enumeration order, so this wheel's second pedal is `DIJOFS_Z`. The axle
+number in A37 was correct all along, and matches the `THROTTLE AXLE=2` that
+test 20 read out of Assetto Corsa's own configuration.
+
+**This unsettles A41's mechanism, though not its conclusion.** A41 explains
+the 0.1.5 symptom, a car that accelerates by itself and a brake that does
+nothing, as the swap moving the brake onto the axis the game reads as
+throttle. It cannot have done that: the swap never touched the throttle
+axis. The dead brake is explained, it was reading an empty field, but the
+self-accelerating car is not, and the phantom full-throttle `lRz` is the
+obvious new suspect. Nobody should re-enable a correction on the strength of
+A41's mechanism until that is measured. A41's conclusion is untouched and
+was always the right one for a different reason: the proxy should not
+transform input it was not asked to transform.
+
+Fixed by aiming the pair at offsets 4 and 8, and by refusing to transform
+at all when an axis it expects reports no range, which is exactly what an
+absent axis does. The default remains off.
+
 ---
 
 ## B. How CrossOver handles HID and force feedback

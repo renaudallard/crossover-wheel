@@ -66,11 +66,12 @@ struct t150_device {
 	uint16_t		 slots;		/* one bit per slot in use */
 	DWORD			 gain;		/* last DIPROP_FFGAIN seen */
 	DWORD			 autocenter;	/* last DIPROP_AUTOCENTER seen */
-	int			 pedal_swap;	/* present Y as gas, Rz as brake */
+	int			 pedal_swap;	/* present Y as gas, Z as brake */
 	int			 pedal_invert;	/* pedals rest at zero, not max */
+	int			 pedals_found;	/* both pedal axes are really there */
 	int			 ranges_stale;	/* re-ask dinput before mirroring */
 	DWORD			 df_size;	/* dwDataSize of the game's data format */
-	LONG			 range_min[2];	/* dinput's effective range, Y then Rz */
+	LONG			 range_min[2];	/* dinput's effective range, Y then Z */
 	LONG			 range_max[2];
 };
 

@@ -6,8 +6,9 @@
  * leave installed.
  *
  * The pedals are the one thing that could justify an exception and do not.
- * The T150's descriptor labels them backwards, Y the brake and Rz the
- * accelerator where the common convention is the reverse, and its firmware
+ * The T150's descriptor labels them backwards, the brake first and the
+ * accelerator second where the common convention is the reverse, and its
+ * firmware
  * rests a released pedal at logical maximum. A game that binds pedals by
  * asking the player to press them resolves both by itself, and correcting
  * them underneath such a game re-crosses what it got right, which is
@@ -68,24 +69,35 @@ from_iface(IDirectInputDevice8W *p)
 
 /*
  * The pedal transforms apply only to the two stock joystick formats,
- * recognised by their state sizes, where Y and Rz live at fixed offsets. A
+ * recognised by their state sizes, where Y and Z live at fixed offsets. A
  * game that built its own format gets its data untouched, because offsets
  * there mean whatever the game said they mean. Both stock structs start with
  * the same axis block, so the offsets are one pair.
  *
  * The swap corrects the descriptor's backwards labels, brake on Y and
- * accelerator on Rz where games expect the opposite. The inversion corrects
+ * accelerator on Z where games expect the opposite. The inversion corrects
  * the rest position: the firmware reports a released pedal at logical max,
  * so a game reads the throttle as held open and the car drives itself,
  * which test 20's video shows happening. Together they present the pedals
  * the way the vendor driver does on Windows.
  */
+/*
+ * Where the two pedals sit in the state struct, which is not where the
+ * descriptor's usage names would put them. A37 measured the accelerator as
+ * usage Rz and called it DirectInput axis 2; those are not the same place,
+ * and only the second one is true in a bottle. Wine maps that axis to
+ * DIJOFS_Z, offset 8, which test 27 confirmed on hardware: this wheel
+ * publishes X, Y, Z and Rx and nothing at all at offset 20. Aiming the
+ * corrections at Rz meant they mirrored the brake, left the accelerator
+ * exactly as it was, and drove an axis the wheel does not have to its
+ * maximum. RESEARCH.md A43 and A44.
+ */
 #define STATE_DIJOYSTATE	80u
 #define STATE_DIJOYSTATE2	272u
 #define OFS_Y			4u
-#define OFS_RZ			20u
+#define OFS_Z			8u
 #define PEDAL_Y			0
-#define PEDAL_RZ		1
+#define PEDAL_Z			1
 
 /*
  * The effects we offer. Everything the daemon can render or downgrade is
@@ -314,11 +326,29 @@ dev_Unacquire(IDirectInputDevice8W *self)
 	return IDirectInputDevice8_Unacquire(INNER(self));
 }
 
+/*
+ * Only the two stock joystick formats put the pedals at a known offset. In
+ * a format the game built, an offset means whatever the game said it means,
+ * so neither the transform nor the question of whether the axes are there
+ * has an answer worth asking.
+ */
+static int
+stock_format(DWORD len)
+{
+	return len == STATE_DIJOYSTATE || len == STATE_DIJOYSTATE2;
+}
+
+static int
+pedals_wanted(const struct t150_device *d)
+{
+	return d->pedal_swap || d->pedal_invert;
+}
+
 static int
 pedals_apply(const struct t150_device *d, DWORD len)
 {
-	return (d->pedal_swap || d->pedal_invert) && len == d->df_size &&
-	    (len == STATE_DIJOYSTATE || len == STATE_DIJOYSTATE2);
+	return pedals_wanted(d) && d->pedals_found && len == d->df_size &&
+	    stock_format(len);
 }
 
 /*
@@ -331,10 +361,25 @@ pedals_apply(const struct t150_device *d, DWORD len)
 static void
 pedal_ranges_refresh(struct t150_device *d)
 {
-	static const DWORD ofs[2] = { OFS_Y, OFS_RZ };
+	static const DWORD ofs[2] = { OFS_Y, OFS_Z };
 	DIPROPRANGE r;
-	int i;
+	int i, found;
 
+	/*
+	 * The same question answers both halves. An axis that is not there
+	 * has no range to report, so a failure here says the pedal this
+	 * build expects is absent, and the honest response is to forward
+	 * the wheel untouched and say so rather than transform a field
+	 * nothing writes. That is the shape of the bug this replaced.
+	 *
+	 * The answer is decided fresh every time, never latched. This asks
+	 * by offset, and an offset means whatever the current data format
+	 * says it means, so a game that sets a custom format and then a
+	 * stock one gets a different and equally correct answer each time.
+	 * A latch would carry the first answer into the second format and
+	 * disable the corrections for the life of the process.
+	 */
+	found = 1;
 	for (i = 0; i < 2; i++) {
 		memset(&r, 0, sizeof(r));
 		r.diph.dwSize = sizeof(r);
@@ -345,8 +390,22 @@ pedal_ranges_refresh(struct t150_device *d)
 		    DIPROP_RANGE, &r.diph))) {
 			d->range_min[i] = r.lMin;
 			d->range_max[i] = r.lMax;
+			continue;
 		}
+		found = 0;
 	}
+
+	/*
+	 * Say it once per change of answer rather than once per poll, and
+	 * only for a format where the question was meaningful: a custom
+	 * format has its own message from SetDataFormat and offset 4 there
+	 * means whatever the game said, not a missing pedal.
+	 */
+	if (found != d->pedals_found && stock_format(d->df_size))
+		t150_log("pedal axes %s at offsets %u and %u, corrections "
+		    "%s\n", found ? "found" : "absent", OFS_Y, OFS_Z,
+		    found ? "on" : "off");
+	d->pedals_found = found;
 	d->ranges_stale = 0;
 }
 
@@ -364,21 +423,22 @@ dev_GetDeviceState(IDirectInputDevice8W *self, DWORD len, LPVOID data)
 	HRESULT hr;
 
 	hr = IDirectInputDevice8_GetDeviceState(d->inner, len, data);
+	if (hr == DI_OK && d->ranges_stale && pedals_wanted(d) &&
+	    stock_format(d->df_size))
+		pedal_ranges_refresh(d);
 	if (hr == DI_OK && pedals_apply(d, len)) {
 		LONG *y = (LONG *)((char *)data + OFS_Y);
-		LONG *rz = (LONG *)((char *)data + OFS_RZ);
+		LONG *z = (LONG *)((char *)data + OFS_Z);
 
 		if (d->pedal_swap) {
 			LONG tmp = *y;
 
-			*y = *rz;
-			*rz = tmp;
+			*y = *z;
+			*z = tmp;
 		}
 		if (d->pedal_invert) {
-			if (d->ranges_stale)
-				pedal_ranges_refresh(d);
 			*y = pedal_flip(d, PEDAL_Y, *y);
-			*rz = pedal_flip(d, PEDAL_RZ, *rz);
+			*z = pedal_flip(d, PEDAL_Z, *z);
 		}
 	}
 
@@ -400,10 +460,13 @@ dev_GetDeviceData(IDirectInputDevice8W *self, DWORD len,
 
 	/*
 	 * Buffered events carry the offset the value belongs to, so the swap
-	 * here is a relabel, a change on Y reported as a change on Rz and the
+	 * here is a relabel, a change on Y reported as a change on Z and the
 	 * other way round, and the inversion mirrors the value inside the
 	 * destination axis's range, matching what GetDeviceState returns.
 	 */
+	if (d->ranges_stale && pedals_wanted(d) && stock_format(d->df_size))
+		pedal_ranges_refresh(d);
+
 	if (data != NULL && inout != NULL &&
 	    pedals_apply(d, d->df_size)) {
 		for (i = 0; i < *inout; i++) {
@@ -411,22 +474,19 @@ dev_GetDeviceData(IDirectInputDevice8W *self, DWORD len,
 
 			if (data[i].dwOfs == OFS_Y)
 				axis = PEDAL_Y;
-			else if (data[i].dwOfs == OFS_RZ)
-				axis = PEDAL_RZ;
+			else if (data[i].dwOfs == OFS_Z)
+				axis = PEDAL_Z;
 			else
 				continue;
 
 			if (d->pedal_swap) {
-				axis = axis == PEDAL_Y ? PEDAL_RZ : PEDAL_Y;
+				axis = axis == PEDAL_Y ? PEDAL_Z : PEDAL_Y;
 				data[i].dwOfs = axis == PEDAL_Y ? OFS_Y :
-				    OFS_RZ;
+				    OFS_Z;
 			}
-			if (d->pedal_invert) {
-				if (d->ranges_stale)
-					pedal_ranges_refresh(d);
+			if (d->pedal_invert)
 				data[i].dwData = (DWORD)pedal_flip(d, axis,
 				    (LONG)data[i].dwData);
-			}
 		}
 	}
 
@@ -443,8 +503,7 @@ dev_SetDataFormat(IDirectInputDevice8W *self, LPCDIDATAFORMAT df)
 	if (hr == DI_OK && df != NULL) {
 		d->df_size = df->dwDataSize;
 		d->ranges_stale = 1;
-		if (d->pedal_swap && df->dwDataSize != STATE_DIJOYSTATE &&
-		    df->dwDataSize != STATE_DIJOYSTATE2)
+		if (d->pedal_swap && !stock_format(df->dwDataSize))
 			t150_log("custom data format (%lu bytes), pedals "
 			    "left as the wheel labels them\n",
 			    (unsigned long)df->dwDataSize);
@@ -795,10 +854,11 @@ t150_device_wrap(IDirectInputDevice8W *inner, int wide, void **out)
 
 	/* DirectInput's default axis range, replaced by asking dinput. */
 	d->ranges_stale = 1;
+	d->pedals_found = 1;
 	d->range_min[PEDAL_Y] = 0;
 	d->range_max[PEDAL_Y] = 65535;
-	d->range_min[PEDAL_RZ] = 0;
-	d->range_max[PEDAL_RZ] = 65535;
+	d->range_min[PEDAL_Z] = 0;
+	d->range_max[PEDAL_Z] = 65535;
 
 	/*
 	 * One line that says which build is in the bottle and what it is
