@@ -1706,6 +1706,18 @@ wheel axis and the only one this project can move, in both `EnumObjects` and
 `GetObjectInfo`, and by answering a caller that enumerates actuators
 specifically, which the device below would answer with nothing.
 
+**And the direction fix this section warned about, which the marking made
+necessary.** `direction_of` treated every one-axis effect as degenerate and
+returned due east. That is true of the cartesian form, whose array holds a
+single component with the side in its sign, and false of polar and
+spherical, which carry an absolute angle that means the same thing on one
+axis as on three. It was invisible while nothing was marked, because SDL
+then sent no direction at all and every effect was due east for the earlier
+reason. Marking an axis makes SDL send one axis and a real polar angle, so
+the shortcut would have swallowed it and the symptom would have survived the
+fix that was supposed to end it. A plain DirectInput game passing polar with
+`cAxes` 1 was losing its direction the whole time.
+
 > SDL `release-2.30.12`, `src/haptic/windows/SDL_dinputhaptic.c`
 > `DI_DeviceObjectCallback`, `SDL_SYS_SetDirection`, `SDL_SYS_ToDIEFFECT`,
 > and `src/stdlib/SDL_malloc.c` `SDL_malloc`. The overflow is present in

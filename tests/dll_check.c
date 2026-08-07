@@ -83,6 +83,35 @@ test_direction(void)
 	t150_effect_convert(&ef, &eff, DIEP_DIRECTION);
 	check_u32("one negative axis is due west", ef.direction, 27000);
 
+	/*
+	 * Only cartesian is degenerate on one axis. A polar or spherical
+	 * angle means the same thing whatever the axis count, and dropping it
+	 * puts every force on the same side. SDL sends exactly this shape,
+	 * one axis and a real polar angle, once an axis is marked as a force
+	 * feedback actuator.
+	 */
+	eff.dwFlags = DIEFF_POLAR;
+	dir[0] = 18000;
+	t150_effect_convert(&ef, &eff, DIEP_DIRECTION);
+	check_u32("one axis keeps its polar angle", ef.direction, 18000);
+
+	dir[0] = -9000;
+	t150_effect_convert(&ef, &eff, DIEP_DIRECTION);
+	check_u32("one axis wraps a negative polar angle", ef.direction, 27000);
+
+	eff.dwFlags = DIEFF_SPHERICAL;
+	dir[0] = 0;
+	t150_effect_convert(&ef, &eff, DIEP_DIRECTION);
+	check_u32("one axis keeps its spherical angle", ef.direction, 9000);
+
+	/* No direction at all is still due east rather than due north. */
+	eff.dwFlags = DIEFF_POLAR;
+	eff.cAxes = 0;
+	eff.rglDirection = NULL;
+	t150_effect_convert(&ef, &eff, DIEP_DIRECTION);
+	check_u32("no axes and no direction is due east", ef.direction, 9000);
+	eff.rglDirection = dir;
+
 	/* Polar is already in our units. */
 	eff.cAxes = 2;
 	eff.dwFlags = DIEFF_POLAR;

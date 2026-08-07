@@ -61,15 +61,28 @@ t150_kind_from_guid(REFGUID guid)
 	return T150_EFFECT_NONE;
 }
 
+static uint32_t
+wrap_angle(LONG a)
+{
+	return (uint32_t)(((a % 36000) + 36000) % 36000);
+}
+
 /*
  * A direction in hundredths of a degree, north being zero, which is what the
  * daemon's encoder projects onto the wheel's single axis.
  *
- * A one-axis effect is forced to due east. DirectInput carries the side of a
- * one-axis effect in the sign of the magnitude, and its direction array is
- * degenerate there: taking it literally would hand the encoder a northward
+ * Only the cartesian form is degenerate on one axis: its array holds one
+ * component, so the side lives in the sign and there is no angle to read.
+ * Taking that component literally would hand the encoder a northward
  * direction, which projects onto no sideways force at all, and the game
  * would feel nothing while everything reported success.
+ *
+ * Polar and spherical are not degenerate. They carry an absolute angle that
+ * means the same thing however many axes the effect names, and discarding it
+ * on a one-axis effect is how every force ends up on the same side. That was
+ * hidden while nothing marked an axis as an actuator, because SDL then sent
+ * no direction at all; the moment one is marked SDL sends one axis and a
+ * real polar angle, which is the shape this now reads. RESEARCH.md B13.
  */
 static uint32_t
 direction_of(const DIEFFECT *p)
@@ -77,21 +90,17 @@ direction_of(const DIEFFECT *p)
 	double angle;
 	LONG x, y;
 
-	if (p->cAxes <= 1 || p->rglDirection == NULL) {
-		if (p->cAxes == 1 && p->rglDirection != NULL &&
-		    (p->dwFlags & DIEFF_CARTESIAN) && p->rglDirection[0] < 0)
-			return 27000;
+	if (p->cAxes == 0 || p->rglDirection == NULL)
 		return 9000;
-	}
 
 	if (p->dwFlags & DIEFF_POLAR)
-		return (uint32_t)(((p->rglDirection[0] % 36000) + 36000) % 36000);
+		return wrap_angle(p->rglDirection[0]);
 
-	if (p->dwFlags & DIEFF_SPHERICAL) {
-		LONG a = p->rglDirection[0] + 9000;
+	if (p->dwFlags & DIEFF_SPHERICAL)
+		return wrap_angle(p->rglDirection[0] + 9000);
 
-		return (uint32_t)(((a % 36000) + 36000) % 36000);
-	}
+	if (p->cAxes == 1)
+		return p->rglDirection[0] < 0 ? 27000 : 9000;
 
 	/*
 	 * Cartesian. DirectInput puts X to the right and Y towards the
