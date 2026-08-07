@@ -215,6 +215,62 @@ jobs:
           test "$n" -eq 21 ||
               { echo "$n rows marked never answered, expected all 21:" \
                     "the walk invented answers nobody gave" >&2; exit 1; }
+      # Every step above got the builtin device back. The proxy only wraps
+      # the wheel when a daemon answers, so nothing above ever entered the
+      # wrapper, and that is how a device claiming force feedback with no
+      # actuator axis survived four releases. The daemon runs on Linux in
+      # log-only mode, so the whole wrapper can be exercised here with no
+      # wheel and no Mac. This step also leaves the log path to the tool,
+      # which is the only check that the per-mode default names work.
+      - name: the proxy wraps the wheel when a daemon answers
+        timeout-minutes: 10
+        env:
+          WINEPREFIX: ${{ runner.temp }}/prefix
+          WINEDEBUG: -all
+          WINEDLLOVERRIDES: dinput8=n
+        run: |
+          rm -f /tmp/probe_dinput-dump.log
+          ./build/bin/t150d -n -v -e "$RUNNER_TEMP/ffb-endpoint" &
+          daemon=$!
+          for i in $(seq 1 50); do
+              test -s "$RUNNER_TEMP/ffb-endpoint" && break
+              sleep 0.2
+          done
+          test -s "$RUNNER_TEMP/ffb-endpoint" ||
+              { echo "the daemon published no endpoint" >&2
+                kill $daemon; exit 1; }
+          set +e
+          export T150_ENDPOINT="Z:$RUNNER_TEMP/ffb-endpoint"
+          out=$(wine "C:\\probe_dinput.exe" < /dev/null 2>&1)
+          code=$?
+          set -e
+          kill $daemon 2>/dev/null || true
+          wait $daemon 2>/dev/null || true
+          printf '%s\n' "$out"
+          test "$code" -eq 0 ||
+              { echo "exited $code, expected 0" >&2; exit 1; }
+          case "$out" in
+          *"wrapped the wheel"*) ;;
+          *) echo "the proxy never wrapped the wheel, so nothing below" \
+                 "this was actually tested" >&2; exit 1 ;;
+          esac
+          log=/tmp/probe_dinput-dump.log
+          test -f "$log" ||
+              { echo "the default log name was not used" >&2; exit 1; }
+          grep -q "^dinput8     the proxy" "$log" ||
+              { echo "the run does not record that the proxy answered" >&2
+                exit 1; }
+          grep -q "force feedback claimed" "$log" ||
+              { echo "the wrapped device did not claim force feedback" >&2
+                exit 1; }
+          # The whole point of marking an actuator: without it SDL builds
+          # effects with no axes at all. RESEARCH.md B13.
+          grep -q "force feedback actuator\]" "$log" ||
+              { echo "no axis is marked as a force feedback actuator" >&2
+                exit 1; }
+          ! grep -q "and the device claims" "$log" ||
+              { echo "the tool still reports the claim as contradicted" >&2
+                exit 1; }
 
   macos:
     name: probe tools
