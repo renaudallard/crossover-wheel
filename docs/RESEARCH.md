@@ -1390,6 +1390,51 @@ Fixed by aiming the pair at offsets 4 and 8, and by refusing to transform
 at all when an axis it expects reports no range, which is exactly what an
 absent axis does. The default remains off.
 
+**A45. The pedals are inverted and nothing is crossed, and A44's fix is
+what made `invert` mean anything.** Test 28, on hardware with 0.1.13.
+
+The walk was run twice, once bare and once with `T150_PEDALS=invert`, and
+the pair of logs is the measurement A44 predicted:
+
+| | accelerator, Z at offset 8 | brake, Y at offset 4 |
+| --- | --- | --- |
+| bare | rest 65535, falls when pressed | rest 65535, falls when pressed |
+| `invert` | rest 0, rises when pressed | rest 0, rises when pressed |
+
+On every build before 0.1.13 the accelerator column could not have
+differed between those two rows, because the transform reached offsets 4
+and 20 and the accelerator is at 8. So `invert` corrected the brake, left
+the accelerator alone, and produced a half-corrected pedal set: one pedal
+right, one wrong, which is worse to drive than either extreme and worse to
+diagnose than both.
+
+**The symptom, in the words of the person driving it:** press the
+accelerator and it decelerates, press the brake and it stops braking. That
+is exactly what an axis resting at its maximum does to a game. A released
+accelerator reads as floored, so the car drives itself; pressing it drops
+the value, which reads as lifting off. It is the same fault A41 recorded as
+"the car still accelerates by itself and the brake does nothing", described
+from the other end.
+
+**Nothing is crossed.** Pressing one pedal at a time moved one axis at a
+time, brake on the lower axle and accelerator on the higher, which is the
+order a PlayStation pad uses for L2 before R2. The wheel is a PlayStation
+device and its own convention numbers the sticks 0 to 3 and the two
+triggers 4 and 5; this wheel publishes four axes, so its pedals land in
+the two slots a game reads as right-hand stick axes rather than in the
+trigger slots. That is worth knowing before anyone reads a game's binding
+file, and it is not a defect in what the wheel reports.
+
+**What this does to A41.** A41 concluded the proxy should not correct
+pedals unasked, and that conclusion stands on its own reasoning: a game
+that binds by detection resolves label and direction together and does not
+need help. What A41 could not have known is that the correction it was
+judging never worked. Both A39's inversion default and A41's swap were
+measured through a transform that reached one pedal out of two, so no
+conclusion drawn from how they felt describes what a working correction
+does. The question of whether `invert` belongs on by default is open again,
+and this time it can be answered by trying it.
+
 ---
 
 ## B. How CrossOver handles HID and force feedback
