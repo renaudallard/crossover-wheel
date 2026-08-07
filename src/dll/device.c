@@ -94,6 +94,9 @@ from_iface(IDirectInputDevice8W *p)
  */
 #define STATE_DIJOYSTATE	80u
 #define STATE_DIJOYSTATE2	272u
+
+/* The shortest buffered event DirectInput accepts: DIDEVICEOBJECTDATA_DX3. */
+#define EVENT_DX3		(4u * sizeof(DWORD))
 #define OFS_Y			4u
 #define OFS_Z			8u
 #define PEDAL_Y			0
@@ -548,26 +551,34 @@ dev_GetDeviceData(IDirectInputDevice8W *self, DWORD len,
 	if (d->ranges_stale && pedals_wanted(d) && stock_format(d->df_size))
 		pedal_ranges_refresh(d);
 
-	if (data != NULL && inout != NULL &&
+	/*
+	 * The caller chose the element size and DirectInput accepts the DX3
+	 * one, four DWORDs with no uAppData, which is eight bytes shorter
+	 * than the struct this parameter is typed as. Indexing that type
+	 * would step past the end of the caller's array on the second event
+	 * and write there, so the stride is the size the caller gave. dwOfs
+	 * and dwData are the first two fields of both forms.
+	 */
+	if (data != NULL && inout != NULL && len >= EVENT_DX3 &&
 	    pedals_apply(d, d->df_size)) {
 		for (i = 0; i < *inout; i++) {
+			DWORD *ofs = (DWORD *)((char *)data + (size_t)i * len);
+			DWORD *val = ofs + 1;
 			int axis;
 
-			if (data[i].dwOfs == OFS_Y)
+			if (*ofs == OFS_Y)
 				axis = PEDAL_Y;
-			else if (data[i].dwOfs == OFS_Z)
+			else if (*ofs == OFS_Z)
 				axis = PEDAL_Z;
 			else
 				continue;
 
 			if (d->pedal_swap) {
 				axis = axis == PEDAL_Y ? PEDAL_Z : PEDAL_Y;
-				data[i].dwOfs = axis == PEDAL_Y ? OFS_Y :
-				    OFS_Z;
+				*ofs = axis == PEDAL_Y ? OFS_Y : OFS_Z;
 			}
 			if (d->pedal_invert)
-				data[i].dwData = (DWORD)pedal_flip(d, axis,
-				    (LONG)data[i].dwData);
+				*val = (DWORD)pedal_flip(d, axis, (LONG)*val);
 		}
 	}
 
