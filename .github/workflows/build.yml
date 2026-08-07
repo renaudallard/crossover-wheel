@@ -228,6 +228,11 @@ jobs:
           WINEPREFIX: ${{ runner.temp }}/prefix
           WINEDEBUG: -all
           WINEDLLOVERRIDES: dinput8=n
+          # The proxy says nothing at all without this, so the line that
+          # proves it wrapped the wheel would be missing and the check for
+          # it would fail on a run that worked. It also puts the proxy's
+          # own logging on the tested path rather than the assumed one.
+          T150_DEBUG: "1"
         run: |
           rm -f /tmp/probe_dinput-dump.log
           # This job downloads the Windows artifacts and builds nothing, so
