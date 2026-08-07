@@ -302,6 +302,31 @@ poll_state(DIJOYSTATE2 *st)
 	    sizeof(*st), st)) ? 0 : -1;
 }
 
+/* Whether the device claimed force feedback, for the actuator check later. */
+static int ff_claimed;
+
+/*
+ * Which dinput8 answered all this.
+ *
+ * The proxy says so itself, but through OutputDebugString and stderr, so a
+ * log file carries no trace of it and three different situations produce a
+ * byte for byte identical run: the proxy absent, the proxy present with no
+ * daemon, and the proxy deliberately bypassed with --dll dinput8=b. A run
+ * sent in for reading has to answer that on its own.
+ *
+ * The proxy is the only thing that loads dinput8_orig.dll, so the presence
+ * of that module in this process is the whole question.
+ */
+static void
+dump_chain(void)
+{
+	if (GetModuleHandleA("dinput8_orig.dll") != NULL)
+		out("dinput8     the proxy, with CrossOver's builtin chained "
+		    "behind it\n");
+	else
+		out("dinput8     CrossOver's own, no proxy in the chain\n");
+}
+
 static void
 dump_caps(void)
 {
@@ -311,11 +336,11 @@ dump_caps(void)
 	memset(&caps, 0, sizeof(caps));
 	caps.dwSize = sizeof(caps);
 	if (SUCCEEDED(IDirectInputDevice8_GetCapabilities(dev, &caps))) {
+		ff_claimed = (caps.dwFlags & DIDC_FORCEFEEDBACK) != 0;
 		out("device type 0x%08lx   axes %lu  buttons %lu  povs %lu\n",
 		    (unsigned long)caps.dwDevType, (unsigned long)caps.dwAxes,
 		    (unsigned long)caps.dwButtons, (unsigned long)caps.dwPOVs);
-		out("force feedback %s\n",
-		    (caps.dwFlags & DIDC_FORCEFEEDBACK) ?
+		out("force feedback %s\n", ff_claimed ?
 		    "claimed (DIDC_FORCEFEEDBACK)" : "NOT claimed");
 	}
 
@@ -973,6 +998,7 @@ main(int argc, char *argv[])
 	if (FAILED(hr))
 		out("Acquire failed, 0x%08lx\n", (unsigned long)hr);
 
+	dump_chain();
 	dump_caps();
 	out("\nobjects:\n");
 	(void)IDirectInputDevice8_EnumObjects(dev, on_object, NULL,
