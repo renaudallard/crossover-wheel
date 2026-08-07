@@ -72,6 +72,8 @@ which the proxy reads through Wine's
 mapping.
 .It Fl v
 Log connections, effect downgrades and every entry into the safe state.
+Each connection is named by the port it came from, and whether its token was
+accepted is logged too, so two connections can be told apart in a report.
 .El
 .Sh THE ENDPOINT FILE
 .Nm

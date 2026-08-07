@@ -641,11 +641,24 @@ main(int argc, char *argv[])
 		}
 
 		if (pfd[ilisten].revents & POLLIN) {
-			int nfd2 = accept(lfd, NULL, NULL);
+			struct sockaddr_in peer;
+			socklen_t plen = sizeof(peer);
+			int nfd2 = accept(lfd, (struct sockaddr *)&peer, &plen);
+			unsigned peer_port;
 
 			if (nfd2 == -1)
 				continue;
 			set_send_timeout(nfd2);
+
+			/*
+			 * The port is what tells two connections apart in the
+			 * log. Test 27 came back with two connect and
+			 * disconnect pairs for one run of one program, and
+			 * nothing in the log could say whether that was the
+			 * program twice or something else once.
+			 */
+			peer_port = plen >= sizeof(peer) ?
+			    (unsigned)ntohs(peer.sin_port) : 0;
 
 			if (cfd == -1) {
 				/*
@@ -655,17 +668,28 @@ main(int argc, char *argv[])
 				 */
 				t150_session_init(&sess, &be, token);
 				sess.verbose = verbose;
+				sess.peer_port = peer_port;
 				cfd = nfd2;
 				have = 0;
 				if (verbose)
-					fprintf(stderr,
-					    "t150d: client connected\n");
+					fprintf(stderr, "t150d: client "
+					    "connected from port %u\n", peer_port);
 			} else if (pfd_pend == -1) {
 				pfd_pend = nfd2;
 				phave = 0;
 				pend_deadline = now_ms() + PEND_MS;
 				t150_session_init(&psess, &be, token);
+				psess.verbose = verbose;
+				psess.peer_port = peer_port;
+				if (verbose)
+					fprintf(stderr, "t150d: second client "
+					    "from port %u, waiting for the "
+					    "first to go\n", peer_port);
 			} else {
+				if (verbose)
+					fprintf(stderr, "t150d: turned away a "
+					    "client from port %u, two are "
+					    "already here\n", peer_port);
 				(void)close(nfd2);
 			}
 		}

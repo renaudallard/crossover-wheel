@@ -73,6 +73,7 @@ struct t150_session {
 	int			 armed;		/* the wheel may be holding a force */
 	int			 input_open;	/* we opened the wheel's input and owe it a close */
 	int			 verbose;
+	unsigned		 peer_port;	/* which connection this is, for the log */
 	char			 token[T150_TOKEN_LEN + 1];
 };
 

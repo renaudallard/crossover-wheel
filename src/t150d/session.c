@@ -542,10 +542,16 @@ t150_session_frame(struct t150_session *s, uint8_t op, const uint8_t *payload,
 
 	if (op == T150_OP_HELLO) {
 		if (!token_ok(s, payload, len)) {
+			if (s->verbose)
+				fprintf(stderr, "t150d: port %u offered the "
+				    "wrong token\n", s->peer_port);
 			reply_err(rep, T150_ERR_BAD_TOKEN);
 			return 0;
 		}
 		s->hello = 1;
+		if (s->verbose)
+			fprintf(stderr, "t150d: port %u said hello, the wheel "
+			    "is its own now\n", s->peer_port);
 		/*
 		 * Open the wheel's input. The firmware renders no effect at
 		 * all until something does, which is what cost this project
