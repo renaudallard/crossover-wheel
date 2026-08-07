@@ -531,7 +531,24 @@ static struct result results[sizeof(controls) / sizeof(controls[0])];
  * have to type for each one. When stdin cannot answer, the same question
  * goes out as a message box instead.
  * Returns 0 for yes, -1 for no, 1 for skip, 2 for nobody answered.
+ *
+ * The answer is written down. A terminal echoes what was typed to the
+ * screen and nowhere else, so the log the tester is asked to send held the
+ * question and not the reply, and the only surviving trace of twenty one
+ * answers was one absent row. A box run left even less.
  */
+static int
+said(int answer)
+{
+	static const char *const name[] = { "yes", "no", "skip",
+	    "never given" };
+
+	out("      answer: %s\n", name[answer < 0 ? 1 : answer == 0 ? 0 :
+	    answer == 1 ? 2 : 3]);
+
+	return answer;
+}
+
 static int
 confirm(const struct result *r)
 {
@@ -547,10 +564,10 @@ confirm(const struct result *r)
 
 		if (first != EOF) {
 			if (first == 'n' || first == 'N')
-				return -1;
+				return said(-1);
 			if (first == 's' || first == 'S')
-				return 1;
-			return 0;
+				return said(1);
+			return said(0);
 		}
 		ask_by_box = 1;
 		out("\nstdin cannot answer; asking on screen instead\n");
@@ -563,17 +580,17 @@ confirm(const struct result *r)
 		    r->prompt, r->found, r->detail);
 		switch (ask_box(text, MB_YESNOCANCEL)) {
 		case IDYES:
-			return 0;
+			return said(0);
 		case IDNO:
-			return -1;
+			return said(-1);
 		case IDCANCEL:
-			return 1;
+			return said(1);
 		default:
 			stop_asking();
 		}
 	}
 
-	return 2;
+	return said(2);
 }
 
 /*
