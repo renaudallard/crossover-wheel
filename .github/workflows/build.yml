@@ -230,6 +230,10 @@ jobs:
           WINEDLLOVERRIDES: dinput8=n
         run: |
           rm -f /tmp/probe_dinput-dump.log
+          # This job downloads the Windows artifacts and builds nothing, so
+          # the daemon it needs has to be built here. It drives no hardware
+          # in this mode, which is why it can run on a runner at all.
+          make daemon
           ./build/bin/t150d -n -v -e "$RUNNER_TEMP/ffb-endpoint" &
           daemon=$!
           for i in $(seq 1 50); do
