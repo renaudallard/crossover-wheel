@@ -738,6 +738,7 @@ identify(void)
 {
 	char text[256];
 	size_t i, n = sizeof(controls) / sizeof(controls[0]);
+	unsigned skipped = 0, disputed = 0, unanswered = 0;
 
 	out("\n--- identification ---\n");
 	ready("One control at a time. Let go of everything else, and press\n"
@@ -770,16 +771,34 @@ identify(void)
 	for (i = 0; i < n; i++) {
 		const struct result *r = &results[i];
 
-		if (r->skipped)
+		if (r->skipped) {
+			skipped++;
+			out("%-44s %-34s %s\n", controls[i].prompt, "SKIPPED",
+			    "you said this wheel has no such control");
 			continue;
+		}
 		out("%-44s %-34s %s%s%s\n", controls[i].prompt,
 		    r->seen ? r->found : "NOT SEEN", r->detail,
 		    r->disputed ? "  [DISPUTED]" : "",
 		    r->unanswered ? "  [NEVER ANSWERED]" : "");
+		if (r->disputed)
+			disputed++;
+		if (r->unanswered)
+			unanswered++;
 	}
+
+	/*
+	 * A count, because a table is only evidence if the reader can tell it
+	 * is complete. A skipped row used to be dropped, so this table had
+	 * twenty rows for twenty one controls and nothing said which one was
+	 * missing or that anything was.
+	 */
+	out("\n%u controls, %u skipped, %u disputed, %u never answered\n",
+	    (unsigned)n, skipped, disputed, unanswered);
 	out("\nAnything marked DISPUTED is where the tool named a control "
 	    "and you said it was wrong.\nThat is the interesting line. "
-	    "NEVER ANSWERED means no one could be asked.\n");
+	    "NEVER ANSWERED means no one could be asked, and SKIPPED means "
+	    "you\nsaid the wheel has no such control.\n");
 }
 
 /*
