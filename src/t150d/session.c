@@ -322,6 +322,29 @@ t150_session_panic(struct t150_session *s, const char *why)
 	session_safe_state(s, why);
 }
 
+/*
+ * The device settings a client inherits rather than asks for.
+ *
+ * The wheel keeps a device gain of its own and nothing here ever set it, so
+ * every force was scaled by whatever the wheel powered up with or whatever
+ * the last process left behind. DirectInput's device gain defaults to full
+ * and a game that wants less says so with DIPROP_FFGAIN, so full is the
+ * honest starting point: it means do not attenuate, and it leaves the
+ * strength where the game's own settings put it.
+ *
+ * It is sent on hello and again whenever the wheel has been re-acquired,
+ * because a wheel that has been away has forgotten it.
+ */
+static void
+session_apply_settings(struct t150_session *s)
+{
+	uint8_t pkt[PKT_MAX];
+	size_t n;
+
+	if ((n = t150_enc_gain(pkt, sizeof(pkt), T150_DI_MAX)) > 0)
+		(void)emit(s, pkt, n);
+}
+
 /* Constant-time enough for a token that is not a security boundary anyway. */
 static int
 token_ok(const struct t150_session *s, const uint8_t *payload, size_t len)
@@ -672,6 +695,7 @@ t150_session_frame(struct t150_session *s, uint8_t op, const uint8_t *payload,
 		n = t150_enc_input_open(pkt, sizeof(pkt));
 		(void)emit(s, pkt, n);
 		s->input_open = 1;
+		session_apply_settings(s);
 		reply_ok(rep);
 		return 0;
 	}
@@ -849,6 +873,13 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 	if (s->epoch != s->be->epoch) {
 		s->epoch = s->be->epoch;
 		session_forget_wheel(s);
+		/*
+		 * A wheel that has been away has forgotten its gain as well
+		 * as its effects, and only a session that said hello is owed
+		 * it back.
+		 */
+		if (s->hello)
+			session_apply_settings(s);
 	}
 
 	/*

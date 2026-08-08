@@ -125,6 +125,18 @@ would cost a game its force feedback for the life of the process.
 Re-acquiring the wheel scrubs every slot, so the backend says when that has
 happened and the next pass teaches the wheel every effect again. No start is
 replayed with them: the game asked for that before the wheel went away.
+.Sh DEVICE SETTINGS
+The wheel keeps a device gain of its own, which scales every force it
+renders, and it survives the process that set it.
+.Nm
+sets it to full when a client says hello, and again after the wheel has been
+re-acquired, because a wheel that has been away has forgotten it. Full means
+do not attenuate: it is DirectInput's own default for
+.Dv DIPROP_FFGAIN ,
+so the strength a driver feels is the one the game's settings ask for. A game
+that wants less says so and
+.Xr t150ctl 1
+overrides it by hand.
 .Sh THE ENDPOINT FILE
 .Nm
 binds an ephemeral port and writes two lines, the port and a per-run token:

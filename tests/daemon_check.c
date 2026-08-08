@@ -127,11 +127,14 @@ hello(uint64_t now)
 	frame(T150_OP_HELLO, (const uint8_t *)TOKEN, T150_TOKEN_LEN, now,
 	    T150_OP_OK, T150_ERR_NONE);
 	/*
-	 * A successful hello opens the wheel's input, which every test after
-	 * this one would otherwise have to account for. The packet itself is
-	 * checked by test_handshake.
+	 * A successful hello opens the wheel's input and states the device
+	 * settings a client inherits, which every test after this one would
+	 * otherwise have to account for. The packets themselves are checked by
+	 * test_handshake and test_hello_states_the_settings.
 	 */
-	expect_log("hello opens the wheel's input", "write 2: 42 04\n");
+	expect_log("hello opens the wheel's input and sets the gain",
+	    "write 2: 42 04\n"
+	    "write 2: 43 80\n");
 }
 
 static size_t
@@ -1062,7 +1065,8 @@ test_backend_epoch_reuploads_everything(void)
 	be.epoch++;
 	frame(T150_OP_KEEPALIVE, NULL, 0, 20, T150_OP_OK, T150_ERR_NONE);
 	(void)tick(20);
-	expect_log("a re-acquired wheel is taught the effect again",
+	expect_log("a re-acquired wheel is given its settings and effect again",
+	    "write 2: 43 80\n"
 	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
 	    "write 4: 03 0e 00 40\n"
 	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");

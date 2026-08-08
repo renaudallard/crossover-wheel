@@ -368,6 +368,13 @@ looking and picks one up when it appears.
 `probe_setreport` prints, so the two can be compared directly. That is the
 only behaviour anywhere but macOS.
 
+**A client taking the wheel sets its device gain to full.** The wheel keeps a
+gain of its own, nothing here ever set it, and so every force was scaled by
+whatever the wheel powered up with or whatever the last process left behind.
+Full means do not attenuate, which is also DirectInput's own default, so the
+strength ends up where the game's settings put it. A game that wants less
+says so with `DIPROP_FFGAIN`, and `t150ctl gain` still overrides it by hand.
+
 **An upload is answered when it is accepted, not when it reaches the wheel.**
 The daemon keeps what each slot should hold and writes it out from a pass
 that runs at most once every 4 ms, so a game updating a force faster than
