@@ -61,6 +61,23 @@ expect_log(const char *what, const char *want)
 	consumed = loglen;
 }
 
+/*
+ * Whether a packet appears anywhere since the last comparison, for a test
+ * that cares that something was sent rather than exactly what surrounded it.
+ * Consumes the log like expect_log does.
+ */
+static int
+log_contains(const char *want)
+{
+	int found;
+
+	(void)fflush(logfp);
+	found = strstr(logbuf + consumed, want) != NULL;
+	consumed = loglen;
+
+	return found;
+}
+
 /* Ignore whatever the setup for a test wrote, without asserting anything. */
 static void
 drain_log(void)
@@ -950,6 +967,71 @@ test_device_error_is_reported_on_the_next_upload(void)
 }
 
 /*
+ * A game that starts an effect on every frame must not starve the others.
+ *
+ * The emit deadline is one deadline for the whole session. When a start
+ * pushed it, a game whose frames are closer together than the emit period
+ * moved it further away than its own next frame, the pass never ran, and
+ * every slot the game was not starting kept whatever the wheel already had.
+ * Assetto Corsa's physics is 3 ms against a 4 ms period, and its damper went
+ * half a second without an update while its constant force was restarted
+ * every frame.
+ */
+static void
+test_a_start_every_frame_does_not_starve_other_slots(void)
+{
+	struct t150_effect ef;
+	uint8_t start[2];
+	uint64_t t;
+
+	reset_session();
+	hello(0);
+
+	/* Slot 0 is the force the game restarts; slot 1 is the damper. */
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_DAMPER;
+	ef.slot = 1;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.condition.pos_coeff = 2000;
+	ef.u.condition.neg_coeff = 2000;
+	upload_at(&ef, 0);
+	(void)tick(0);
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+	drain_log();
+
+	/* The surface changes: the damper is re-uploaded once, at 3 ms. */
+	ef.u.condition.pos_coeff = 8000;
+	ef.u.condition.neg_coeff = 8000;
+	upload_at(&ef, 3);
+
+	/*
+	 * The game carries on at 3 ms a frame, restarting slot 0 each time.
+	 * The damper must still reach the wheel within one emit period.
+	 */
+	for (t = 3; t <= 40; t += 3) {
+		(void)tick(t);
+		constant(&ef, 0, (int32_t)(t * 100));
+		upload_at(&ef, t);
+		frame(T150_OP_EFFECT_START, start, 2, t, T150_OP_OK,
+		    T150_ERR_NONE);
+	}
+
+	/*
+	 * 0x50 is the changed coefficient, on slot 1's parameter key 0x2a.
+	 * Its presence anywhere in the burst is the whole assertion: before
+	 * the fix this slot was silent for as long as the game kept starting.
+	 */
+	if (!log_contains("write 11: 05 2a 00 50 50"))
+		fail("a start every frame starves the other slots");
+}
+
+/*
  * Re-acquiring the wheel scrubs every slot, and the session has no other way
  * to learn that. Without the epoch the coalescer would go on suppressing an
  * upload it believes the wheel already has, and a replugged wheel would stay
@@ -1038,6 +1120,7 @@ main(void)
 	test_write_failure_does_not_pin_the_poll_loop();
 	test_device_error_is_reported_on_the_next_upload();
 	test_backend_epoch_reuploads_everything();
+	test_a_start_every_frame_does_not_starve_other_slots();
 
 	(void)fclose(logfp);
 	free(logbuf);

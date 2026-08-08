@@ -466,7 +466,18 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 			return;
 		}
 		sl->dirty = 0;
-		s->next_emit_ms = now_ms + T150_EMIT_MS;
+		/*
+		 * The emit deadline is deliberately not pushed here. It is
+		 * one deadline for the whole session, and pushing it from a
+		 * frame starves every slot the frame did not touch: a game
+		 * whose physics runs faster than the emit period moves the
+		 * deadline further away than its own next frame, so the pass
+		 * never runs and every other slot keeps whatever the wheel
+		 * was last told. Assetto Corsa at 333 Hz against a 4 ms
+		 * period did exactly that, and its damper went half a second
+		 * without an update while its constant force was started on
+		 * every frame. Only an emission pass moves the deadline.
+		 */
 	}
 
 	if (control(s, payload[0], 1, payload[1]) != 0) {
