@@ -15,7 +15,7 @@ WARNINGS = -Wall -Wextra -Wshadow -Wpointer-arith -Wstrict-prototypes \
 # include at the end of this file feeds them back. Without it a change to
 # include/t150/*.h leaves every object stale, which is how a corrected gain
 # constant once passed its own test suite unnoticed.
-CPPFLAGS += -Iinclude -Isrc/probe -Isrc/t150d -D_POSIX_C_SOURCE=200809L -MMD -MP
+CPPFLAGS += -Iinclude -Isrc -Isrc/probe -Isrc/t150d -D_POSIX_C_SOURCE=200809L -MMD -MP
 CFLAGS   += -std=c11 $(WARNINGS)
 
 UNAME_S := $(shell uname -s)
@@ -32,6 +32,7 @@ BIN	= $(BUILD)/bin
 OBJ	= $(BUILD)/obj
 LIBOBJ	= $(OBJ)/lib
 DAEMONOBJ = $(OBJ)/t150d
+MACOBJ	= $(OBJ)/mac
 
 PROBE_NAMES  = probe_hid probe_setreport probe_ep0 probe_intr
 PROBE_BINS   = $(addprefix $(BIN)/,$(PROBE_NAMES))
@@ -44,6 +45,14 @@ PROBE_COMMON = $(OBJ)/common.o
 TOOL_NAMES = t150ctl t150boot
 TOOL_BINS  = $(addprefix $(BIN)/,$(TOOL_NAMES))
 
+# macOS only code that is not a probe, a tool or the daemon, because more than
+# one of them needs it. Taking the wheel out of boot mode is the whole of it:
+# t150boot does it on demand and the daemon does it after a replug.
+MAC_OBJS =
+ifeq ($(UNAME_S),Darwin)
+MAC_OBJS += $(MACOBJ)/bootswitch.o
+endif
+
 # The portable half: no I/O, no platform calls, tested everywhere.
 LIB_NAMES = encode proto
 LIB_OBJS  = $(addprefix $(LIBOBJ)/,$(addsuffix .o,$(LIB_NAMES)))
@@ -54,7 +63,7 @@ LIB_OBJS  = $(addprefix $(LIBOBJ)/,$(addsuffix .o,$(LIB_NAMES)))
 DAEMON_LIB_NAMES = session backend_fake
 DAEMON_EXTRA_OBJS =
 ifeq ($(UNAME_S),Darwin)
-DAEMON_EXTRA_OBJS += $(DAEMONOBJ)/hid_darwin.o
+DAEMON_EXTRA_OBJS += $(DAEMONOBJ)/hid_darwin.o $(MAC_OBJS)
 endif
 DAEMON_LIB_OBJS  = $(addprefix $(DAEMONOBJ)/,$(addsuffix .o,$(DAEMON_LIB_NAMES)))
 DAEMON_BIN	 = $(BIN)/t150d
@@ -151,7 +160,7 @@ probes tools:
 	@false
 endif
 
-$(BIN) $(OBJ) $(LIBOBJ) $(DAEMONOBJ):
+$(BIN) $(OBJ) $(LIBOBJ) $(DAEMONOBJ) $(MACOBJ):
 	@mkdir -p $@
 
 $(OBJ)/%.o: src/probe/%.c | $(OBJ)
@@ -163,13 +172,16 @@ $(LIBOBJ)/%.o: src/lib/%.c | $(LIBOBJ)
 $(DAEMONOBJ)/%.o: src/t150d/%.c | $(DAEMONOBJ)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
+$(MACOBJ)/%.o: src/mac/%.c | $(MACOBJ)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
+
 # probe_intr builds its packets with the shared encoders, so the probes link
 # the portable library too.
 $(OBJ)/%.o: src/tools/%.c | $(OBJ)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
 $(BIN)/t150ctl $(BIN)/t150boot: $(BIN)/%: $(OBJ)/%.o $(PROBE_COMMON) \
-    $(LIB_OBJS) | $(BIN)
+    $(LIB_OBJS) $(MAC_OBJS) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(FRAMEWORKS)
 
 $(BIN)/probe_%: $(OBJ)/probe_%.o $(PROBE_COMMON) $(LIB_OBJS) | $(BIN)

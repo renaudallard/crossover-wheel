@@ -98,12 +98,19 @@ IOKit rather than one of IOKit's own. Any status from outside IOKit's domain
 is treated as the device having gone: the reference is released and the scan
 for a wheel starts again.
 .Pp
-Recognising it is not the same as recovering from it. The wheel comes back at
-its boot product id, and
+The wheel comes back at its boot product id, where every replug and every
+wake leaves it, and
 .Nm
-opens only the firmware one, so the scan finds nothing until the wheel is
-switched. See
-.Xr t150boot 8 .
+opens only the firmware one. So a scan that finds nothing there looks for a
+wheel at the boot id and switches it, and the scan after that finds it. The
+switch is the same pair of endpoint 0 transfers
+.Xr t150boot 8
+sends, needs no privilege, and is refused for any model but the T150: another
+wheel's switch value is not this one's, and an unattended caller is exactly
+the one that must not guess. Somebody with another wheel runs
+.Xr t150boot 8
+with
+.Fl V .
 .Sh THE EMITTER
 Effect parameters are state and are coalesced; everything else is an event
 and is not.

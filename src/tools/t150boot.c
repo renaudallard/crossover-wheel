@@ -25,17 +25,17 @@
  * full strength rather than anything the switch did or did not do. See
  * RESEARCH.md A13 and A15.
  *
+ * The two transfers themselves live in src/mac/bootswitch.c, because the
+ * daemon needs them too: a wheel replugged mid game comes back at the boot id
+ * and the daemon opens only the firmware one. What stays here is the policy,
+ * which is all this tool really is.
+ *
  * macOS only.
  *
  * Copyright (c) 2026 Renaud Allard
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#include <CoreFoundation/CoreFoundation.h>
-#include <IOKit/IOCFPlugIn.h>
-#include <IOKit/IOKitLib.h>
-#include <IOKit/usb/IOUSBLib.h>
-#include <IOKit/usb/USBSpec.h>
 
 #include <err.h>
 #include <stdio.h>
@@ -46,6 +46,8 @@
 
 #include "common.h"
 #include "t150/t150.h"
+
+#include "mac/bootswitch.h"
 
 /* The wheel takes a moment to drop off the bus and come back. */
 #define SETTLE_TRIES	60
@@ -78,109 +80,6 @@ usage(void)
 	    "  plug-in.\n",
 	    T150_VID, T150_PID_BOOT, T150_SWITCH_VALUE);
 	exit(2);
-}
-
-static io_service_t
-find_usb(long vid, long pid)
-{
-	CFMutableDictionaryRef match;
-	io_iterator_t iter = IO_OBJECT_NULL;
-	io_service_t svc;
-	SInt32 v = (SInt32)vid, p = (SInt32)pid;
-	CFNumberRef n;
-
-	if ((match = IOServiceMatching(kIOUSBDeviceClassName)) == NULL)
-		return IO_OBJECT_NULL;
-
-	if ((n = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &v))) {
-		CFDictionarySetValue(match, CFSTR(kUSBVendorID), n);
-		CFRelease(n);
-	}
-	if ((n = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &p))) {
-		CFDictionarySetValue(match, CFSTR(kUSBProductID), n);
-		CFRelease(n);
-	}
-
-	if (IOServiceGetMatchingServices(kIOMainPortDefault, match, &iter) !=
-	    KERN_SUCCESS)
-		return IO_OBJECT_NULL;
-
-	svc = IOIteratorNext(iter);
-	IOObjectRelease(iter);
-
-	return svc;
-}
-
-static IOUSBDeviceInterface500 **
-open_device(io_service_t svc)
-{
-	IOUSBDeviceInterface500 **dev = NULL;
-	IOCFPlugInInterface **plug = NULL;
-	SInt32 score = 0;
-
-	if (IOCreatePlugInInterfaceForService(svc, kIOUSBDeviceUserClientTypeID,
-	    kIOCFPlugInInterfaceID, &plug, &score) != KERN_SUCCESS ||
-	    plug == NULL)
-		return NULL;
-
-	if ((*plug)->QueryInterface(plug,
-	    CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID500),
-	    (LPVOID *)&dev) != S_OK)
-		dev = NULL;
-	IODestroyPlugInInterface(plug);
-
-	return dev;
-}
-
-static IOReturn
-model_query(IOUSBDeviceInterface500 **dev, uint8_t *buf, size_t buflen,
-    UInt32 *done)
-{
-	IOUSBDevRequestTO req;
-	IOReturn r;
-
-	memset(&req, 0, sizeof(req));
-	memset(buf, 0, buflen);
-
-	req.bmRequestType = T150_RQ_MODEL_TYPE;
-	req.bRequest = T150_RQ_MODEL;
-	req.wLength = (UInt16)buflen;
-	req.pData = buf;
-	req.noDataTimeout = 1000;
-	req.completionTimeout = 1000;
-
-	r = (*dev)->DeviceRequestTO(dev, &req);
-	*done = req.wLenDone;
-
-	return r;
-}
-
-static IOReturn
-mode_switch(IOUSBDeviceInterface500 **dev, uint16_t value)
-{
-	IOUSBDevRequestTO req;
-
-	memset(&req, 0, sizeof(req));
-
-	req.bmRequestType = T150_RQ_SWITCH_TYPE;
-	req.bRequest = T150_RQ_SWITCH;
-	req.wValue = value;
-	req.noDataTimeout = 1000;
-	req.completionTimeout = 1000;
-
-	return (*dev)->DeviceRequestTO(dev, &req);
-}
-
-/*
- * The wheel leaves the bus the instant it accepts the switch, so it is gone
- * before the transfer can complete. Which error that surfaces as depends on
- * how far the request had got, and none of them mean failure.
- */
-static int
-left_the_bus(IOReturn r)
-{
-	return r == kIOReturnNotResponding || r == kIOUSBPipeStalled ||
-	    r == kIOReturnNoDevice || r == kIOReturnAborted;
 }
 
 int
@@ -227,7 +126,7 @@ main(int argc, char *argv[])
 	if (optind != argc)
 		usage();
 
-	if ((svc = find_usb(vid, pid)) == IO_OBJECT_NULL) {
+	if ((svc = t150_usb_find(vid, pid)) == IO_OBJECT_NULL) {
 		/*
 		 * Nothing at the boot id is the normal outcome once the wheel
 		 * has been switched, so a LaunchAgent that fires on every
@@ -239,7 +138,7 @@ main(int argc, char *argv[])
 		return 0;
 	}
 
-	dev = open_device(svc);
+	dev = t150_usb_open(svc);
 	IOObjectRelease(svc);
 	if (dev == NULL)
 		errx(1, "cannot get a device interface for %04lx:%04lx",
@@ -250,7 +149,7 @@ main(int argc, char *argv[])
 	 * request on endpoint 0 and was measured working this way, and
 	 * opening would fail anyway while macOS's HID driver holds it.
 	 */
-	r = model_query(dev, buf, sizeof(buf), &done);
+	r = t150_usb_model(dev, buf, sizeof(buf), &done);
 	if (r != kIOReturnSuccess) {
 		warnx("the model query failed: %s", probe_ioreturn_str(r));
 		goto out;
@@ -287,7 +186,7 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
-	r = mode_switch(dev, (uint16_t)value);
+	r = t150_usb_switch(dev, (uint16_t)value);
 
 	/*
 	 * The transfer's own result decides nothing, either way. The wheel
@@ -301,7 +200,7 @@ main(int argc, char *argv[])
 	 */
 	if (buf[T150_RQ_MODEL_OFF_MODEL] != T150_MODEL) {
 		/* Reachable only via -V, and nobody here knows its firmware id. */
-		if (r == kIOReturnSuccess || left_the_bus(r)) {
+		if (r == kIOReturnSuccess || t150_usb_left_the_bus(r)) {
 			if (!quiet)
 				printf("switch sent. Whether it worked is not "
 				    "checkable for a model this tool does not "
@@ -318,7 +217,7 @@ main(int argc, char *argv[])
 		io_service_t back;
 
 		nap_ms(SETTLE_STEP_MS);
-		if ((back = find_usb(vid, T150_PID_FIRMWARE)) == IO_OBJECT_NULL)
+		if ((back = t150_usb_find(vid, T150_PID_FIRMWARE)) == IO_OBJECT_NULL)
 			continue;
 		IOObjectRelease(back);
 		if (!quiet)
@@ -328,7 +227,7 @@ main(int argc, char *argv[])
 		goto out;
 	}
 
-	if (r == kIOReturnSuccess || left_the_bus(r))
+	if (r == kIOReturnSuccess || t150_usb_left_the_bus(r))
 		warnx("the switch was accepted but the wheel never came back "
 		    "at 0x%04x. Replug it", T150_PID_FIRMWARE);
 	else

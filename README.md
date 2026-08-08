@@ -368,6 +368,13 @@ looking and picks one up when it appears.
 `probe_setreport` prints, so the two can be compared directly. That is the
 only behaviour anywhere but macOS.
 
+**A wheel unplugged mid game comes back on its own.** It returns at the boot
+product id, which is where sleep, wake and every replug leave it, so the
+daemon switches it the same way `t150boot` does and picks it up on the next
+scan. Nothing has to be run by hand any more, and nothing needs a password.
+Any model but the T150 is refused rather than sent the T150's switch value;
+use `t150boot -V` for those.
+
 **A client taking the wheel sets its device gain to full.** The wheel keeps a
 gain of its own, nothing here ever set it, and so every force was scaled by
 whatever the wheel powered up with or whatever the last process left behind.

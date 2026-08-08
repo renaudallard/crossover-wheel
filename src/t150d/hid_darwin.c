@@ -39,6 +39,8 @@
 #include "t150/t150.h"
 #include "t150d.h"
 
+#include "mac/bootswitch.h"
+
 /*
  * How long to wait before looking for the wheel again after losing it.
  * Unplugged wheels come back on their own and a game that keeps sending is
@@ -201,6 +203,28 @@ raw_write(struct hid_be *h, const uint8_t *buf, size_t len)
 }
 
 /*
+ * No wheel at the firmware id. It may still be sitting at the boot id, which
+ * is where every replug and every wake leaves it, so switch it and let the
+ * next scan find it. Until this existed a wheel unplugged during a game never
+ * came back on its own however correctly the daemon noticed it had gone: the
+ * person driving had to run t150boot by hand, mid race.
+ *
+ * Always returns -1. The wheel is not usable yet either way, and the rescan
+ * timer decides when to look again.
+ */
+static int
+boot_switch_if_present(struct hid_be *h)
+{
+	int r = t150_boot_switch(h->vid, T150_PID_BOOT, T150_SWITCH_VALUE);
+
+	if (r > 0 && h->verbose)
+		fprintf(stderr, "t150d: switched a wheel out of boot mode, "
+		    "waiting for it to come back\n");
+
+	return -1;
+}
+
+/*
  * Find the wheel and open it without seizing it. Returns 0 when h->dev is
  * usable. The manager is scheduled on the run loop and pumped until it goes
  * quiet, because a manager that has never run its sources reports no devices.
@@ -238,11 +262,11 @@ acquire(struct hid_be *h)
 	    kCFRunLoopDefaultMode);
 
 	if ((h->devices = IOHIDManagerCopyDevices(h->mgr)) == NULL)
-		return -1;
+		return boot_switch_if_present(h);
 	if ((n = CFSetGetCount(h->devices)) < 1) {
 		CFRelease(h->devices);
 		h->devices = NULL;
-		return -1;
+		return boot_switch_if_present(h);
 	}
 
 	if ((items = calloc((size_t)n, sizeof(*items))) == NULL) {
