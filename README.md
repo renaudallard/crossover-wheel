@@ -375,6 +375,13 @@ Full means do not attenuate, which is also DirectInput's own default, so the
 strength ends up where the game's settings put it. A game that wants less
 says so with `DIPROP_FFGAIN`, and `t150ctl gain` still overrides it by hand.
 
+**The rotation range is `-r`, because no game can ask for it.** DirectInput
+has no property for wheel rotation: on Windows it is set in the vendor's
+control panel and the game assumes the wheel is already there, so a game
+whose settings say 900 degrees reaches nothing and scales its steering for a
+range the wheel is not at. `t150d -r 900` sets it whenever a client takes the
+wheel, and again after a replug. `t150ctl range 900` still does it by hand.
+
 **An upload is answered when it is accepted, not when it reaches the wheel.**
 The daemon keeps what each slot should hold and writes it out from a pass
 that runs at most once every 4 ms, so a game updating a force faster than

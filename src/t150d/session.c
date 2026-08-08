@@ -332,8 +332,14 @@ t150_session_panic(struct t150_session *s, const char *why)
  * honest starting point: it means do not attenuate, and it leaves the
  * strength where the game's own settings put it.
  *
- * It is sent on hello and again whenever the wheel has been re-acquired,
- * because a wheel that has been away has forgotten it.
+ * The rotation range has no DirectInput property at all. On Windows it is
+ * set in the vendor's control panel and a game merely assumes the wheel is
+ * already at the number in its settings, so a game asking for 900 degrees
+ * reaches nothing. -r is that control panel, and leaving it unset leaves the
+ * wheel's own range alone.
+ *
+ * Both are sent on hello and again whenever the wheel has been re-acquired,
+ * because a wheel that has been away has forgotten them.
  */
 static void
 session_apply_settings(struct t150_session *s)
@@ -342,6 +348,9 @@ session_apply_settings(struct t150_session *s)
 	size_t n;
 
 	if ((n = t150_enc_gain(pkt, sizeof(pkt), T150_DI_MAX)) > 0)
+		(void)emit(s, pkt, n);
+	if (s->range_deg > 0 &&
+	    (n = t150_enc_range(pkt, sizeof(pkt), s->range_deg)) > 0)
 		(void)emit(s, pkt, n);
 }
 
@@ -874,9 +883,9 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 		s->epoch = s->be->epoch;
 		session_forget_wheel(s);
 		/*
-		 * A wheel that has been away has forgotten its gain as well
-		 * as its effects, and only a session that said hello is owed
-		 * it back.
+		 * A wheel that has been away has forgotten its gain and its
+		 * rotation range as well as its effects, and only a session
+		 * that said hello is owed them back.
 		 */
 		if (s->hello)
 			session_apply_settings(s);

@@ -9,6 +9,7 @@
 .Op Fl nv
 .Op Fl e Ar endpoint
 .Op Fl g Ar ms
+.Op Fl r Ar degrees
 .Sh DESCRIPTION
 .Nm
 is the macOS half of the force feedback bridge. It listens on loopback for
@@ -73,6 +74,18 @@ Where to publish the port and token. The default is
 which the proxy reads through Wine's
 .Pa Z:
 mapping.
+.It Fl r Ar degrees
+Lock to lock, 270 to 1080, applied whenever a client takes the wheel and
+again after the wheel has been re-acquired. Unset leaves the wheel's own
+range alone.
+.Pp
+No game can ask for this. DirectInput has no property for wheel rotation, so
+on Windows the number is set in the vendor's control panel and a game merely
+assumes the wheel is already at the one in its settings. A game asking for
+900 degrees therefore reaches nothing here, and its steering is scaled for a
+range the wheel is not at. This option is that control panel;
+.Xr t150ctl 1
+sets the same thing by hand, but does not survive a replug.
 .It Fl v
 Log connections, effect downgrades and every entry into the safe state.
 Each connection is named by the port it came from, and whether its token was
@@ -126,8 +139,8 @@ Re-acquiring the wheel scrubs every slot, so the backend says when that has
 happened and the next pass teaches the wheel every effect again. No start is
 replayed with them: the game asked for that before the wheel went away.
 .Sh DEVICE SETTINGS
-The wheel keeps a device gain of its own, which scales every force it
-renders, and it survives the process that set it.
+The wheel keeps a device gain and a rotation range of its own, which survive
+the process that set them. The gain scales every force it renders.
 .Nm
 sets it to full when a client says hello, and again after the wheel has been
 re-acquired, because a wheel that has been away has forgotten it. Full means
@@ -137,6 +150,10 @@ so the strength a driver feels is the one the game's settings ask for. A game
 that wants less says so and
 .Xr t150ctl 1
 overrides it by hand.
+.Pp
+The rotation range is left alone unless
+.Fl r
+gave one, and is then applied at the same two moments.
 .Sh THE ENDPOINT FILE
 .Nm
 binds an ephemeral port and writes two lines, the port and a per-run token:

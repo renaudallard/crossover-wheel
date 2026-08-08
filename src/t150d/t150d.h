@@ -126,6 +126,7 @@ struct t150_session {
 	int			 armed;		/* the wheel may be holding a force */
 	int			 input_open;	/* we opened the wheel's input and owe it a close */
 	int			 verbose;
+	unsigned int		 range_deg;	/* 0 leaves the wheel's own */
 	uint8_t			 next_slot;	/* where the next pass resumes */
 	uint8_t			 io_err;	/* a write failed, owed to the next upload */
 	uint8_t			 emit_failed;	/* last pass failed, do not spin on it */

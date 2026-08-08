@@ -361,6 +361,23 @@ consume(struct t150_session *s, int fd, uint8_t *buf, size_t have, int *done)
 	return (ssize_t)off;
 }
 
+/* Degrees lock to lock, refusing anything the wheel will not take. */
+static int
+parse_range(const char *s, unsigned int *out)
+{
+	char *end;
+	unsigned long v;
+
+	errno = 0;
+	v = strtoul(s, &end, 10);
+	if (errno != 0 || end == s || *end != '\0' ||
+	    v < T150_RANGE_MIN || v > T150_RANGE_MAX)
+		return -1;
+	*out = (unsigned int)v;
+
+	return 0;
+}
+
 /* Milliseconds, refusing anything that is not a number or is absurd. */
 static int
 parse_ms(const char *s, unsigned int *out)
@@ -381,7 +398,7 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: t150d [-nv] [-e endpoint] [-g ms]\n"
+	    "usage: t150d [-nv] [-e endpoint] [-g ms] [-r degrees]\n"
 	    "\n"
 	    "  -e endpoint  where to publish the port and token\n"
 	    "               (default $HOME%s)\n"
@@ -389,8 +406,11 @@ usage(void)
 	    "               by default, see hid_darwin.c. A safe state is up\n"
 	    "               to eighteen packets, so this delays it\n"
 	    "  -n           drive nothing, log the packets instead\n"
+	    "  -r degrees   lock to lock, %u to %u, set whenever a client takes\n"
+	    "               the wheel. No game can ask for this: DirectInput has\n"
+	    "               no property for it. Unset leaves the wheel's own\n"
 	    "  -v           log effects, downgrades and safe states\n",
-	    ENDPOINT_REL);
+	    ENDPOINT_REL, T150_RANGE_MIN, T150_RANGE_MAX);
 	exit(2);
 }
 
@@ -407,10 +427,10 @@ main(int argc, char *argv[])
 	uint64_t pend_deadline = 0;
 	size_t have = 0, phave = 0;
 	unsigned short port;
-	unsigned int gap_ms = 0;
+	unsigned int gap_ms = 0, range_deg = 0;
 	int ch, lfd, cfd = -1, pfd_pend = -1, verbose = 0, fake = 0;
 
-	while ((ch = getopt(argc, argv, "e:g:nv")) != -1) {
+	while ((ch = getopt(argc, argv, "e:g:nr:v")) != -1) {
 		switch (ch) {
 		case 'e':
 			epopt = optarg;
@@ -421,6 +441,10 @@ main(int argc, char *argv[])
 			break;
 		case 'n':
 			fake = 1;
+			break;
+		case 'r':
+			if (parse_range(optarg, &range_deg) != 0)
+				usage();
 			break;
 		case 'v':
 			verbose = 1;
@@ -470,6 +494,7 @@ main(int argc, char *argv[])
 
 	t150_session_init(&sess, &be, token);
 	sess.verbose = verbose;
+	sess.range_deg = range_deg;
 
 	/*
 	 * Every signal that would otherwise kill the process outright, so the
@@ -668,6 +693,7 @@ main(int argc, char *argv[])
 				 */
 				t150_session_init(&sess, &be, token);
 				sess.verbose = verbose;
+				sess.range_deg = range_deg;
 				sess.peer_port = peer_port;
 				cfd = nfd2;
 				have = 0;
@@ -680,6 +706,7 @@ main(int argc, char *argv[])
 				pend_deadline = now_ms() + PEND_MS;
 				t150_session_init(&psess, &be, token);
 				psess.verbose = verbose;
+				psess.range_deg = range_deg;
 				psess.peer_port = peer_port;
 				if (verbose)
 					fprintf(stderr, "t150d: second client "

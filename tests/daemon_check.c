@@ -970,6 +970,33 @@ test_device_error_is_reported_on_the_next_upload(void)
 }
 
 /*
+ * What a client inherits when it takes the wheel. The gain is unconditional,
+ * because nothing else ever set it and a wheel scales every force by it. The
+ * range is only sent when the daemon was given one, because no game can ask
+ * for it and guessing a number would be worse than leaving the wheel alone.
+ */
+static void
+test_hello_states_the_settings(void)
+{
+	reset_session();
+	sess.range_deg = 900;
+	frame(T150_OP_HELLO, (const uint8_t *)TOKEN, T150_TOKEN_LEN, 0,
+	    T150_OP_OK, T150_ERR_NONE);
+	expect_log("hello opens the input, sets full gain and the range",
+	    "write 2: 42 04\n"
+	    "write 2: 43 80\n"
+	    "write 4: 40 11 54 d5\n");
+
+	/* Without one, the wheel keeps whatever range it had. */
+	reset_session();
+	frame(T150_OP_HELLO, (const uint8_t *)TOKEN, T150_TOKEN_LEN, 0,
+	    T150_OP_OK, T150_ERR_NONE);
+	expect_log("no range given, none sent",
+	    "write 2: 42 04\n"
+	    "write 2: 43 80\n");
+}
+
+/*
  * A game that starts an effect on every frame must not starve the others.
  *
  * The emit deadline is one deadline for the whole session. When a start
@@ -1125,6 +1152,7 @@ main(void)
 	test_device_error_is_reported_on_the_next_upload();
 	test_backend_epoch_reuploads_everything();
 	test_a_start_every_frame_does_not_starve_other_slots();
+	test_hello_states_the_settings();
 
 	(void)fclose(logfp);
 	free(logbuf);
