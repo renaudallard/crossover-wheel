@@ -78,6 +78,19 @@ Log connections, effect downgrades and every entry into the safe state.
 Each connection is named by the port it came from, and whether its token was
 accepted is logged too, so two connections can be told apart in a report.
 .El
+.Sh LOSING THE WHEEL
+A wheel unplugged while a game is running takes the mach port behind its
+device reference with it, and the next report fails with a status from below
+IOKit rather than one of IOKit's own. Any status from outside IOKit's domain
+is treated as the device having gone: the reference is released and the scan
+for a wheel starts again.
+.Pp
+Recognising it is not the same as recovering from it. The wheel comes back at
+its boot product id, and
+.Nm
+opens only the firmware one, so the scan finds nothing until the wheel is
+switched. See
+.Xr t150boot 8 .
 .Sh THE EMITTER
 Effect parameters are state and are coalesced; everything else is an event
 and is not.

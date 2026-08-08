@@ -152,10 +152,36 @@ drop_device(struct hid_be *h)
 	}
 }
 
-/* Errors that mean the wheel is gone rather than that one packet was bad. */
+/*
+ * Errors that mean the wheel is gone rather than that one packet was bad.
+ *
+ * The named IOKit returns are the polite way for the device to say so, and
+ * they are not the way it actually said it. A wheel unplugged mid race takes
+ * the mach port behind its IOHIDDeviceRef with it, and the next SetReport
+ * comes back 0x10000003, which is MACH_SEND_INVALID_DEST: a send to a dead
+ * port name, from a layer below IOKit entirely. That is not in the list
+ * below and never could be, so the daemon kept a corpse, every write failed,
+ * the wheel's input was never reopened, and the driver felt nothing but the
+ * wheel's own centring spring for the rest of the session. Test 30, and it
+ * took a wheel being unplugged in a game to find it.
+ *
+ * So the test is the domain rather than the list. Both mach and IOKit put
+ * the system in the top six bits; IOKit's is 0x38 and everything it returns
+ * begins 0xE00002xx. A status from any other system came from below the
+ * driver, and by the time a mach send has failed the port is already dead,
+ * which is the same thing as the device being gone.
+ */
+#define ERR_SYSTEM(x)	(((unsigned int)(x) >> 26) & 0x3f)
+#define SYS_IOKIT	0x38u
+
 static int
 means_removed(IOReturn r)
 {
+	if (r == kIOReturnSuccess)
+		return 0;
+	if (ERR_SYSTEM(r) != SYS_IOKIT)
+		return 1;
+
 	return r == kIOReturnNoDevice || r == kIOReturnNotOpen ||
 	    r == kIOReturnOffline || r == kIOReturnNotAttached ||
 	    r == kIOReturnNotResponding;
