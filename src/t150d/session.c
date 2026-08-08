@@ -2,8 +2,15 @@
  * session.c - what the daemon does with a frame.
  *
  * No sockets and no clock of its own: every entry point is handed the
- * current time. That keeps the watchdog and the ramp slicer testable in
+ * current time. That keeps the watchdog and the emitter testable in
  * simulated time rather than by waiting.
+ *
+ * A frame says what the game wants; t150_session_tick decides when the wheel
+ * hears about it. Effect parameters are state, so they are coalesced: a slot
+ * remembers the bytes it last put on the wire and a pass sends nothing when
+ * they have not moved. Everything else is an event, and events are never
+ * deferred and never merged, because the wheel starting, stopping or going
+ * safe is a thing that happens rather than a value that holds.
  *
  * Copyright (c) 2026 Renaud Allard
  * SPDX-License-Identifier: BSD-2-Clause
@@ -15,7 +22,7 @@
 #include "t150/t150.h"
 #include "t150d.h"
 
-#define PKT_MAX	16
+#define PKT_MAX	T150_PKT_MAX
 
 static void
 reply_ok(struct t150_reply *rep)
@@ -115,29 +122,67 @@ scale_effect(struct t150_effect *ef)
 }
 
 /*
- * Send the three packets that upload one effect. They correlate through slot
- * keys, so a failure part way through leaves the wheel with an incomplete
- * effect: the caller answers DEVICE_IO and the slot stays unusable until the
- * game uploads it again.
+ * Put a slot's desired effect on the wheel, and only if it is not there
+ * already.
+ *
+ * The three packets correlate through slot keys, and the only sequence any
+ * wheel has been measured accepting is all three together (RESEARCH.md A43),
+ * so any difference at all sends the set. Sending the one packet that moved
+ * would be cheaper and is probably right, since PROTOCOL.md says the second
+ * block's key depends only on the slot, but probably is not a thing to put
+ * between a game and a wheel that pulls on someone's hands.
+ *
+ * What this saves is the common case, which is a game re-uploading an effect
+ * it has not changed: that now costs a comparison instead of three writes.
+ *
+ * The comparison is of the encoded bytes rather than of the effect struct,
+ * because the two are not the same question. A constant's level is one signed
+ * byte, so sixty four DirectInput magnitudes share it, and direction is not
+ * a field of the wire form at all for a periodic or a condition. Comparing
+ * structs would send packets the wheel cannot tell apart, and would read
+ * padding and the inactive tail of a union while doing it.
+ *
+ * Returns 0 when the wheel holds the effect, -1 when a write failed, and -2
+ * when the effect cannot be encoded at all. The two failures are different:
+ * a write may succeed next time and an encoding never will.
  */
 static int
-upload(struct t150_session *s, const struct t150_effect *ef)
+flush_slot(struct t150_session *s, struct t150_slot *sl)
 {
-	uint8_t pkt[PKT_MAX];
-	size_t n;
+	struct t150_wire pkt[3];
+	size_t i;
+	int changed = 0;
 
-	if ((n = t150_enc_ff_first(pkt, sizeof(pkt), ef)) == 0)
-		return -1;
-	if (emit(s, pkt, n) != 0)
-		return -1;
-	if ((n = t150_enc_ff_update(pkt, sizeof(pkt), ef)) == 0)
-		return -1;
-	if (emit(s, pkt, n) != 0)
-		return -1;
-	if ((n = t150_enc_ff_commit(pkt, sizeof(pkt), ef)) == 0)
-		return -1;
+	memset(pkt, 0, sizeof(pkt));
+	pkt[0].len = (uint8_t)t150_enc_ff_first(pkt[0].buf, sizeof(pkt[0].buf),
+	    &sl->ef);
+	pkt[1].len = (uint8_t)t150_enc_ff_update(pkt[1].buf, sizeof(pkt[1].buf),
+	    &sl->ef);
+	pkt[2].len = (uint8_t)t150_enc_ff_commit(pkt[2].buf, sizeof(pkt[2].buf),
+	    &sl->ef);
 
-	return emit(s, pkt, n);
+	for (i = 0; i < 3; i++) {
+		if (pkt[i].len == 0)
+			return -2;
+		if (pkt[i].len != sl->sent[i].len ||
+		    memcmp(pkt[i].buf, sl->sent[i].buf, pkt[i].len) != 0)
+			changed = 1;
+	}
+	if (!changed)
+		return 0;
+
+	/*
+	 * Recorded per packet and only once its write has succeeded, so a
+	 * failure part way through leaves the slot believing exactly what
+	 * reached the wheel and the next pass sends the rest.
+	 */
+	for (i = 0; i < 3; i++) {
+		if (emit(s, pkt[i].buf, pkt[i].len) != 0)
+			return -1;
+		sl->sent[i] = pkt[i];
+	}
+
+	return 0;
 }
 
 static int
@@ -191,11 +236,20 @@ session_safe_state(struct t150_session *s, const char *why)
 	if (s->verbose && why != NULL)
 		fprintf(stderr, "t150d: safe state: %s\n", why);
 
+	/*
+	 * The memset is load-bearing beyond forgetting the effect: it clears
+	 * the slot's dirty flag and its record of what the wheel holds, so a
+	 * safe state also cancels every pending emission. Moving either of
+	 * those out of the slot would quietly leave a pass ready to write a
+	 * force to a wheel that has just been made safe.
+	 */
 	for (i = 0; i < T150_SLOT_MAX; i++) {
 		if (s->slots[i].used && s->slots[i].playing)
 			(void)control(s, (uint8_t)i, 0, 0);
 		memset(&s->slots[i], 0, sizeof(s->slots[i]));
 	}
+	s->io_err = 0;
+	s->emit_failed = 0;
 
 	/*
 	 * Release the autocenter last. A wheel that has been left holding a
@@ -289,6 +343,7 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 {
 	struct t150_effect ef;
 	struct t150_slot *sl;
+	struct t150_wire sent[3];
 	uint64_t started_ms;
 	uint8_t want, was_playing, iterations;
 
@@ -328,11 +383,19 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 	was_playing = sl->used ? sl->playing : 0;
 	started_ms = sl->started_ms;
 	iterations = sl->iterations;
+	/*
+	 * What the wheel already holds has to survive this, or every upload
+	 * would look like the first one and the comparison in flush_slot
+	 * would never match. It is the one field here that describes the
+	 * wheel rather than the game's wishes.
+	 */
+	memcpy(sent, sl->sent, sizeof(sent));
 
 	memset(sl, 0, sizeof(*sl));
 	sl->playing = was_playing;
 	sl->started_ms = started_ms;
 	sl->iterations = iterations;
+	memcpy(sl->sent, sent, sizeof(sl->sent));
 	sl->source_kind = want;
 	if (want == T150_EFFECT_RAMP) {
 		struct t150_effect raw;
@@ -342,23 +405,33 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 		ef.u.constant.magnitude = apply_gain(sl->ramp.start, ef.gain);
 	}
 	sl->ef = ef;
-	sl->last_level = ef.u.constant.magnitude;
+	sl->used = 1;
+	sl->dirty = 1;
+	/*
+	 * A pass that failed stops shortening the poll timeout so it cannot
+	 * spin against an absent wheel; a fresh upload is reason enough to
+	 * try again promptly.
+	 */
+	s->emit_failed = 0;
 
-	if (upload(s, &ef) != 0) {
-		/*
-		 * A failed upload leaves the wheel holding an incomplete
-		 * effect. If the slot was already playing, say so and stop it
-		 * rather than wiping the flag, because something on the wheel
-		 * is still running and only the stop packet ends it.
-		 */
-		if (was_playing)
-			(void)control(s, ef.slot, 0, 0);
-		memset(sl, 0, sizeof(*sl));
+	/*
+	 * The effect is accepted, and the tick will have it on the wheel
+	 * within one emit period. That leaves nowhere for a write error to
+	 * be reported except the next upload, which is where it goes: the
+	 * state above is stored first, so the frame that carries the bad
+	 * news is not also the frame that gets thrown away.
+	 *
+	 * It is reported here and on nothing else on purpose. The proxy
+	 * drops its socket on any error reply to a keepalive, and nothing
+	 * reconnects, so one unplugged wheel would cost the game its force
+	 * feedback for the life of the process.
+	 */
+	if (s->io_err) {
+		s->io_err = 0;
 		reply_err(rep, T150_ERR_DEVICE_IO);
 		return;
 	}
 
-	sl->used = 1;
 	reply_ok(rep);
 }
 
@@ -378,6 +451,24 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 	}
 
 	sl = &s->slots[payload[0]];
+
+	/*
+	 * Start is an event and goes out now, but it must not overtake the
+	 * parameters it starts, so the slot is flushed first. This is also
+	 * what keeps the game's own ordering: a game that uploads and starts
+	 * in one burst gets both on the wheel before it hears about either.
+	 */
+	if (sl->dirty) {
+		if (flush_slot(s, sl) != 0) {
+			/* Reported here, so the next upload does not repeat it. */
+			s->io_err = 0;
+			reply_err(rep, T150_ERR_DEVICE_IO);
+			return;
+		}
+		sl->dirty = 0;
+		s->next_emit_ms = now_ms + T150_EMIT_MS;
+	}
+
 	if (control(s, payload[0], 1, payload[1]) != 0) {
 		reply_err(rep, T150_ERR_DEVICE_IO);
 		return;
@@ -411,6 +502,13 @@ do_stop(struct t150_session *s, const uint8_t *payload, size_t len, int destroy,
 	}
 
 	sl->playing = 0;
+	/*
+	 * Drop whatever was waiting to be written to this slot. Nothing says
+	 * a parameter packet is inert on a stopped slot, no wheel has ever
+	 * been given one, and a pass that fired just after a stop would be
+	 * asking that question of a wheel someone is holding.
+	 */
+	sl->dirty = 0;
 	if (destroy)
 		memset(sl, 0, sizeof(*sl));
 
@@ -526,6 +624,8 @@ do_stop_all(struct t150_session *s, struct t150_reply *rep)
 			return;
 		}
 		s->slots[i].playing = 0;
+		/* As in do_stop: nothing goes to a slot that just stopped. */
+		s->slots[i].dirty = 0;
 	}
 
 	reply_ok(rep);
@@ -637,46 +737,167 @@ ramp_level(const struct t150_slot *sl, uint64_t now_ms)
 	return (int32_t)(sl->ramp.start + (span * (int64_t)elapsed) / (int64_t)total);
 }
 
+/* Forget what the wheel was believed to hold, and mean to teach it again. */
+static void
+session_forget_wheel(struct t150_session *s)
+{
+	size_t i;
+
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		memset(s->slots[i].sent, 0, sizeof(s->slots[i].sent));
+		if (s->slots[i].used)
+			s->slots[i].dirty = 1;
+	}
+}
+
+static int
+slots_dirty(const struct t150_session *s)
+{
+	size_t i;
+
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		if (s->slots[i].used && s->slots[i].dirty)
+			return 1;
+	}
+
+	return 0;
+}
+
+/*
+ * Write out what changed, newest slot state only, at most T150_EMIT_SLOTS
+ * slots and no sooner than T150_EMIT_MS after the last pass. Resumes where
+ * the previous pass stopped so a storm on the low slots cannot starve the
+ * high ones.
+ */
+static void
+session_emit(struct t150_session *s, uint64_t now_ms)
+{
+	size_t i, done = 0;
+
+	s->emit_failed = 0;
+	for (i = 0; i < T150_SLOT_MAX && done < T150_EMIT_SLOTS; i++) {
+		size_t k = (s->next_slot + i) % T150_SLOT_MAX;
+		struct t150_slot *sl = &s->slots[k];
+		int r;
+
+		if (!sl->used || !sl->dirty)
+			continue;
+
+		done++;
+		if ((r = flush_slot(s, sl)) == 0) {
+			sl->dirty = 0;
+			continue;
+		}
+
+		s->io_err = 1;
+		if (r == -1) {
+			/*
+			 * A write that failed may succeed next time, so the
+			 * slot stays dirty. What must not happen is a retry
+			 * every four milliseconds against a wheel that is not
+			 * there, so this stops the deadline shortening the
+			 * poll timeout: the retry rides on the next frame or
+			 * the next watchdog wake instead, and the client's
+			 * keepalive makes that at most 150 ms away.
+			 */
+			s->emit_failed = 1;
+			continue;
+		}
+
+		/*
+		 * An effect this build cannot encode will not encode next
+		 * time either, so the slot goes rather than being retried for
+		 * the life of the session. If it was playing then something
+		 * on the wheel is still running and only the stop ends it.
+		 */
+		if (sl->playing)
+			(void)control(s, (uint8_t)k, 0, 0);
+		memset(sl, 0, sizeof(*sl));
+	}
+
+	s->next_slot = (uint8_t)((s->next_slot + i) % T150_SLOT_MAX);
+	s->next_emit_ms = now_ms + T150_EMIT_MS;
+}
+
 unsigned int
 t150_session_tick(struct t150_session *s, uint64_t now_ms)
 {
 	unsigned int next = T150_WATCHDOG_MS;
 	uint64_t quiet;
 	size_t i;
+	int sliding = 0;
 
+	/*
+	 * The backend re-acquires the wheel on its own account, and acquiring
+	 * scrubs every slot, so from that moment what this session believes
+	 * the wheel holds is a lie. Forget it and let the pass below teach
+	 * the wheel again. Nothing replays a start: the game asked for that
+	 * before the wheel went away, and a wheel that begins pushing on its
+	 * own after a replug is not an improvement.
+	 */
+	if (s->epoch != s->be->epoch) {
+		s->epoch = s->be->epoch;
+		session_forget_wheel(s);
+	}
+
+	/*
+	 * The watchdog is evaluated before any writing this call does, which
+	 * is the honest order: the client's silence is measured against the
+	 * last frame, not against however long the wheel took afterwards.
+	 */
+	if (s->hello && s->armed) {
+		quiet = now_ms - s->last_frame_ms;
+		if (quiet >= T150_WATCHDOG_MS) {
+			t150_session_panic(s, "no frame within the watchdog");
+			return T150_WATCHDOG_MS;
+		}
+		if (next > T150_WATCHDOG_MS - (unsigned int)quiet)
+			next = T150_WATCHDOG_MS - (unsigned int)quiet;
+	}
+
+	/*
+	 * A ramp is not a wheel effect, so the daemon walks it: recompute
+	 * where it has slid to and leave that in the slot. Whether it is
+	 * worth a packet is the emitter's question, and its answer is better
+	 * than the one this used to give itself, which compared DirectInput
+	 * magnitudes and so re-sent levels that encode to the same byte.
+	 */
 	for (i = 0; i < T150_SLOT_MAX; i++) {
 		struct t150_slot *sl = &s->slots[i];
-		uint8_t pkt[PKT_MAX];
 		int32_t level;
-		size_t n;
 
 		if (!sl->used || !sl->playing ||
 		    sl->source_kind != T150_EFFECT_RAMP)
 			continue;
 
-		next = T150_RAMP_TICK_MS;
-
-		level = apply_gain(ramp_level(sl, now_ms), sl->ef.gain);
-		if (level == sl->last_level)
+		sliding = 1;
+		if (now_ms < s->next_ramp_ms)
 			continue;
 
-		sl->last_level = level;
-		sl->ef.u.constant.magnitude = level;
-		n = t150_enc_ff_update(pkt, sizeof(pkt), &sl->ef);
-		(void)emit(s, pkt, n);
+		level = apply_gain(ramp_level(sl, now_ms), sl->ef.gain);
+		if (level != sl->ef.u.constant.magnitude) {
+			sl->ef.u.constant.magnitude = level;
+			sl->dirty = 1;
+		}
 	}
+	if (sliding && now_ms >= s->next_ramp_ms)
+		s->next_ramp_ms = now_ms + T150_RAMP_TICK_MS;
 
-	if (!s->hello || !s->armed)
-		return next;
+	if (slots_dirty(s) && now_ms >= s->next_emit_ms)
+		session_emit(s, now_ms);
 
-	quiet = now_ms - s->last_frame_ms;
-	if (quiet >= T150_WATCHDOG_MS) {
-		t150_session_panic(s, "no frame within the watchdog");
-		return T150_WATCHDOG_MS;
-	}
-
-	if (next > T150_WATCHDOG_MS - (unsigned int)quiet)
-		next = T150_WATCHDOG_MS - (unsigned int)quiet;
+	/*
+	 * The timeout is the soonest thing that has to happen. Work that is
+	 * only pending does not shorten it, which is what keeps an idle
+	 * daemon sleeping until the watchdog rather than waking to find
+	 * nothing to do.
+	 */
+	if (sliding && s->next_ramp_ms > now_ms &&
+	    next > (unsigned int)(s->next_ramp_ms - now_ms))
+		next = (unsigned int)(s->next_ramp_ms - now_ms);
+	if (slots_dirty(s) && !s->emit_failed && s->next_emit_ms > now_ms &&
+	    next > (unsigned int)(s->next_emit_ms - now_ms))
+		next = (unsigned int)(s->next_emit_ms - now_ms);
 
 	return next;
 }

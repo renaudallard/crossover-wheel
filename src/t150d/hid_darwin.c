@@ -50,6 +50,12 @@ struct hid_be {
 	IOHIDManagerRef	 mgr;
 	IOHIDDeviceRef	 dev;		/* borrowed from the manager */
 	CFSetRef	 devices;	/* owns dev, released with it */
+	/*
+	 * The backend this drives, so acquire() can say that it happened.
+	 * The scrub below wipes every slot on the wheel and the session has
+	 * no other way to find that out.
+	 */
+	struct t150_backend *be;
 	uint64_t	 next_scan_ms;
 	/*
 	 * The last input open or close that passed through, replayed after a
@@ -290,6 +296,16 @@ acquire(struct hid_be *h)
 		fprintf(stderr, "t150d: could not set the wheel's input "
 		    "state\n");
 
+	/*
+	 * Say that the wheel is a new one as far as its contents go. The
+	 * scrub above emptied every slot, so a session that believes it has
+	 * already uploaded an effect is wrong from here on, and only this
+	 * tells it so. Bumped after the scrub and the input replay, so what
+	 * the session reconciles against is a wheel already in a known state.
+	 */
+	if (h->be != NULL)
+		h->be->epoch++;
+
 	if (h->verbose)
 		fprintf(stderr, "t150d: wheel %04lx:%04lx open\n", h->vid,
 		    h->pid);
@@ -394,6 +410,9 @@ t150_backend_hid(struct t150_backend *be, long vid, long pid,
 	h->pid = pid;
 	h->gap_ms = gap_ms;
 	h->verbose = verbose;
+	/* Wired before the first acquire, which bumps the epoch itself. */
+	h->be = be;
+	be->epoch = 0;
 
 	h->mgr = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
 	if (h->mgr == NULL) {

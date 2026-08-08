@@ -91,6 +91,19 @@ frame(uint8_t op, const uint8_t *payload, size_t len, uint64_t now,
 	}
 }
 
+/*
+ * Run the emitter. An upload only sets what the slot should hold, so every
+ * test that expects packets from one has to say when the daemon got round to
+ * sending them, and every test that expects none has to prove the frame
+ * itself was silent. Both halves are asserted, because expect_log("") also
+ * passes for a test that simply forgot to tick.
+ */
+static unsigned int
+tick(uint64_t now)
+{
+	return t150_session_tick(&sess, now);
+}
+
 static void
 hello(uint64_t now)
 {
@@ -206,10 +219,18 @@ test_upload_and_play(void)
 
 	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
 	    T150_ERR_NONE);
+	expect_log("an upload writes nothing by itself", "");
+	(void)tick(0);
 	expect_log("a constant uploads as three packets",
 	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
 	    "write 4: 03 0e 00 40\n"
 	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+
+	/* The same effect again is already on the wheel and costs nothing. */
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 1, T150_OP_OK,
+	    T150_ERR_NONE);
+	(void)tick(T150_EMIT_MS + 1);
+	expect_log("re-uploading an unchanged effect is silent", "");
 
 	start[0] = 0;
 	start[1] = 1;
@@ -261,6 +282,8 @@ test_gain_folding(void)
 
 	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
 	    T150_ERR_NONE);
+	expect_log("the upload itself is silent", "");
+	(void)tick(0);
 	expect_log("per-effect gain is folded into the magnitude",
 	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
 	    "write 4: 03 0e 00 20\n"
@@ -287,6 +310,8 @@ test_downgrade(void)
 
 	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
 	    T150_ERR_NONE);
+	expect_log("the upload itself is silent", "");
+	(void)tick(0);
 	expect_log("square is sent as a square",
 	    "write 9: 02 38 00 00 00 00 00 00 00\n"
 	    "write 8: 04 2a 00 7f 00 00 14 00\n"
@@ -305,8 +330,9 @@ test_ramp(void)
 
 	/*
 	 * A ramp is not in the protocol either. It goes out as a constant
-	 * that the daemon re-sends as it slides, so the upload carries the
-	 * start value and the ticks carry the rest.
+	 * that the daemon re-computes as it slides, so the first tick carries
+	 * the start value and the later ones carry the rest. Each of those is
+	 * the full set of three packets, because any difference sends the set.
 	 */
 	memset(&ef, 0, sizeof(ef));
 	ef.kind = T150_EFFECT_RAMP;
@@ -319,6 +345,8 @@ test_ramp(void)
 
 	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
 	    T150_ERR_NONE);
+	expect_log("the upload itself is silent", "");
+	(void)tick(0);
 	expect_log("a ramp uploads as a constant at its start value",
 	    "write 9: 02 54 00 00 00 00 00 00 00\n"
 	    "write 4: 03 46 00 00\n"
@@ -337,16 +365,22 @@ test_ramp(void)
 	frame(T150_OP_KEEPALIVE, NULL, 0, 1500, T150_OP_OK, T150_ERR_NONE);
 
 	/* Halfway along, the level is halfway between the two ends. */
-	(void)t150_session_tick(&sess, 1500);
-	expect_log("a ramp slides", "write 4: 03 46 00 20\n");
+	(void)tick(1500);
+	expect_log("a ramp slides",
+	    "write 9: 02 54 00 00 00 00 00 00 00\n"
+	    "write 4: 03 46 00 20\n"
+	    "write 15: 01 02 00 40 e8 03 00 00 00 46 00 54 00 00 00\n");
 
 	/* Past the end it holds, rather than wrapping back to the start. */
 	frame(T150_OP_KEEPALIVE, NULL, 0, 2500, T150_OP_OK, T150_ERR_NONE);
-	(void)t150_session_tick(&sess, 2500);
-	expect_log("a ramp holds at its end", "write 4: 03 46 00 40\n");
+	(void)tick(2500);
+	expect_log("a ramp holds at its end",
+	    "write 9: 02 54 00 00 00 00 00 00 00\n"
+	    "write 4: 03 46 00 40\n"
+	    "write 15: 01 02 00 40 e8 03 00 00 00 46 00 54 00 00 00\n");
 
 	frame(T150_OP_KEEPALIVE, NULL, 0, 2600, T150_OP_OK, T150_ERR_NONE);
-	(void)t150_session_tick(&sess, 2600);
+	(void)tick(2600);
 	expect_log("a finished ramp stops writing", "");
 }
 
@@ -423,6 +457,8 @@ test_gain_reaches_conditions(void)
 
 	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
 	    T150_ERR_NONE);
+	expect_log("the upload itself is silent", "");
+	(void)tick(100);
 
 	/*
 	 * Half gain, so the coefficients land at half of 100 and the
@@ -623,6 +659,346 @@ test_panic_paths(void)
 	    "write 4: 40 04 00 00\n");
 }
 
+/* ------------------------------------------------------------------ */
+/* The emitter: what is coalesced, what is not, and what it costs. */
+
+/* Fill a plain infinite constant, which is what most of these need. */
+static void
+constant(struct t150_effect *ef, uint8_t slot, int32_t magnitude)
+{
+	memset(ef, 0, sizeof(*ef));
+	ef->kind = T150_EFFECT_CONSTANT;
+	ef->slot = slot;
+	ef->duration = T150_DURATION_INFINITE;
+	ef->direction = 9000;
+	ef->gain = T150_DI_MAX;
+	ef->u.constant.magnitude = magnitude;
+}
+
+static void
+upload_at(struct t150_effect *ef, uint64_t now)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, ef), now, T150_OP_OK,
+	    T150_ERR_NONE);
+}
+
+/*
+ * A change too small to reach the wire is not a change. The constant's level
+ * is one signed byte, so sixty four DirectInput magnitudes share each value,
+ * and a comparison of effect structs rather than of encoded bytes would send
+ * a packet the wheel cannot tell from the one it already has.
+ */
+static void
+test_subwire_change_is_silent(void)
+{
+	struct t150_effect ef;
+
+	reset_session();
+	hello(0);
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+	drain_log();
+
+	ef.u.constant.magnitude = 9990;
+	upload_at(&ef, 10);
+	(void)tick(10);
+	expect_log("a magnitude that encodes to the same byte is silent", "");
+
+	/* One that does reach the wire still goes. */
+	ef.u.constant.magnitude = 5000;
+	upload_at(&ef, 20);
+	(void)tick(20);
+	expect_log("a magnitude that does reach the wire is sent",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 20\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+}
+
+/*
+ * A stop cancels whatever was waiting for that slot. Nothing establishes that
+ * a parameter packet is inert on a stopped slot, and a pass firing just after
+ * a stop would be asking that of a wheel someone is holding.
+ */
+static void
+test_stop_drops_pending_state(void)
+{
+	struct t150_effect ef;
+	uint8_t start[2];
+
+	reset_session();
+	hello(0);
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+	drain_log();
+
+	ef.u.constant.magnitude = 5000;
+	upload_at(&ef, 1);
+	frame(T150_OP_EFFECT_STOP, start, 1, 2, T150_OP_OK, T150_ERR_NONE);
+	expect_log("the stop itself goes out at once", "write 4: 41 00 00 01\n");
+
+	(void)tick(2 + T150_EMIT_MS);
+	expect_log("and nothing follows it to a stopped slot", "");
+}
+
+/*
+ * The emitter is a floor on the interval between passes, not a timer. With
+ * nothing to send it must arm nothing, or the daemon would wake 250 times a
+ * second to discover there is no work.
+ */
+static void
+test_idle_tick_returns_the_watchdog(void)
+{
+	struct t150_effect ef;
+	unsigned int wait;
+
+	reset_session();
+	hello(0);
+
+	wait = tick(0);
+	if (wait != T150_WATCHDOG_MS)
+		fail("an idle tick sleeps until the watchdog");
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+	drain_log();
+
+	wait = tick(1);
+	if (wait <= T150_EMIT_MS)
+		fail("a tick with nothing dirty still sleeps");
+	if (wait != T150_WATCHDOG_MS - 1)
+		fail("an idle tick sleeps until the watchdog, less the quiet time");
+}
+
+/* Two uploads inside one emit period cost one pass, carrying the newer one. */
+static void
+test_emit_rate_is_bounded(void)
+{
+	struct t150_effect ef;
+
+	reset_session();
+	hello(0);
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+	drain_log();
+
+	ef.u.constant.magnitude = 5000;
+	upload_at(&ef, 1);
+	(void)tick(1);
+	expect_log("a second pass inside the emit period is held", "");
+
+	ef.u.constant.magnitude = 2500;
+	upload_at(&ef, 2);
+	(void)tick(T150_EMIT_MS);
+	expect_log("and the pass that follows carries only the newest value",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 10\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+}
+
+/*
+ * A game updating faster than the emit period has the superseded values
+ * dropped rather than queued, which is the point: the wheel holds one value
+ * per slot and the ones in between could not have been felt.
+ *
+ * Assetto Corsa's physics runs at 333 Hz, one update every three
+ * milliseconds, which is faster than the four millisecond floor, so roughly
+ * every other update is superseded and the wheel sees about 250 Hz.
+ */
+static void
+test_updates_faster_than_the_emit_period_are_coalesced(void)
+{
+	struct t150_effect ef;
+
+	reset_session();
+	hello(0);
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+	drain_log();
+
+	/* Three milliseconds later, inside the floor: held, not queued. */
+	ef.u.constant.magnitude = 7500;
+	upload_at(&ef, 3);
+	(void)tick(3);
+	expect_log("an update inside the emit period waits", "");
+
+	/* Six milliseconds: the pass runs and carries only the newest. */
+	ef.u.constant.magnitude = 5000;
+	upload_at(&ef, 6);
+	(void)tick(6);
+	expect_log("and the superseded value is dropped, not sent late",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 20\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+
+	/* Slower than the floor, and nothing is coalesced at all. */
+	ef.u.constant.magnitude = 2500;
+	upload_at(&ef, 20);
+	(void)tick(20);
+	expect_log("an update slower than the emit period goes straight out",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 10\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+}
+
+static int write_fails;
+static int (*real_write)(void *priv, const uint8_t *buf, size_t len);
+
+/* The fake backend, with a switch for refusing every write. */
+static int
+failing_write(void *priv, const uint8_t *buf, size_t len)
+{
+	if (write_fails)
+		return -1;
+
+	return real_write(priv, buf, len);
+}
+
+/*
+ * A wheel that refuses every write must not turn the poll timeout into a
+ * spin. The slot stays dirty so the state is not lost, but the retry rides on
+ * the next frame or the next watchdog wake rather than on a four millisecond
+ * deadline.
+ */
+static void
+test_write_failure_does_not_pin_the_poll_loop(void)
+{
+	struct t150_effect ef;
+	unsigned int wait;
+
+	reset_session();
+	hello(0);
+	drain_log();
+
+	write_fails = 1;
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	wait = tick(0);
+	write_fails = 0;
+
+	if (wait <= T150_EMIT_MS)
+		fail("a failed pass must not shorten the poll timeout");
+	drain_log();
+
+	/* The state survived, so the next pass sends it. */
+	frame(T150_OP_KEEPALIVE, NULL, 0, 100, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(100);
+	expect_log("a failed write is retried in full, not lost",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 40\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+}
+
+/*
+ * The write happens after the frame that caused it has been answered, so a
+ * device error has nowhere to go but the next upload. It is reported there
+ * and on nothing else: the proxy drops its socket on an error reply to a
+ * keepalive and nothing reconnects, so that would cost the game its force
+ * feedback for the life of the process.
+ */
+static void
+test_device_error_is_reported_on_the_next_upload(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+
+	reset_session();
+	hello(0);
+	drain_log();
+
+	write_fails = 1;
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+	write_fails = 0;
+
+	/* A keepalive in between says nothing about it. */
+	frame(T150_OP_KEEPALIVE, NULL, 0, 10, T150_OP_OK, T150_ERR_NONE);
+
+	ef.u.constant.magnitude = 5000;
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 20, T150_OP_ERROR,
+	    T150_ERR_DEVICE_IO);
+
+	/*
+	 * The frame that carried the bad news is not also the frame that got
+	 * thrown away: its state was stored before the error was answered.
+	 */
+	drain_log();
+	(void)tick(20 + T150_EMIT_MS);
+	expect_log("the upload that reported the error still took effect",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 20\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+
+	/* Reported once, not on every upload afterwards. */
+	ef.u.constant.magnitude = 2500;
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 30, T150_OP_OK,
+	    T150_ERR_NONE);
+}
+
+/*
+ * Re-acquiring the wheel scrubs every slot, and the session has no other way
+ * to learn that. Without the epoch the coalescer would go on suppressing an
+ * upload it believes the wheel already has, and a replugged wheel would stay
+ * empty for the rest of the session with nothing said anywhere.
+ */
+static void
+test_backend_epoch_reuploads_everything(void)
+{
+	struct t150_effect ef;
+	uint8_t start[2];
+
+	reset_session();
+	hello(0);
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+	drain_log();
+
+	/* The same upload again changes nothing and writes nothing. */
+	upload_at(&ef, 10);
+	(void)tick(10);
+	expect_log("nothing to say before the wheel is re-acquired", "");
+
+	be.epoch++;
+	frame(T150_OP_KEEPALIVE, NULL, 0, 20, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(20);
+	expect_log("a re-acquired wheel is taught the effect again",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 40\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+
+	/*
+	 * The start is not replayed. The game asked for that before the wheel
+	 * went away, and a wheel that begins pushing on its own after a
+	 * replug is not an improvement.
+	 */
+	be.epoch++;
+	frame(T150_OP_KEEPALIVE, NULL, 0, 30, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(30);
+	drain_log();
+	frame(T150_OP_KEEPALIVE, NULL, 0, 40, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(40);
+	expect_log("and no play packet is invented for it", "");
+}
+
 int
 main(void)
 {
@@ -634,6 +1010,13 @@ main(void)
 		fprintf(stderr, "daemon_check: cannot open the fake backend\n");
 		return 1;
 	}
+	/*
+	 * Everything goes through the wrapper, which is transparent until a
+	 * test asks it to refuse. That is how a device error is provoked
+	 * without a device.
+	 */
+	real_write = be.write;
+	be.write = failing_write;
 
 	test_handshake();
 	test_settings();
@@ -647,6 +1030,14 @@ main(void)
 	test_session_end_closes_the_input();
 	test_gain_reaches_conditions();
 	test_panic_paths();
+	test_subwire_change_is_silent();
+	test_stop_drops_pending_state();
+	test_idle_tick_returns_the_watchdog();
+	test_emit_rate_is_bounded();
+	test_updates_faster_than_the_emit_period_are_coalesced();
+	test_write_failure_does_not_pin_the_poll_loop();
+	test_device_error_is_reported_on_the_next_upload();
+	test_backend_epoch_reuploads_everything();
 
 	(void)fclose(logfp);
 	free(logbuf);

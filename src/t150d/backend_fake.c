@@ -49,6 +49,8 @@ t150_backend_fake(struct t150_backend *be, FILE *fp)
 	be->write = fake_write;
 	be->close = NULL;
 	be->priv = fp;
+	/* Nothing here ever re-acquires anything, so this never moves. */
+	be->epoch = 0;
 
 	return 0;
 }

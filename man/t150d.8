@@ -1,4 +1,4 @@
-.Dd August 1, 2026
+.Dd August 8, 2026
 .Dt T150D 8
 .Os
 .Sh NAME
@@ -58,7 +58,10 @@ wants, so this exists to put the pause back if a real wheel asks for it.
 .Pp
 It is capped at 50 milliseconds because it delays the safe state, which is up
 to eighteen packets, and the watchdog is meant to have the wheel limp within
-half a second of a game going quiet.
+half a second of a game going quiet. It composes with the emitter rather than
+replacing it: the emitter bounds how often a pass runs and this bounds how
+long one takes, so a large gap lengthens a pass and therefore the interval
+between watchdog evaluations.
 .It Fl n
 Drive nothing. Print every packet that would have gone to the wheel instead,
 in the form
@@ -75,6 +78,40 @@ Log connections, effect downgrades and every entry into the safe state.
 Each connection is named by the port it came from, and whether its token was
 accepted is logged too, so two connections can be told apart in a report.
 .El
+.Sh THE EMITTER
+Effect parameters are state and are coalesced; everything else is an event
+and is not.
+.Pp
+An
+.Dv EFFECT_UPLOAD
+records what the slot should hold and is answered at once. A pass then puts
+it on the wheel, and a pass runs at most once every 4 milliseconds. A game
+that updates a force faster than that has the superseded values dropped
+rather than queued, because the wheel holds one value per slot and an
+intermediate value was replaced before it could be felt. A game that
+re-sends an effect it has not changed writes nothing at all: each slot keeps
+the exact bytes it last put on the wire and a pass compares against them.
+.Pp
+Any difference sends all three packets rather than the one that moved. The
+three correlate through slot keys and the only sequence measured on hardware
+is all three together, so the cheaper thing waits for a measurement.
+.Pp
+Starts, stops, destroys, resets, stop-all, the three settings, the input open
+on hello, the watchdog, the safe state and shutdown are written the moment
+they arrive and are never merged or deferred. A stop also drops whatever was
+waiting for that slot, so no parameter packet follows an effect that has just
+been stopped.
+.Pp
+Because the write happens after the frame that caused it has been answered, a
+device error is reported on the next
+.Dv EFFECT_UPLOAD
+and on nothing else. It is not reported on a keepalive: the proxy drops its
+connection on any error reply and nothing reconnects, so one absent wheel
+would cost a game its force feedback for the life of the process.
+.Pp
+Re-acquiring the wheel scrubs every slot, so the backend says when that has
+happened and the next pass teaches the wheel every effect again. No start is
+replayed with them: the game asked for that before the wheel went away.
 .Sh THE ENDPOINT FILE
 .Nm
 binds an ephemeral port and writes two lines, the port and a per-run token:
@@ -121,9 +158,11 @@ downgrades those rather than refusing them, because a game that gets
 from
 .Fn CreateEffect
 may switch force feedback off altogether: friction and inertia become damper,
-and a ramp becomes a constant that
+and a ramp becomes a constant whose level
 .Nm
-re-sends as it slides.
+re-computes every 20 milliseconds as it slides. Whether a recomputed level is
+worth a packet is the emitter's question, so a slide that does not move the
+level far enough to change a byte on the wire sends nothing.
 .Pp
 A per-effect gain has no equivalent on the wheel, which has one device gain,
 so it is folded into the effect's magnitude before encoding.
@@ -157,3 +196,9 @@ Springs, envelopes, ramps and per-effect gain are arithmetic derived from
 a Linux driver, and now checked against Thrustmaster's own Windows driver
 field by field, so the bytes are right even though nobody has felt those
 effects on a wheel.
+.Pp
+The emitter has never run against a wheel either. The bytes it puts on the
+wire are the same ones the previous code sent and the tests check them
+exactly, but whether a wheel notices the difference between an update every
+3 milliseconds and one every 4, and whether it prefers the reduced traffic,
+are questions only hardware answers.

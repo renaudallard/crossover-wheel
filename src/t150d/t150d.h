@@ -31,6 +31,15 @@ struct t150_backend {
 	int		(*write)(void *priv, const uint8_t *buf, size_t len);
 	void		(*close)(void *priv);
 	void		 *priv;
+	/*
+	 * Bumped every time the backend re-acquires the wheel. Acquiring
+	 * scrubs every slot and the session has no other way to learn that,
+	 * so this is what tells it to forget what it believes the wheel
+	 * holds. Without it a wheel unplugged and replugged mid-race stays
+	 * empty for the rest of the session, silently, because the session
+	 * would go on suppressing an upload it thinks the wheel already has.
+	 */
+	unsigned int	 epoch;
 };
 
 /* The logging backend, which drives nothing and records everything. */
@@ -50,29 +59,76 @@ int	t150_backend_hid(struct t150_backend *be, long vid, long pid,
 
 /*
  * A ramp is not in the wheel's protocol, so it is sent as a constant that
- * the daemon re-sends as it slides. This is how often it does that.
+ * the daemon re-computes as it slides. This is how often it does that, and
+ * it is a recompute rather than a write: what the recompute changes is the
+ * slot's desired state, and the emitter below decides whether that is worth
+ * a packet.
  */
 #define T150_RAMP_TICK_MS	20u
+
+/*
+ * The shortest gap between two emission passes, measured from the end of the
+ * last one. This is a floor on the interval and not a timer: a tick with
+ * nothing to send arms nothing and sleeps until the watchdog, so an idle
+ * daemon still wakes twice a second rather than 250 times.
+ *
+ * A game updating one effect faster than this has its updates coalesced to
+ * the newest, which is what it would have wanted: the wheel holds one value
+ * per slot, so an intermediate value was superseded before it could have
+ * been felt. Assetto Corsa's physics runs at 333 Hz, one update every three
+ * milliseconds, so about every other update is superseded and the wheel sees
+ * roughly 250 Hz of a signal whose own bandwidth is lower again.
+ *
+ * Four milliseconds rather than the two a 500 Hz emitter would use, because
+ * nothing here has ever measured what packet rate this wheel sustains and
+ * every hardware run on record was paced slower. Raise it when a measurement
+ * says it can be raised, and expect the argument for raising it to be a
+ * driver who can feel the difference rather than a number that looks better.
+ */
+#define T150_EMIT_MS		4u
+
+/*
+ * The most slots one pass will write. Sixteen dirty slots at three packets
+ * each is a burst long enough to matter, and the pass resumes where it left
+ * off, so this bounds a pass without starving anything.
+ */
+#define T150_EMIT_SLOTS		4u
+
+/* Every packet the daemon builds fits in this. */
+#define T150_PKT_MAX		16u
+
+/* One packet exactly as it went out, for deciding whether it need go again. */
+struct t150_wire {
+	uint8_t	len;			/* 0 when nothing has been sent yet */
+	uint8_t	buf[T150_PKT_MAX];
+};
 
 struct t150_slot {
 	uint8_t			used;
 	uint8_t			playing;
 	uint8_t			source_kind;	/* what the game asked for */
 	uint8_t			iterations;
+	uint8_t			dirty;		/* desired state is not on the wheel */
 	uint64_t		started_ms;
-	int32_t			last_level;	/* last sliced ramp level */
 	struct t150_ramp	ramp;		/* kept for the slicing */
-	struct t150_effect	ef;		/* downgraded, as sent */
+	struct t150_effect	ef;		/* downgraded, as desired */
+	struct t150_wire	sent[3];	/* first, update and commit as sent */
 };
 
 struct t150_session {
 	struct t150_backend	*be;
 	struct t150_slot	 slots[T150_SLOT_MAX];
 	uint64_t		 last_frame_ms;
+	uint64_t		 next_emit_ms;	/* no emission pass before this */
+	uint64_t		 next_ramp_ms;	/* no ramp recompute before this */
+	unsigned int		 epoch;		/* the backend epoch we believe */
 	int			 hello;
 	int			 armed;		/* the wheel may be holding a force */
 	int			 input_open;	/* we opened the wheel's input and owe it a close */
 	int			 verbose;
+	uint8_t			 next_slot;	/* where the next pass resumes */
+	uint8_t			 io_err;	/* a write failed, owed to the next upload */
+	uint8_t			 emit_failed;	/* last pass failed, do not spin on it */
 	unsigned		 peer_port;	/* which connection this is, for the log */
 	char			 token[T150_TOKEN_LEN + 1];
 };
@@ -96,8 +152,14 @@ int	t150_session_frame(struct t150_session *s, uint8_t op,
 	    struct t150_reply *rep);
 
 /*
- * Slide any running ramp and fire the watchdog if the client has gone quiet.
- * Returns how many milliseconds may pass before it needs calling again.
+ * Reconcile against the backend, fire the watchdog if the client has gone
+ * quiet, slide any running ramp into its slot's desired state, and put on the
+ * wheel whatever changed since the last pass. This is the only place effect
+ * parameters reach the wheel: a frame sets what is wanted and this decides
+ * when it goes.
+ *
+ * Returns how many milliseconds may pass before it needs calling again, which
+ * is the watchdog remainder whenever there is nothing to send.
  */
 unsigned int t150_session_tick(struct t150_session *s, uint64_t now_ms);
 

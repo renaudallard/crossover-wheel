@@ -248,6 +248,12 @@ every multi-byte field is little-endian.
 Each effect uploads as three packets, sent on the interrupt OUT endpoint in
 this order. `slot` below is the driver's `effect->id`.
 
+The three are always sent together. The second block's key depends only on
+the slot, so re-sending `ff_update` alone to change a level ought to work and
+would be cheaper, but no capture from either driver shows a wheel being given
+one, so `t150d` does not do it. What it does instead is send nothing when
+nothing changed, which needs no assumption about the wheel at all.
+
 **1. `ff_first`, 9 bytes, or 11 for a condition.** Envelope and the first slot
 key.
 

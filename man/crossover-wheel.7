@@ -1,4 +1,4 @@
-.Dd August 4, 2026
+.Dd August 8, 2026
 .Dt CROSSOVER-WHEEL 7
 .Os
 .Sh NAME
@@ -93,6 +93,13 @@ risks a game disabling force feedback altogether, so the daemon downgrades
 them instead: friction and inertia to damper, and ramp to a time-sliced
 constant. Square and triangle were downgraded to sine until the vendor's
 driver gave their type codes.
+.Pp
+The daemon does not write to the wheel from the frame that arrives. A frame
+records what a slot should hold and a pass, at most one every 4 milliseconds,
+sends whatever differs from the bytes that slot last put on the wire. Only
+effect parameters are treated that way: starts, stops, settings and every
+path that makes the wheel safe go out at once. See
+.Xr t150d 8 .
 .Pp
 Nothing in this stack learns that a game has exited: Wine's
 .Pa hidclass.sys

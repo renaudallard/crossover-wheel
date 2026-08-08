@@ -94,6 +94,23 @@ DirectInput 8, the bus driver is the escalation, not the starting point.
 The proxy is ordinary user-mode code, so an effect update is a COM call plus
 a loopback socket write, with no wineserver round trip and no IRP path.
 
+The daemon does not write to the wheel from the frame that arrives. A frame
+records what a slot should hold, and a pass sends whatever differs from the
+bytes that slot last put on the wire. A pass runs at most once every
+`T150_EMIT_MS`, so a game updating faster than that has the superseded values
+dropped rather than queued: the wheel holds one value per slot and an
+intermediate one was replaced before it could be felt. The worst case a game
+pays is one emit period of added latency.
+
+Only effect parameters are coalesced, because they are state. Starts, stops,
+resets, the settings and every path that makes the wheel safe are events, go
+out the moment they arrive, and are never merged. A stop drops whatever was
+waiting for its slot, so nothing follows an effect that has just stopped.
+
+The split is also why the watchdog is honest: it is evaluated before any
+writing the same pass does, so a client's silence is measured against its
+last frame rather than against however long the wheel took afterwards.
+
 Nothing in the stack learns that a game exited. A crashed or force-quit game
 sends no reset, which would leave the last commanded force latched on a wheel
 that pulls hard. The daemon therefore treats silence as a fault: see
@@ -117,8 +134,9 @@ docs/             HANDOFF.md, RESEARCH.md, PROBES.md, PROTOCOL.md, this file
 
 The daemon is split so that `session.c` holds every rule and touches neither
 a socket nor a clock: it is handed a frame and the current time. That is what
-lets the watchdog and the ramp slicer be tested in simulated time rather than
-by sleeping, and it keeps the part that has to be right small enough to read.
+lets the watchdog, the ramp slicer and the emitter's rate cap be tested in
+simulated time rather than by sleeping, and it keeps the part that has to be
+right small enough to read.
 
 ## Status
 

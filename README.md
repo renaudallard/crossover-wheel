@@ -132,7 +132,10 @@ so `make test` checks every byte they produce against vectors derived from
 The daemon is complete except for the part that touches a wheel. It listens,
 speaks the protocol, keeps the slot table, downgrades the effects the wheel
 cannot render, slides ramps, and runs the watchdog; the packets go to a log
-rather than to hardware. That is enough to drive the whole stack from a test
+rather than to hardware. A frame sets what a slot should hold and a
+rate-limited pass puts on the wheel whatever actually changed, so a game
+re-sending an effect it has not touched costs a comparison rather than three
+writes. That is enough to drive the whole stack from a test
 without a Mac, which is what `socket_check` does, including holding a socket
 open and going quiet to prove the wheel gets released.
 
@@ -207,8 +210,11 @@ That is the last thing between this and something a person could just use.
 
 **5. Robustness, then a real game.** Reconnect on both ends, hot plug, and
 the watchdog under real crash conditions. Measure the latency and jitter of
-the whole path under Rosetta while you are there: a wheel wants updates near
-500 Hz and nobody has measured it.
+the whole path under Rosetta while you are there. The daemon now caps itself
+at one emission every 4 ms and sends only what changed, so what is still
+unmeasured is narrower than it was: whether this wheel sustains that rate,
+and whether a driver can feel the difference between that cap and a faster
+one.
 
 Later, and not blocking: an ARM64EC build for CrossOver 27's bottles, an
 installer that does the bottle setup in one step, and optionally an SCS
@@ -361,6 +367,21 @@ looking and picks one up when it appears.
 `-n` drives nothing and prints every packet instead, in the same form
 `probe_setreport` prints, so the two can be compared directly. That is the
 only behaviour anywhere but macOS.
+
+**An upload is answered when it is accepted, not when it reaches the wheel.**
+The daemon keeps what each slot should hold and writes it out from a pass
+that runs at most once every 4 ms, so a game updating a force faster than
+that has the superseded values dropped rather than queued, and a game
+re-sending an effect it has not changed writes nothing at all. Only effect
+parameters are treated this way. Starts, stops, resets, the settings and
+every path that makes the wheel safe are written the moment they arrive and
+are never merged, because those are things that happen rather than values
+that hold. A write that fails is reported on the next upload, which is the
+only frame that can carry it: an error answered to a keepalive would make the
+proxy drop its connection, and nothing reconnects.
+
+One consequence is visible in `-n`: a steady force prints three lines and
+then nothing, where it used to print three per update.
 
 **A client connecting opens the wheel's input and disconnecting closes it.**
 The firmware renders no effect while no input is open, which is what
