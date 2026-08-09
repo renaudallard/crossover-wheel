@@ -83,9 +83,18 @@ No game can ask for this. DirectInput has no property for wheel rotation, so
 on Windows the number is set in the vendor's control panel and a game merely
 assumes the wheel is already at the one in its settings. A game asking for
 900 degrees therefore reaches nothing here, and its steering is scaled for a
-range the wheel is not at. This option is that control panel;
-.Xr t150ctl 1
-sets the same thing by hand, but does not survive a replug.
+range the wheel is not at.
+.Pp
+.Sy Do not use this with a game .
+That reasoning was backwards and hardware said so. A game sends the maximum
+range and scales its steering for it, so a wheel quietly set to 900 underneath
+one is a wheel whose steering no longer matches what the game believes, which
+is worse than leaving it alone. Setting a range is a thing to do deliberately,
+by hand, with
+.Xr t150ctl 1 ,
+for driving without a game or for a game that is known to want it. This
+option exists for that case and for scripting it; it is not a default and
+should not be treated as one.
 .It Fl v
 Log connections, effect downgrades, every entry into the safe state, and each
 device setting as it is written, so a report can say whether the gain and the

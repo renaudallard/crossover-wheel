@@ -386,8 +386,15 @@ says so with `DIPROP_FFGAIN`, and `t150ctl gain` still overrides it by hand.
 has no property for wheel rotation: on Windows it is set in the vendor's
 control panel and the game assumes the wheel is already there, so a game
 whose settings say 900 degrees reaches nothing and scales its steering for a
-range the wheel is not at. `t150d -r 900` sets it whenever a client takes the
-wheel, and again after a replug. `t150ctl range 900` still does it by hand.
+range the wheel is not at.
+
+**Do not use `-r` with a game.** That reasoning was backwards and hardware
+said so: a game sends the maximum range and scales its own steering for it, so
+a wheel quietly set to 900 underneath one steers differently from what the
+game believes, which is worse than leaving it alone. `t150ctl range 900` by
+hand, deliberately, is where this belongs. It is the same mistake
+[`docs/RESEARCH.md`](docs/RESEARCH.md) A41 records about correcting pedals
+unasked.
 
 **An upload is answered when it is accepted, not when it reaches the wheel.**
 The daemon keeps what each slot should hold and writes it out from a pass
