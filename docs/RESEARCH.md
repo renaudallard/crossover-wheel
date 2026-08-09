@@ -907,8 +907,21 @@ the wheel at all.** Test 15.
   over the still-playing `0x4021` and the motion ceased: a type that
   replaces a running effect and produces no force is a type the firmware
   does not render.
-- **The shipped range change is felt.** `range 270` then `range 1080`,
-  "both runs perfectly", which closes question 6b's last outcome.
+- **WITHDRAWN: "the shipped range change is felt".** This entry claimed
+  `range 270` then `range 1080`, "both runs perfectly", closed question
+  6b's last outcome. It did not, and the same paragraph six lines above
+  had listed an isolated, felt `range 270` as the thing still untried.
+  The two commands were sent back to back, so the 270 was overwritten by
+  the 1080 before anybody turned the wheel, and "both runs perfectly"
+  reads at least as naturally as the commands exiting cleanly. Test 14
+  ran the identical pair and drew "nothing to see". Test 31 set 270, 900
+  and 1080 in a game and reported no change from any of them.
+
+  **Nobody has ever felt a rotation range on this wheel, through any
+  path.** `README.md`'s line, "the range change has run but nobody felt
+  it yet", was the accurate one all along. What an isolated felt 270
+  would establish is still open, and until it is, nothing should be built
+  on the assumption that the range reaches the wheel at all.
 - The regsvr32 chain-load check passed again after re-copying the builtin.
 
 **The blocker moved.** With the daemon on `-n` and on its real backend,
