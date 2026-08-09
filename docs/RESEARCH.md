@@ -1253,6 +1253,25 @@ report mentions a warning about 100 percent CPU. That is Assetto Corsa's
 own "CPU OCCUPANCY > 99%" banner and it is visible in every frame of the
 video recorded during test 20, before any of these changes, so it is the
 game under CrossOver on Rosetta rather than anything this project does.
+
+**This dismissal is too broad, and test 32 showed how.** Asked whether
+the banner appears with a gamepad instead of the wheel, in the same game
+on the same machine, the tester's answer was that it does not: "the 99%+
+CPU usage issue doesn't happen when I play with a controller, so it must
+be caused by the wheel, the daemon, or a related process". It also
+appears in Assetto Corsa Competizione. So the banner is the game's, and
+the game is under Rosetta, but something in the wheel path is what tips
+it over, and this entry has twice been quoted as though it closed the
+question. It closes only test 20's instance of it.
+
+What has never been measured is which process the time goes to while the
+wheel is in use. Test 30's `top` put `AssettoCorsa.exe` at 85.5 percent
+and `t150d` at 3.3, which rules out the daemon and rules in nothing else;
+its `sample` capture was of the wrong process on the wrong run and cannot
+be read. The second clause below is separately stale: `T150_DEBUG` and
+`T150_LOG` now write a line per `GetCapabilities` and a line per refused
+op, which in test 30 was 84146 lines into the game's own address space.
+
 The proxy's per-poll work is a two-value swap, and its log file is written
 at connect and wrap only, six lines in a whole session.
 
