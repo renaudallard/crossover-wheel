@@ -114,9 +114,16 @@ main(void)
 {
 	/* 1080 degrees is full scale, everything else scales linearly. */
 	expect_range(0, 0x0000);
-	expect_range(270, 16383);
+	/*
+	 * The three the vendor's driver carries as literals, taken from it
+	 * rather than computed. 900 is the one the scaling gets wrong: it is
+	 * exactly half a part of 0xffff and truncating loses it.
+	 */
+	expect_range(270, 0x3fff);
+	expect_range(360, 0x5555);
+	expect_range(900, 0xd555);
+	/* Everything else is still scaled, because nothing measured it. */
 	expect_range(540, 32767);
-	expect_range(900, 54612);
 	expect_range(1080, 0xffff);
 
 	/* Anything above the hardware maximum clamps rather than wrapping. */

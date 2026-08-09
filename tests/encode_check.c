@@ -73,8 +73,9 @@ test_settings(void)
 
 	CHECK("range 270", b, t150_enc_range(b, sizeof(b), 270),
 	    0x40, 0x11, 0xff, 0x3f);
+	/* The vendor's own token for 900, not the scaling's 0xd554. */
 	CHECK("range 900", b, t150_enc_range(b, sizeof(b), 900),
-	    0x40, 0x11, 0x54, 0xd5);
+	    0x40, 0x11, 0x55, 0xd5);
 	CHECK("range 1080", b, t150_enc_range(b, sizeof(b), 1080),
 	    0x40, 0x11, 0xff, 0xff);
 

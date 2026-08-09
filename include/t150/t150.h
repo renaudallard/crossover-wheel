@@ -12,6 +12,7 @@
 #ifndef T150_H
 #define T150_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 /*
@@ -282,12 +283,47 @@ t150_ff_pk_id1(unsigned int slot)
 #define T150_RANGE_MIN		270u
 #define T150_RANGE_MAX		1080u
 
-/* Scale a rotation range in degrees to the wheel's 16-bit argument. */
+/*
+ * Scale a rotation range in degrees to the wheel's 16-bit argument.
+ *
+ * The vendor does not scale. Its driver switches on six discrete ranges and
+ * stores a literal token for each beside the degrees it means, which is what
+ * `mov eax, 0xd555` followed by `mov [rsi+0x68c], 0x384` is at 0x14004a8f5:
+ * the token and 900. The three tokens that appear as literals rather than
+ * through a register are 0x3fff for 270, 0x5555 for 360 and 0xd555 for 900.
+ *
+ * The scaling below agrees with two of those and misses the third: 900 is
+ * exactly 54612.5 parts of 0xffff and truncating gives 0xd554 where the
+ * vendor sends 0xd555. Rounding instead would fix 900 and break 270, whose
+ * exact value is 16383.75 against the vendor's 16383. So neither is the
+ * vendor's rule, and the table is.
+ *
+ * The table wins for a range the vendor names, because a firmware that
+ * dispatches on equality would see 0xd554 as no range at all rather than as
+ * one a fraction of a degree out, and 900 is the range people ask for. The
+ * scaling stays for anything else, because refusing a number the wheel might
+ * well accept is worse than approximating it, and nothing has measured which
+ * it does. Whether the firmware takes anything but the six is unknown.
+ */
 static inline uint16_t
 t150_range_arg(unsigned int degrees)
 {
+	static const struct {
+		unsigned int	degrees;
+		uint16_t	arg;
+	} vendor[] = {
+		{ 270, 0x3fffu }, { 360, 0x5555u }, { 900, 0xd555u }
+	};
+	size_t i;
+
 	if (degrees > T150_RANGE_MAX)
 		degrees = T150_RANGE_MAX;
+
+	for (i = 0; i < sizeof(vendor) / sizeof(vendor[0]); i++) {
+		if (vendor[i].degrees == degrees)
+			return vendor[i].arg;
+	}
+
 	return (uint16_t)(((uint32_t)degrees * 0xffffu) / T150_RANGE_MAX);
 }
 

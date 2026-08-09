@@ -231,7 +231,18 @@ The driver's force feedback path has a second, three-byte form,
 `struct ff_change_gain { uint8_t f0; uint16_t gain; }` giving
 `[0x43, lo, hi]`. No capture contains it and this project does not send it.
 
-Rotation range is clamped to 270..1080 by `t150_driver` before scaling. This
+Rotation range is clamped to 270..1080 by `t150_driver` before scaling. The
+vendor's own driver does not scale at all: it switches on six discrete ranges
+and stores a literal token beside the degrees it means. At `0x14004a8f5` in
+`tmHidUsb.sys` that pair is `mov eax, 0xd555` and then `mov [rsi+0x68c],
+0x384`, which is 900. The three tokens visible as literals are `0x3fff` for
+270, `0x5555` for 360 and `0xd555` for 900.
+
+The Linux driver's scaling agrees with two of those and misses the third: 900
+is exactly 54612.5 parts of `0xffff`, and truncating gives `0xd554`. Rounding
+instead would fix 900 and break 270. So `t150_range_arg` carries the vendor's
+tokens for the ranges the vendor names and scales anything else, and whether
+the firmware accepts a range outside the six is not known. This
 document previously attributed that clamp to the firmware, which the driver
 source does not support and no measurement here has tested. The scaling in
 `t150_range_arg()` is checked against recorded values in

@@ -213,7 +213,7 @@ test_settings(void)
 
 	put_u32(arg, 900);
 	frame(T150_OP_SET_RANGE, arg, 4, 0, T150_OP_OK, T150_ERR_NONE);
-	expect_log("range", "write 4: 40 11 54 d5\n");
+	expect_log("range", "write 4: 40 11 55 d5\n");
 
 	/* A truncated payload is a frame error, not a zero argument. */
 	frame(T150_OP_SET_GAIN, arg, 3, 0, T150_OP_ERROR, T150_ERR_BAD_FRAME);
@@ -985,7 +985,7 @@ test_hello_states_the_settings(void)
 	expect_log("hello opens the input, sets full gain and the range",
 	    "write 2: 42 04\n"
 	    "write 2: 43 80\n"
-	    "write 4: 40 11 54 d5\n");
+	    "write 4: 40 11 55 d5\n");
 
 	/* Without one, the wheel keeps whatever range it had. */
 	reset_session();
