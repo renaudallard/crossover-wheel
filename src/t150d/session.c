@@ -347,11 +347,32 @@ session_apply_settings(struct t150_session *s)
 	uint8_t pkt[PKT_MAX];
 	size_t n;
 
-	if ((n = t150_enc_gain(pkt, sizeof(pkt), T150_DI_MAX)) > 0)
-		(void)emit(s, pkt, n);
-	if (s->range_deg > 0 &&
-	    (n = t150_enc_range(pkt, sizeof(pkt), s->range_deg)) > 0)
-		(void)emit(s, pkt, n);
+	/*
+	 * Both writes are reported rather than discarded. A tester asked why
+	 * setting the range changed nothing and no log anywhere could say
+	 * whether the packet had reached the wheel, been refused, or never
+	 * been sent because the option was not passed. Three different faults
+	 * with one silence between them is not a diagnosis anybody can make.
+	 */
+	if ((n = t150_enc_gain(pkt, sizeof(pkt), T150_DI_MAX)) > 0) {
+		int r = emit(s, pkt, n);
+
+		if (s->verbose)
+			fprintf(stderr, "t150d: device gain set to full: %s\n",
+			    r == 0 ? "sent" : "the write failed");
+	}
+	if (s->range_deg == 0) {
+		if (s->verbose)
+			fprintf(stderr, "t150d: no rotation range given, the "
+			    "wheel keeps its own. See -r\n");
+	} else if ((n = t150_enc_range(pkt, sizeof(pkt), s->range_deg)) > 0) {
+		int r = emit(s, pkt, n);
+
+		if (s->verbose)
+			fprintf(stderr, "t150d: rotation range set to %u "
+			    "degrees: %s\n", s->range_deg,
+			    r == 0 ? "sent" : "the write failed");
+	}
 }
 
 /* Constant-time enough for a token that is not a security boundary anyway. */

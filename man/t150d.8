@@ -87,7 +87,10 @@ range the wheel is not at. This option is that control panel;
 .Xr t150ctl 1
 sets the same thing by hand, but does not survive a replug.
 .It Fl v
-Log connections, effect downgrades and every entry into the safe state.
+Log connections, effect downgrades, every entry into the safe state, and each
+device setting as it is written, so a report can say whether the gain and the
+range reached the wheel rather than leaving all three of sent, refused and
+never asked for looking the same.
 Each connection is named by the port it came from, and whether its token was
 accepted is logged too, so two connections can be told apart in a report.
 .El
