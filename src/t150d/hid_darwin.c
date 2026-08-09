@@ -458,30 +458,57 @@ hid_write(void *priv, const uint8_t *buf, size_t len)
 }
 
 /*
- * Look for the wheel on the daemon's clock rather than only when something
- * wants to write. A replug is exactly the case where nothing wants to write:
- * the watchdog has already fired, the session has cleared every slot, and the
- * tick emits nothing, so the write-driven rescan in hid_write never runs
- * again. The wheel then sits at the boot id forever with nobody looking.
+ * Notice the wheel has gone, and look for it again, on the daemon's clock
+ * rather than only when something wants to write.
  *
- * Rate limited by the same next_scan_ms as the write path, so this costs one
- * registry walk every RESCAN_MS at worst and nothing at all once the wheel is
- * in hand.
+ * A replug is exactly the case where nothing wants to write: the watchdog has
+ * fired, the session has cleared every slot, the tick emits nothing and a
+ * keepalive writes nothing at all. So a rescan that only runs when a write
+ * fails never runs.
+ *
+ * Noticing has to happen here too, and the first version of this got that
+ * wrong. It returned as soon as h->dev was non-NULL, which reads as "we have
+ * a wheel, nothing to do", and h->dev is only cleared by a write that fails.
+ * With no writes there was nothing to clear it, so the handle stayed a
+ * pointer to a wheel that had been unplugged minutes ago and this returned
+ * at its first line forever. The scan was fixed and the detection was left
+ * where it had always been.
+ *
+ * The presence test is a registry match by vendor and product id, the same
+ * one the boot switch uses. It needs no run loop and no open device, unlike
+ * asking the HID manager, which would have to be scheduled and pumped.
  */
 static void
 hid_tick(void *priv, uint64_t now_ms)
 {
 	struct hid_be *h = priv;
+	io_service_t svc;
 
 	(void)now_ms;	/* the backend keeps its own monotonic clock */
 
-	if (h->dev != NULL)
-		return;
 	if (mono_ms() < h->next_scan_ms)
 		return;
-
 	h->next_scan_ms = mono_ms() + RESCAN_MS;
-	(void)acquire(h);
+
+	if (h->dev == NULL) {
+		(void)acquire(h);
+		return;
+	}
+
+	/* Still on the bus: keep it, and say nothing. */
+	if ((svc = t150_usb_find(h->vid, h->pid)) != IO_OBJECT_NULL) {
+		IOObjectRelease(svc);
+		return;
+	}
+
+	/*
+	 * Gone, and nobody had written to it to find out. Let go now so the
+	 * next tick can look for it properly, rather than waiting for a game
+	 * that has already given up to try again.
+	 */
+	drop_device(h);
+	if (h->verbose)
+		fprintf(stderr, "t150d: the wheel left the bus\n");
 }
 
 static void

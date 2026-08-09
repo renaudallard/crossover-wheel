@@ -101,6 +101,15 @@ IOKit rather than one of IOKit's own. Any status from outside IOKit's domain
 is treated as the device having gone: the reference is released and the scan
 for a wheel starts again.
 .Pp
+That only covers a wheel somebody is still writing to. A replug is usually
+not: the watchdog has fired, the session has dropped every effect, and a
+keepalive writes nothing. So twice a second
+.Nm
+also asks the registry whether the wheel it believes it holds is still on the
+bus, and lets go if it is not. Without that it kept a reference to a wheel
+unplugged minutes earlier and never looked for its replacement, because the
+thing that would have noticed was the write nobody was making.
+.Pp
 The wheel comes back at its boot product id, where every replug and every
 wake leaves it, and
 .Nm
