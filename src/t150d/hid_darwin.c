@@ -215,11 +215,28 @@ raw_write(struct hid_be *h, const uint8_t *buf, size_t len)
 static int
 boot_switch_if_present(struct hid_be *h)
 {
-	int r = t150_boot_switch(h->vid, T150_PID_BOOT, T150_SWITCH_VALUE);
+	enum t150_boot_result r;
+	uint8_t model = 0;
 
-	if (r > 0 && h->verbose)
-		fprintf(stderr, "t150d: switched a wheel out of boot mode, "
-		    "waiting for it to come back\n");
+	r = t150_boot_switch(h->vid, T150_PID_BOOT, T150_SWITCH_VALUE, &model);
+
+	/*
+	 * Every outcome is said, including the boring one. A silent failure
+	 * here is indistinguishable from never having looked, which is
+	 * exactly the question a replug report has to answer.
+	 */
+	if (h->verbose) {
+		if (r == T150_BOOT_SENT)
+			fprintf(stderr, "t150d: switched a wheel out of boot "
+			    "mode, waiting for it to come back\n");
+		else if (r == T150_BOOT_OTHER_MODEL)
+			fprintf(stderr, "t150d: boot mode: %s (0x%02x), not "
+			    "switching it. Use t150boot -V\n",
+			    t150_boot_result_str(r), model);
+		else
+			fprintf(stderr, "t150d: boot mode: %s\n",
+			    t150_boot_result_str(r));
+	}
 
 	return -1;
 }

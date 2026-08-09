@@ -124,23 +124,47 @@ t150_usb_left_the_bus(IOReturn r)
 	    r == kIOReturnNoDevice || r == kIOReturnAborted;
 }
 
-int
-t150_boot_switch(long vid, long boot_pid, uint16_t value)
+const char *
+t150_boot_result_str(enum t150_boot_result r)
+{
+	switch (r) {
+	case T150_BOOT_SENT:
+		return "the switch was sent";
+	case T150_BOOT_ABSENT:
+		return "nothing at the boot id";
+	case T150_BOOT_NO_INTERFACE:
+		return "a device is there but will not open";
+	case T150_BOOT_NO_MODEL:
+		return "the model query failed";
+	case T150_BOOT_OTHER_MODEL:
+		return "a T-series wheel that is not a T150";
+	case T150_BOOT_REFUSED:
+		return "the wheel refused the switch";
+	}
+
+	return "unknown";
+}
+
+enum t150_boot_result
+t150_boot_switch(long vid, long boot_pid, uint16_t value, uint8_t *model)
 {
 	IOUSBDeviceInterface500 **dev;
 	io_service_t svc;
 	uint8_t buf[T150_RQ_MODEL_LEN];
 	UInt32 done = 0;
 	IOReturn r;
-	int rc = -1;
+	enum t150_boot_result rc;
+
+	if (model != NULL)
+		*model = 0;
 
 	if ((svc = t150_usb_find(vid, boot_pid)) == IO_OBJECT_NULL)
-		return 0;
+		return T150_BOOT_ABSENT;
 
 	dev = t150_usb_open(svc);
 	IOObjectRelease(svc);
 	if (dev == NULL)
-		return -1;
+		return T150_BOOT_NO_INTERFACE;
 
 	/*
 	 * Refuse rather than send one wheel's switch value to another. The
@@ -149,10 +173,16 @@ t150_boot_switch(long vid, long boot_pid, uint16_t value)
 	 * must not guess. Somebody with another wheel runs t150boot -V.
 	 */
 	r = t150_usb_model(dev, buf, sizeof(buf), &done);
-	if (r != kIOReturnSuccess || done <= T150_RQ_MODEL_OFF_MODEL)
+	if (r != kIOReturnSuccess || done <= T150_RQ_MODEL_OFF_MODEL) {
+		rc = T150_BOOT_NO_MODEL;
 		goto out;
-	if (buf[T150_RQ_MODEL_OFF_MODEL] != T150_MODEL)
+	}
+	if (model != NULL)
+		*model = buf[T150_RQ_MODEL_OFF_MODEL];
+	if (buf[T150_RQ_MODEL_OFF_MODEL] != T150_MODEL) {
+		rc = T150_BOOT_OTHER_MODEL;
 		goto out;
+	}
 
 	/*
 	 * The transfer's own result decides nothing. The wheel leaves the bus
@@ -161,8 +191,8 @@ t150_boot_switch(long vid, long boot_pid, uint16_t value)
 	 * settles it. That is the caller's next scan, not ours.
 	 */
 	r = t150_usb_switch(dev, value);
-	if (r == kIOReturnSuccess || t150_usb_left_the_bus(r))
-		rc = 1;
+	rc = (r == kIOReturnSuccess || t150_usb_left_the_bus(r)) ?
+	    T150_BOOT_SENT : T150_BOOT_REFUSED;
 
 out:
 	(*dev)->Release(dev);

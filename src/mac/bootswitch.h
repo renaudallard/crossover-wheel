@@ -56,12 +56,29 @@ IOReturn	t150_usb_switch(IOUSBDeviceInterface500 **dev, uint16_t value);
 int		t150_usb_left_the_bus(IOReturn r);
 
 /*
- * The whole switch for a caller with no opinions, which is the daemon.
- * Returns 1 when a T150 was found at the boot id and the switch was sent, 0
- * when there was nothing there, and -1 when something was there and could not
- * be switched. Says nothing and waits for nothing: whether the wheel comes
- * back is the caller's next scan to discover.
+ * Why a switch attempt ended, so a caller can say. Every one of these used to
+ * be the same silent -1, which made "the daemon never looked" and "the daemon
+ * looked and the wheel refused" indistinguishable in a log, and that is the
+ * fork a hardware report could not resolve.
  */
-int		t150_boot_switch(long vid, long boot_pid, uint16_t value);
+enum t150_boot_result {
+	T150_BOOT_SENT = 0,	/* a T150 was there and took the switch */
+	T150_BOOT_ABSENT,	/* nothing at the boot id, the normal case */
+	T150_BOOT_NO_INTERFACE,	/* it is there and will not open */
+	T150_BOOT_NO_MODEL,	/* the model query failed or came back short */
+	T150_BOOT_OTHER_MODEL,	/* a T-series wheel, but not a T150 */
+	T150_BOOT_REFUSED	/* the switch itself failed */
+};
+
+/* A sentence for the log, never NULL. */
+const char	*t150_boot_result_str(enum t150_boot_result r);
+
+/*
+ * The whole switch for a caller with no opinions, which is the daemon. Says
+ * nothing and waits for nothing: whether the wheel comes back is the caller's
+ * next scan to discover.
+ */
+enum t150_boot_result t150_boot_switch(long vid, long boot_pid, uint16_t value,
+		    uint8_t *model);
 
 #endif /* T150_BOOTSWITCH_H */

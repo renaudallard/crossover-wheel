@@ -515,7 +515,9 @@ main(int argc, char *argv[])
 	(void)fflush(stdout);
 
 	while (!quit) {
-		unsigned int wait_ms = t150_session_tick(&sess, now_ms());
+		unsigned int wait_ms;
+
+		wait_ms = t150_session_tick(&sess, now_ms());
 		int nfd = 0, n, ilisten, iclient = -1, ipend = -1;
 
 		ilisten = nfd;
