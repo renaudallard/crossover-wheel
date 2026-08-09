@@ -448,6 +448,33 @@ hid_write(void *priv, const uint8_t *buf, size_t len)
 	return 0;
 }
 
+/*
+ * Look for the wheel on the daemon's clock rather than only when something
+ * wants to write. A replug is exactly the case where nothing wants to write:
+ * the watchdog has already fired, the session has cleared every slot, and the
+ * tick emits nothing, so the write-driven rescan in hid_write never runs
+ * again. The wheel then sits at the boot id forever with nobody looking.
+ *
+ * Rate limited by the same next_scan_ms as the write path, so this costs one
+ * registry walk every RESCAN_MS at worst and nothing at all once the wheel is
+ * in hand.
+ */
+static void
+hid_tick(void *priv, uint64_t now_ms)
+{
+	struct hid_be *h = priv;
+
+	(void)now_ms;	/* the backend keeps its own monotonic clock */
+
+	if (h->dev != NULL)
+		return;
+	if (mono_ms() < h->next_scan_ms)
+		return;
+
+	h->next_scan_ms = mono_ms() + RESCAN_MS;
+	(void)acquire(h);
+}
+
 static void
 hid_close(void *priv)
 {
@@ -503,6 +530,7 @@ t150_backend_hid(struct t150_backend *be, long vid, long pid,
 
 	be->name = "macOS HID";
 	be->write = hid_write;
+	be->tick = hid_tick;
 	be->close = hid_close;
 	be->priv = h;
 

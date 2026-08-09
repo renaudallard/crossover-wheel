@@ -468,6 +468,12 @@ main(int argc, char *argv[])
 			errx(1, "endpoint path is too long");
 	}
 
+	/*
+	 * Zeroed before either backend fills it in, so an optional hook a
+	 * backend does not set is NULL rather than whatever was on the stack.
+	 */
+	memset(&be, 0, sizeof(be));
+
 	if (make_token(token, sizeof(token)) != 0)
 		err(1, "cannot generate a token");
 #ifdef __APPLE__
@@ -516,6 +522,13 @@ main(int argc, char *argv[])
 
 	while (!quit) {
 		unsigned int wait_ms;
+
+		/*
+		 * Before the session, because a backend that has just found
+		 * the wheel again should be able to take this round's writes.
+		 */
+		if (be.tick != NULL)
+			be.tick(be.priv, now_ms());
 
 		wait_ms = t150_session_tick(&sess, now_ms());
 		int nfd = 0, n, ilisten, iclient = -1, ipend = -1;

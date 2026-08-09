@@ -40,6 +40,17 @@ struct t150_backend {
 	 * would go on suppressing an upload it thinks the wheel already has.
 	 */
 	unsigned int	 epoch;
+	/*
+	 * Called from the daemon's loop whether or not anything is being
+	 * written, so a backend that has lost its device can look for it
+	 * again on its own clock. Without it the only thing that ever
+	 * triggered a rescan was a write, and after a safe state there are no
+	 * writes: the session has cleared every slot, so nothing is dirty and
+	 * the tick emits nothing. A wheel replugged into that silence would
+	 * never be found however long it sat there. Optional; the logging
+	 * backend has nothing to look for.
+	 */
+	void		(*tick)(void *priv, uint64_t now_ms);
 };
 
 /* The logging backend, which drives nothing and records everything. */
