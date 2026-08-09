@@ -71,6 +71,13 @@ struct hid_be {
 	 * has been asked for yet.
 	 */
 	uint8_t		 input_state;
+	/*
+	 * The last boot mode outcome that was logged. The scan runs twice a
+	 * second now, so saying the same thing every time buries whatever
+	 * else the daemon has to say, and the commonest outcome by far is
+	 * the least interesting one.
+	 */
+	int		 last_boot;
 	long		 vid;
 	long		 pid;
 	unsigned int	 gap_ms;
@@ -225,7 +232,8 @@ boot_switch_if_present(struct hid_be *h)
 	 * here is indistinguishable from never having looked, which is
 	 * exactly the question a replug report has to answer.
 	 */
-	if (h->verbose) {
+	if (h->verbose && (int)r != h->last_boot) {
+		h->last_boot = (int)r;
 		if (r == T150_BOOT_SENT)
 			fprintf(stderr, "t150d: switched a wheel out of boot "
 			    "mode, waiting for it to come back\n");
@@ -372,6 +380,7 @@ acquire(struct hid_be *h)
 	 */
 	if (h->be != NULL)
 		h->be->epoch++;
+	h->last_boot = -1;
 
 	if (h->verbose)
 		fprintf(stderr, "t150d: wheel %04lx:%04lx open\n", h->vid,
@@ -502,6 +511,12 @@ t150_backend_hid(struct t150_backend *be, long vid, long pid,
 
 	h->vid = vid;
 	h->pid = pid;
+	/*
+	 * Not any outcome, so the first of every kind is said. calloc's 0
+	 * would have been T150_BOOT_SENT and would have eaten the one line
+	 * here that most wants saying.
+	 */
+	h->last_boot = -1;
 	h->gap_ms = gap_ms;
 	h->verbose = verbose;
 	/* Wired before the first acquire, which bumps the epoch itself. */
