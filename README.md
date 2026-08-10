@@ -947,14 +947,21 @@ XInput does not count, and cannot. winebus only marks a device XInput capable
 for vendor `0x045e`, so a T150 never appears there, and XInput carries two
 rumble motors rather than force feedback effects.
 
-**A game that does not go through `system32`'s `dinput8.dll` is out of reach,
-and one has been found.** Dakar Desert Rally names the wheel correctly and
-drives every button and axis, because CrossOver's ordinary input path carries
-those, and it has no force feedback and no autocentre. With `T150_LOG` set it
-produces no proxy log at all, which means the proxy was never loaded into that
-process: the game reaches DirectInput some other way, or does not use it. No
-amount of daemon work changes that. The absent log is the test, and it costs
-one launch.
+**A game that does not load `system32`'s `dinput8.dll` is out of reach, and an
+absent proxy log is how you find out.** With `T150_LOG` set, a game that never
+writes a line never loaded the proxy, and no amount of daemon work will reach
+it. That test costs one launch and is worth running before investigating any
+game's force feedback.
+
+Dakar Desert Rally produced no proxy log, has no force feedback and no
+autocentre, and drives every button and axis through CrossOver's ordinary
+input path. What that does **not** establish is why. It was launched through
+the Heroic Game Launcher rather than by the bottle directly, so the process
+may simply have looked for `dinput8.dll` somewhere the proxy was not
+installed, and the game's own store page claims the T150 is supported. An
+absent log says the proxy was not loaded; it does not say the game cannot use
+it. Settling that means installing the proxy where that launcher's prefix
+looks, and nobody has.
 
 Native macOS games are close to unreachable: no public API drives an
 arbitrary HID wheel, and library validation blocks injecting into signed
