@@ -1089,27 +1089,66 @@ test_backend_epoch_reuploads_everything(void)
 	(void)tick(10);
 	expect_log("nothing to say before the wheel is re-acquired", "");
 
+	/*
+	 * The settings, then the effect, then the start it was playing with,
+	 * in that order: the wheel cannot be told to play parameters it does
+	 * not have yet.
+	 */
 	be.epoch++;
 	frame(T150_OP_KEEPALIVE, NULL, 0, 20, T150_OP_OK, T150_ERR_NONE);
 	(void)tick(20);
-	expect_log("a re-acquired wheel is given its settings and effect again",
+	expect_log("a re-acquired wheel gets its settings, effect and start",
 	    "write 2: 43 80\n"
 	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
 	    "write 4: 03 0e 00 40\n"
-	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n"
+	    "write 4: 41 00 41 01\n");
 
-	/*
-	 * The start is not replayed. The game asked for that before the wheel
-	 * went away, and a wheel that begins pushing on its own after a
-	 * replug is not an improvement.
-	 */
-	be.epoch++;
+	/* Once, not on every tick after it. */
 	frame(T150_OP_KEEPALIVE, NULL, 0, 30, T150_OP_OK, T150_ERR_NONE);
 	(void)tick(30);
+	expect_log("and not again on the tick after", "");
+}
+
+/*
+ * A start refused while the wheel was off the bus is still a start the game
+ * asked for, and the wheel has to be told about it when it comes back.
+ *
+ * This is the whole of test 35: two starts were refused during a replug, the
+ * daemon forgot they had ever been asked for, the game never asked again
+ * because from its side nothing had failed, and the wheel came back with
+ * every effect loaded and stopped. Force feedback was gone until the game
+ * was restarted.
+ */
+static void
+test_a_refused_start_is_replayed_when_the_wheel_returns(void)
+{
+	struct t150_effect ef;
+	uint8_t start[2];
+
+	reset_session();
+	hello(0);
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+
+	/* The wheel goes: every write fails from here. */
+	write_fails = 1;
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_ERROR,
+	    T150_ERR_DEVICE_IO);
+	write_fails = 0;
 	drain_log();
-	frame(T150_OP_KEEPALIVE, NULL, 0, 40, T150_OP_OK, T150_ERR_NONE);
-	(void)tick(40);
-	expect_log("and no play packet is invented for it", "");
+
+	/* It comes back, which the backend says by moving its epoch. */
+	be.epoch++;
+	frame(T150_OP_KEEPALIVE, NULL, 0, 10, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(10);
+
+	if (!log_contains("write 4: 41 00 41 01"))
+		fail("a start refused during a replug is never replayed");
 }
 
 int
@@ -1151,6 +1190,7 @@ main(void)
 	test_write_failure_does_not_pin_the_poll_loop();
 	test_device_error_is_reported_on_the_next_upload();
 	test_backend_epoch_reuploads_everything();
+	test_a_refused_start_is_replayed_when_the_wheel_returns();
 	test_a_start_every_frame_does_not_starve_other_slots();
 	test_hello_states_the_settings();
 

@@ -140,6 +140,7 @@ struct t150_session {
 	unsigned int		 range_deg;	/* 0 leaves the wheel's own */
 	uint8_t			 next_slot;	/* where the next pass resumes */
 	uint8_t			 io_err;	/* a write failed, owed to the next upload */
+	uint8_t			 replay_starts;	/* the wheel came back, re-start what was playing */
 	uint8_t			 emit_failed;	/* last pass failed, do not spin on it */
 	unsigned		 peer_port;	/* which connection this is, for the log */
 	char			 token[T150_TOKEN_LEN + 1];

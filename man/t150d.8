@@ -164,8 +164,17 @@ connection on any error reply and nothing reconnects, so one absent wheel
 would cost a game its force feedback for the life of the process.
 .Pp
 Re-acquiring the wheel scrubs every slot, so the backend says when that has
-happened and the next pass teaches the wheel every effect again. No start is
-replayed with them: the game asked for that before the wheel went away.
+happened and the next pass teaches the wheel every effect again, and then
+starts the ones the game had asked to play.
+.Pp
+Replaying the start is deliberate and was once deliberately not done, on the
+reasoning that a wheel which begins pushing by itself after a replug is not
+an improvement. That was wrong in the case that happens. A game is not told
+its effect stopped, because from its side nothing failed, so it never starts
+it again; the choice is not between a quiet wheel and a pushing one but
+between force feedback that returns and force feedback that is gone until the
+game is restarted. The start a game asked for is remembered even when the
+wheel was already off the bus and the packet could not be sent.
 .Sh DEVICE SETTINGS
 The wheel keeps a device gain and a rotation range of its own, which survive
 the process that set them. The gain scales every force it renders.

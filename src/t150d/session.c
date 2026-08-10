@@ -533,14 +533,27 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 		 */
 	}
 
+	/*
+	 * The intent is recorded before the write, not after it, which is the
+	 * same rule hid_darwin.c applies to the wheel's input state and for
+	 * the same reason. A start refused because the wheel is off the bus
+	 * used to be forgotten entirely: the flag stayed clear, the
+	 * re-acquire below had nothing to replay, and the game never asked
+	 * again because from its side the effect was already running. The
+	 * wheel came back with every effect loaded and stopped, and force
+	 * feedback was gone for the rest of the session. Test 35's proxy log
+	 * is that failure: two refused starts, then a game that carried on
+	 * happily and was never told anything was wrong.
+	 */
+	sl->playing = 1;
+	sl->iterations = payload[1];
+	sl->started_ms = now_ms;
+
 	if (control(s, payload[0], 1, payload[1]) != 0) {
 		reply_err(rep, T150_ERR_DEVICE_IO);
 		return;
 	}
 
-	sl->playing = 1;
-	sl->iterations = payload[1];
-	sl->started_ms = now_ms;
 	reply_ok(rep);
 }
 
@@ -815,6 +828,40 @@ session_forget_wheel(struct t150_session *s)
 	}
 }
 
+/*
+ * Put back what the game asked for, after the wheel has been away.
+ *
+ * The parameters are re-taught by the pass, because forgetting the wire
+ * state marks every used slot dirty. A start is not a parameter and no pass
+ * will send one, so this does, for exactly the slots the game had asked to
+ * play. It deliberately did not, once, on the reasoning that a wheel which
+ * begins pushing by itself after a replug is not an improvement. That
+ * reasoning was wrong in the case that actually happens: the game believes
+ * its effect is still running, so it never starts it again, and the choice
+ * is not between a quiet wheel and a pushing one but between force feedback
+ * that comes back and force feedback that is gone until the game restarts.
+ *
+ * The order matters. The parameters have to be on the wheel before it is
+ * told to play them, so this runs after the emission pass rather than with
+ * the invalidation above.
+ */
+static void
+session_replay_starts(struct t150_session *s)
+{
+	size_t i;
+
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		struct t150_slot *sl = &s->slots[i];
+
+		if (!sl->used || !sl->playing || sl->dirty)
+			continue;
+		if (s->verbose)
+			fprintf(stderr, "t150d: slot %u was playing before the "
+			    "wheel went, starting it again\n", (unsigned)i);
+		(void)control(s, (uint8_t)i, 1, sl->iterations);
+	}
+}
+
 static int
 slots_dirty(const struct t150_session *s)
 {
@@ -903,6 +950,7 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 	if (s->epoch != s->be->epoch) {
 		s->epoch = s->be->epoch;
 		session_forget_wheel(s);
+		s->replay_starts = 1;
 		/*
 		 * A wheel that has been away has forgotten its gain and its
 		 * rotation range as well as its effects, and only a session
@@ -957,6 +1005,16 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 
 	if (slots_dirty(s) && now_ms >= s->next_emit_ms)
 		session_emit(s, now_ms);
+
+	/*
+	 * Once the parameters are actually on the wheel, and not before.
+	 * A slot whose emission failed stays dirty and is skipped, so a
+	 * wheel that is still going away is not told to play anything.
+	 */
+	if (s->replay_starts && !slots_dirty(s)) {
+		s->replay_starts = 0;
+		session_replay_starts(s);
+	}
 
 	/*
 	 * The timeout is the soonest thing that has to happen. Work that is
