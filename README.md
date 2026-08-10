@@ -947,6 +947,15 @@ XInput does not count, and cannot. winebus only marks a device XInput capable
 for vendor `0x045e`, so a T150 never appears there, and XInput carries two
 rumble motors rather than force feedback effects.
 
+**A game that does not go through `system32`'s `dinput8.dll` is out of reach,
+and one has been found.** Dakar Desert Rally names the wheel correctly and
+drives every button and axis, because CrossOver's ordinary input path carries
+those, and it has no force feedback and no autocentre. With `T150_LOG` set it
+produces no proxy log at all, which means the proxy was never loaded into that
+process: the game reaches DirectInput some other way, or does not use it. No
+amount of daemon work changes that. The absent log is the test, and it costs
+one launch.
+
 Native macOS games are close to unreachable: no public API drives an
 arbitrary HID wheel, and library validation blocks injecting into signed
 games. The one exception is Euro Truck Simulator 2 and American Truck
