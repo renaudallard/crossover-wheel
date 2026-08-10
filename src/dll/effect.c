@@ -394,6 +394,23 @@ eff_GetParameters(IDirectInputEffect *self, DIEFFECT *p, DWORD flags)
 	return DI_OK;
 }
 
+/*
+ * What a failed call to the daemon means to the game.
+ *
+ * Not that the device was lost, which is what this used to say at every one
+ * of these sites. DIERR_INPUTLOST tells a game to call Acquire and try again,
+ * and Acquire here forwards to a Wine device that never went anywhere and
+ * cheerfully succeeds, so the documented recovery repairs nothing and the
+ * game is invited to loop or to give up. eff_Stop worked this out first and
+ * the comment there has said so for several releases; this is the rest of it.
+ *
+ * DIERR_NOTDOWNLOADED is the truth: the wheel does not have this effect. A
+ * game that cares calls Download again, which is exactly the right thing to
+ * do, and which succeeds the moment the wheel is back. Test 34 is why it
+ * matters: a wheel unplugged mid race now recovers by itself, and force
+ * feedback still did not come back, because the game had been told its input
+ * was lost during the seconds the wheel was away and stopped asking.
+ */
 static HRESULT WINAPI
 eff_SetParameters(IDirectInputEffect *self, const DIEFFECT *p, DWORD flags)
 {
@@ -402,13 +419,13 @@ eff_SetParameters(IDirectInputEffect *self, const DIEFFECT *p, DWORD flags)
 	t150_effect_convert(&e->ef, p, flags);
 
 	if ((flags & DIEP_NODOWNLOAD) == 0 && upload(e) != 0)
-		return DIERR_INPUTLOST;
+		return DIERR_NOTDOWNLOADED;
 
 	if (flags & DIEP_START) {
 		uint8_t start[2] = { (uint8_t)e->slot, 1 };
 
 		if (t150_client_call(T150_OP_EFFECT_START, start, 2) != 0)
-			return DIERR_INPUTLOST;
+			return DIERR_NOTDOWNLOADED;
 		e->playing = 1;
 	}
 
@@ -440,7 +457,7 @@ eff_Start(IDirectInputEffect *self, DWORD iterations, DWORD flags)
 			e->logged = 1;
 			t150_log("Start: upload failed, slot %d\n", e->slot);
 		}
-		return DIERR_INPUTLOST;
+		return DIERR_NOTDOWNLOADED;
 	}
 	if (!e->logged) {
 		e->logged = 1;
@@ -454,7 +471,7 @@ eff_Start(IDirectInputEffect *self, DWORD iterations, DWORD flags)
 		start[1] = 1;
 
 	if (t150_client_call(T150_OP_EFFECT_START, start, 2) != 0)
-		return DIERR_INPUTLOST;
+		return DIERR_NOTDOWNLOADED;
 	e->playing = 1;
 
 	return DI_OK;
@@ -495,7 +512,7 @@ eff_GetEffectStatus(IDirectInputEffect *self, DWORD *out)
 static HRESULT WINAPI
 eff_Download(IDirectInputEffect *self)
 {
-	return upload(from_iface(self)) == 0 ? DI_OK : DIERR_INPUTLOST;
+	return upload(from_iface(self)) == 0 ? DI_OK : DIERR_NOTDOWNLOADED;
 }
 
 static HRESULT WINAPI
@@ -577,10 +594,13 @@ t150_effect_create(struct t150_device *dev, REFGUID guid, const DIEFFECT *params
 		t150_effect_convert(&e->ef, params, params->dwFlags | DIEP_DURATION |
 		    DIEP_STARTDELAY | DIEP_GAIN | DIEP_DIRECTION |
 		    DIEP_ENVELOPE | DIEP_TYPESPECIFICPARAMS);
-		if (upload(e) != 0) {
-			IDirectInputEffect_Release(&e->iface);
-			return DIERR_INPUTLOST;
-		}
+		/*
+		 * A wheel that is briefly absent must not cost the game its
+		 * effect object. The daemon stores the slot either way and
+		 * puts it on the wheel when it can, so the object is handed
+		 * back and the game may Download or Start it later.
+		 */
+		(void)upload(e);
 	}
 
 	*out = &e->iface;

@@ -778,12 +778,18 @@ dev_SendForceFeedbackCommand(IDirectInputDevice8W *self, DWORD flags)
 	 * start the same effects again. Sending STOPALL as a reset destroyed
 	 * the slots underneath it.
 	 */
+	/*
+	 * A stop that could not be delivered because the wheel is not there
+	 * is a stop that has already happened: an absent wheel renders
+	 * nothing. Answering DIERR_INPUTLOST instead sent a game that was
+	 * merely tidying up into a recovery it cannot complete, and these
+	 * three are exactly the calls a game makes while reinitialising
+	 * force feedback after being told its input was lost.
+	 */
 	if (flags & DISFFC_RESET) {
-		if (t150_client_call(T150_OP_RESET, NULL, 0) != 0)
-			return DIERR_INPUTLOST;
+		(void)t150_client_call(T150_OP_RESET, NULL, 0);
 	} else if (flags & DISFFC_STOPALL) {
-		if (t150_client_call(T150_OP_STOP_ALL, NULL, 0) != 0)
-			return DIERR_INPUTLOST;
+		(void)t150_client_call(T150_OP_STOP_ALL, NULL, 0);
 	}
 
 	/*
@@ -795,8 +801,7 @@ dev_SendForceFeedbackCommand(IDirectInputDevice8W *self, DWORD flags)
 	 * downloaded, so a continue only has to start them again.
 	 */
 	if (flags & (DISFFC_PAUSE | DISFFC_SETACTUATORSOFF)) {
-		if (t150_client_call(T150_OP_STOP_ALL, NULL, 0) != 0)
-			return DIERR_INPUTLOST;
+		(void)t150_client_call(T150_OP_STOP_ALL, NULL, 0);
 	}
 
 	/* Continue and actuators-on need nothing: the slots are still there. */
