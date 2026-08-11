@@ -122,12 +122,30 @@ With
 the writer owns the device outright. It acquires it, releases it, scans for it
 and is the only thing that writes to it, so the file's long standing rule that
 it is not reentrant is kept by nothing else ever coming in. The poll thread
-copies bytes into a bounded ring and returns. A ring that fills drops its
-oldest entry, which is the force the game has most thoroughly superseded, and
-says how many it lost on the way out.
+copies bytes into a queue and returns.
 .Pp
-New, and macOS only, so nothing but a real wheel has run it. Compare a run
-with it against a run without.
+That queue coalesces, and it has to. The emitter flushes up to four dirty
+slots every four milliseconds and a constant costs two packets, so a game
+holding three effects asks for about 1250 packets a second, while the fastest
+Thrustmaster's own driver ever puts two packets on that wire is 1.344
+milliseconds apart, or about 740 a second. A queue that merely stored the
+excess would spend the session full and deliver every force a fifth of a
+second late, which is what the first build with a writer thread did. So a
+packet still waiting when a newer one arrives for the same parameter is
+replaced by it, in its place: the wheel holds one value per parameter, and the
+one it never rendered was not going to be felt. Order is untouched, and a play
+and a stop for the same slot are different parameters and never merge.
+.Pp
+Under
+.Fl v
+the count of merged and dropped packets is printed on the way out. Merged is
+the queue working. Dropped means 128 distinct packets were waiting, which is a
+wheel that has stopped taking writes rather than one that is merely behind.
+.Pp
+macOS only. The queue itself is checked by
+.Pa tests/wirequeue_check ,
+which needs no wheel, but the threading around it has only ever run on real
+hardware.
 .It Fl v
 Log connections, effect downgrades, every entry into the safe state, and each
 device setting as it is written, so a report can say whether the gain and the

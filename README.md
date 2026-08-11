@@ -118,6 +118,7 @@ in-bottle bus driver was considered and rejected.
 | `src/lib/encode.c` wire encoders | written, golden-vector tested on Linux |
 | `src/lib/proto.c` DLL to daemon protocol | written, round-trip tested on Linux |
 | `t150d` protocol, slots, downgrades, watchdog | written and tested on Linux |
+| `src/t150d/wirequeue.c` the writer's coalescing queue | written and tested on Linux; the threading around it is macOS only |
 | `t150d` macOS HID backend | working: opened a real wheel unprivileged, rendered a constant force and a damper that were felt on the wheel, and its shutdown stopped a runaway effect |
 | `t150-dinput8.dll` the in-bottle proxy | loads and chain-loads in a real bottle, and a game creates effects through it, test 23b |
 | `probe_dinput.exe` the in-bottle probe | run on hardware in test 27: it mapped the wheel, walked all twenty one controls with a person answering, and played two effects that were felt. Also runs under Wine in CI against a wheel shaped uinput device |
@@ -417,6 +418,33 @@ proxy drop its connection, and nothing reconnects.
 
 One consequence is visible in `-n`: a steady force prints three lines and
 then nothing, where it used to print three per update.
+
+**`-w` writes to the wheel from a thread of its own, and that is what the CPU
+warning was.** Without it every packet goes out on the thread that also
+answers the proxy, so while the daemon sits inside a synchronous
+`IOHIDDeviceSetReport` the game is blocked waiting for a reply, on its own
+main thread. The tester's overlay showed that thread swinging to 96% while
+the physics thread sat flat at 20%, and with `-w` his `CPU OCCUPANCY` warning
+is gone.
+
+**The writer's queue coalesces, because the wheel is slower than the
+daemon.** The emitter flushes up to four dirty slots every 4 ms and a
+constant costs two packets, since Thrustmaster's own driver pairs each update
+with a control, so a game holding three effects asks for roughly 1250 packets
+a second. The fastest that same driver ever puts two packets on the wire, in
+`tmp/oldffb/directX_constforce.pcapng`, is 1.344 ms apart: about 740 a second.
+A queue that merely stored the difference spent the session full and delivered
+every force a fifth of a second late, which the tester felt as a wheel with no
+resistance to a quick turn. So a packet still waiting when a newer one arrives
+for the same parameter is replaced by it, where it stands. The wheel holds one
+value per parameter and the one it never rendered could not be felt; order is
+untouched, and a play and a stop for one slot are different parameters that
+never merge. `-v` prints the merged and dropped counts on the way out, and
+after coalescing a drop means the wheel stopped taking writes altogether.
+
+That queue is `src/t150d/wirequeue.c`, kept apart from the macOS backend that
+uses it so `tests/wirequeue_check.c` can drive every rule in it on a machine
+with no wheel and no Mac.
 
 **A client connecting opens the wheel's input and disconnecting closes it.**
 The firmware renders no effect while no input is open, which is what

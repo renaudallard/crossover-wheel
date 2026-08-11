@@ -41,6 +41,7 @@
 #include "t150d.h"
 
 #include "mac/bootswitch.h"
+#include "wirequeue.h"
 
 /*
  * How long to wait before looking for the wheel again after losing it.
@@ -48,20 +49,6 @@
  * not a reason to walk the IOKit registry every millisecond.
  */
 #define RESCAN_MS	500u
-
-/*
- * How many packets the writer may be behind. At the emitter's rate this is
- * about half a second of work, and a queue that has fallen that far behind is
- * carrying forces the game has already superseded, so the oldest goes rather
- * than the newest. Bounded on purpose: an unbounded queue here would trade a
- * stall for a wheel acting on a force from a second ago.
- */
-#define QUEUE_MAX	128u
-
-struct wire_pkt {
-	uint8_t	len;
-	uint8_t	buf[T150_PKT_MAX];
-};
 
 struct hid_be {
 	IOHIDManagerRef	 mgr;
@@ -109,17 +96,20 @@ struct hid_be {
 	 * says at the top that it is not reentrant, and the way to keep that
 	 * true with a thread is for the other thread never to come in.
 	 *
-	 * The poll thread only ever appends to the ring and signals. It does
+	 * The poll thread only ever appends to the queue and signals. It does
 	 * not acquire, does not release, does not write and does not read the
 	 * device, so there is one owner and no lock around IOKit at all.
+	 *
+	 * The queue coalesces, which is what keeps the wheel current rather
+	 * than merely fed: see wirequeue.c for the rates that make that
+	 * necessary.
 	 */
-	int		 threaded;
-	pthread_t	 thread;
-	pthread_mutex_t	 mtx;
-	pthread_cond_t	 cv;
-	struct wire_pkt	 ring[QUEUE_MAX];
-	unsigned int	 head, tail, dropped;
-	int		 stop;
+	int			 threaded;
+	pthread_t		 thread;
+	pthread_mutex_t		 mtx;
+	pthread_cond_t		 cv;
+	struct t150_wirequeue	 q;
+	int			 stop;
 };
 
 static uint64_t
@@ -427,20 +417,16 @@ acquire(struct hid_be *h)
 }
 
 /*
- * One packet out of the ring, or nothing. The caller owns the device, so
+ * One packet out of the queue, or nothing. The caller owns the device, so
  * this only moves bytes.
  */
 static int
-queue_pop(struct hid_be *h, struct wire_pkt *out)
+queue_pop(struct hid_be *h, struct t150_wire *out)
 {
-	int got = 0;
+	int got;
 
 	pthread_mutex_lock(&h->mtx);
-	if (h->head != h->tail) {
-		*out = h->ring[h->tail % QUEUE_MAX];
-		h->tail++;
-		got = 1;
-	}
+	got = t150_wq_pop(&h->q, out);
 	pthread_mutex_unlock(&h->mtx);
 
 	return got;
@@ -456,13 +442,13 @@ static void *
 writer_main(void *arg)
 {
 	struct hid_be *h = arg;
-	struct wire_pkt p;
+	struct t150_wire p;
 
 	for (;;) {
 		struct timespec ts;
 
 		pthread_mutex_lock(&h->mtx);
-		while (h->head == h->tail && !h->stop) {
+		while (t150_wq_depth(&h->q) == 0 && !h->stop) {
 			/*
 			 * Woken by work or by the timeout, whichever comes
 			 * first. The timeout is what drives the scan for a
@@ -477,7 +463,7 @@ writer_main(void *arg)
 			}
 			(void)pthread_cond_timedwait(&h->cv, &h->mtx, &ts);
 		}
-		if (h->stop && h->head == h->tail) {
+		if (h->stop && t150_wq_depth(&h->q) == 0) {
 			pthread_mutex_unlock(&h->mtx);
 			break;
 		}
@@ -495,8 +481,9 @@ writer_main(void *arg)
 			}
 			if (h->dev == NULL) {
 				/* Nowhere to put them. */
-				while (queue_pop(h, &p))
-					;
+				pthread_mutex_lock(&h->mtx);
+				t150_wq_clear(&h->q);
+				pthread_mutex_unlock(&h->mtx);
 				continue;
 			}
 		}
@@ -522,26 +509,17 @@ writer_main(void *arg)
 	return NULL;
 }
 
-/* Append, and never block the caller. */
+/* Queue it, and never block the caller. */
 static int
 queue_push(struct hid_be *h, const uint8_t *buf, size_t len)
 {
-	if (len > sizeof(h->ring[0].buf))
-		return -1;
+	int r;
 
 	pthread_mutex_lock(&h->mtx);
-	if (h->head - h->tail >= QUEUE_MAX) {
-		/*
-		 * Full. The oldest is the most superseded, and a force the
-		 * game replaced half a second ago is the one worth losing.
-		 */
-		h->tail++;
-		h->dropped++;
-	}
-	h->ring[h->head % QUEUE_MAX].len = (uint8_t)len;
-	memcpy(h->ring[h->head % QUEUE_MAX].buf, buf, len);
-	h->head++;
+	r = t150_wq_push(&h->q, buf, len);
 	pthread_mutex_unlock(&h->mtx);
+	if (r != 0)
+		return r;
 	pthread_cond_signal(&h->cv);
 
 	return 0;
@@ -701,9 +679,17 @@ hid_close(void *priv)
 		pthread_mutex_unlock(&h->mtx);
 		pthread_cond_signal(&h->cv);
 		(void)pthread_join(h->thread, NULL);
-		if (h->verbose && h->dropped > 0)
-			fprintf(stderr, "t150d: the writer dropped %u packet(s) "
-			    "the wheel could not keep up with\n", h->dropped);
+		/*
+		 * Merged packets are the queue working: the daemon builds
+		 * faster than the wheel takes and the newer value replaced
+		 * one the wheel was never going to render. Dropped packets
+		 * are the queue failing, and after coalescing that means a
+		 * hundred and twenty eight distinct packets went unwritten.
+		 */
+		if (h->verbose)
+			fprintf(stderr, "t150d: the writer merged %u packet(s) "
+			    "into fresher ones and dropped %u\n",
+			    h->q.merged, h->q.dropped);
 	}
 
 	drop_device(h);
@@ -758,6 +744,7 @@ t150_backend_hid(struct t150_backend *be, long vid, long pid,
 		fprintf(stderr, "t150d: no wheel yet, will keep looking\n");
 
 	if (threaded) {
+		t150_wq_init(&h->q);
 		if (pthread_mutex_init(&h->mtx, NULL) != 0 ||
 		    pthread_cond_init(&h->cv, NULL) != 0) {
 			hid_close(h);

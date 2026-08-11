@@ -60,7 +60,7 @@ LIB_OBJS  = $(addprefix $(LIBOBJ)/,$(addsuffix .o,$(LIB_NAMES)))
 # The daemon, minus main, so the tests can drive the session directly. The
 # real backend only exists on macOS, and the tests never link it: they drive
 # the logging one, which is the point of having it.
-DAEMON_LIB_NAMES = session backend_fake
+DAEMON_LIB_NAMES = session backend_fake wirequeue
 DAEMON_EXTRA_OBJS =
 ifeq ($(UNAME_S),Darwin)
 DAEMON_EXTRA_OBJS += $(DAEMONOBJ)/hid_darwin.o $(MAC_OBJS)
@@ -69,7 +69,7 @@ DAEMON_LIB_OBJS  = $(addprefix $(DAEMONOBJ)/,$(addsuffix .o,$(DAEMON_LIB_NAMES))
 DAEMON_BIN	 = $(BIN)/t150d
 
 TEST_NAMES = header_check encode_check proto_check daemon_check socket_check \
-             usage_check
+             usage_check wirequeue_check
 TEST_BINS  = $(addprefix $(BIN)/,$(TEST_NAMES))
 
 # The in-bottle proxy. A PE, so it is cross compiled, and only when the
@@ -206,6 +206,15 @@ $(BIN)/usage_check: tests/usage_check.c | $(BIN)
 	$(CC) $(CPPFLAGS) -DPROBE_SRC_DIR='"$(CURDIR)/src/probe"' \
 	    -DTOOL_SRC_DIR='"$(CURDIR)/src/tools"' $(CFLAGS) \
 	    -o $@ tests/usage_check.c $(LDFLAGS)
+
+# wirequeue_check drives the writer's queue, which lives with the daemon. The
+# queue has no clock, no lock and no device, which is why it can be checked on
+# a machine with none of them. It links the encoders too, so the rule that no
+# two slots may look alike is checked against the packets the daemon really
+# builds rather than against bytes copied into the test.
+$(BIN)/wirequeue_check: tests/wirequeue_check.c $(DAEMONOBJ)/wirequeue.o \
+    $(LIB_OBJS) | $(BIN)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(BIN)/%_check: tests/%_check.c $(LIB_OBJS) | $(BIN)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS)
