@@ -132,6 +132,7 @@ struct t150_session {
 	uint64_t		 last_frame_ms;
 	uint64_t		 next_emit_ms;	/* no emission pass before this */
 	uint64_t		 next_ramp_ms;	/* no ramp recompute before this */
+	uint64_t		 last_param_log_ms;	/* -v effect parameters, rate limited */
 	unsigned int		 epoch;		/* the backend epoch we believe */
 	int			 hello;
 	int			 armed;		/* the wheel may be holding a force */

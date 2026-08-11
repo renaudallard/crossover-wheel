@@ -498,6 +498,43 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 	sl->ef = ef;
 	sl->used = 1;
 	sl->dirty = 1;
+
+	/*
+	 * What the game is actually asking for, at most once a second so a
+	 * game updating at its physics rate does not drown the terminal.
+	 *
+	 * Nothing has ever recorded this. A wheel that hunts around dead
+	 * centre and settles the moment it is touched is a force that changes
+	 * sign across zero with nothing to stop it, so the deadband and the
+	 * centre are the numbers worth seeing, and neither has been looked at
+	 * once in this project's life.
+	 */
+	/* t150_session_frame stamped last_frame_ms with now on the way in. */
+	if (s->verbose &&
+	    s->last_frame_ms - s->last_param_log_ms >= 1000) {
+		s->last_param_log_ms = s->last_frame_ms;
+		switch (ef.kind) {
+		case T150_EFFECT_SPRING:
+		case T150_EFFECT_DAMPER:
+			fprintf(stderr, "t150d: slot %u condition: centre %d, "
+			    "coeff %d/%d, saturation %d/%d, deadband %d\n",
+			    ef.slot, ef.u.condition.center,
+			    ef.u.condition.pos_coeff, ef.u.condition.neg_coeff,
+			    ef.u.condition.pos_saturation,
+			    ef.u.condition.neg_saturation,
+			    ef.u.condition.deadband);
+			break;
+		case T150_EFFECT_CONSTANT:
+			fprintf(stderr, "t150d: slot %u constant: magnitude %d, "
+			    "direction %u, gain %u\n", ef.slot,
+			    ef.u.constant.magnitude, ef.direction, ef.gain);
+			break;
+		default:
+			fprintf(stderr, "t150d: slot %u effect kind %u\n",
+			    ef.slot, ef.kind);
+			break;
+		}
+	}
 	/*
 	 * A pass that failed stops shortening the poll timeout so it cannot
 	 * spin against an absent wheel; a fresh upload is reason enough to
