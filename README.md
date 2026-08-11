@@ -375,6 +375,13 @@ scan. Nothing has to be run by hand any more, and nothing needs a password.
 Any model but the T150 is refused rather than sent the T150's switch value;
 use `t150boot -V` for those.
 
+**Restarting the daemon under a running game recovers by itself.** The proxy
+reconnects on its next force feedback call, at most once a second, and every
+effect re-uploads and re-starts itself on the first call after that. Before
+this, a restarted `t150d` cost the game its force feedback until the game was
+restarted too, because nothing reachable from a device the game already holds
+ever reconnected.
+
 **A client taking the wheel sets its device gain to full.** The wheel keeps a
 gain of its own, nothing here ever set it, and so every force was scaled by
 whatever the wheel powered up with or whatever the last process left behind.

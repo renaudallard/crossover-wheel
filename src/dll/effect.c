@@ -23,6 +23,7 @@ struct effect_obj {
 	int			 slot;
 	int			 playing;
 	int			 logged;	/* the first Start is logged, not every one */
+	unsigned int		 gen;		/* the connection this was uploaded to */
 	struct t150_effect	 ef;
 };
 
@@ -210,15 +211,43 @@ t150_effect_convert(struct t150_effect *ef, const DIEFFECT *p, DWORD flags)
 	}
 }
 
+/*
+ * Send the effect, and put it back together if the daemon changed underneath.
+ *
+ * A restarted t150d is a new daemon with an empty slot table, and the game
+ * has no idea: from its side nothing failed, so it never re-creates or
+ * re-starts anything. The proxy is the only thing that knows both what the
+ * game asked for and that the connection is new, so it says it again on the
+ * first call after a reconnect. A game that keeps updating a force, which is
+ * every game, gets its force feedback back within a frame.
+ *
+ * The start goes with it, because a slot the daemon has never heard of is not
+ * playing however sure the game is that it is.
+ */
 static int
 upload(struct effect_obj *e)
 {
 	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	unsigned int gen;
 
 	if (t150_proto_pack_effect(buf, sizeof(buf), &e->ef) == 0)
 		return -1;
+	if (t150_client_call(T150_OP_EFFECT_UPLOAD, buf, sizeof(buf)) != 0)
+		return -1;
 
-	return t150_client_call(T150_OP_EFFECT_UPLOAD, buf, sizeof(buf));
+	gen = t150_client_generation();
+	if (e->gen != gen) {
+		e->gen = gen;
+		if (e->playing) {
+			uint8_t start[2] = { (uint8_t)e->slot, 1 };
+
+			t150_log("the daemon is a new one, starting slot %d "
+			    "again\n", e->slot);
+			(void)t150_client_call(T150_OP_EFFECT_START, start, 2);
+		}
+	}
+
+	return 0;
 }
 
 static HRESULT WINAPI

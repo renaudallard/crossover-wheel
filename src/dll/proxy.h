@@ -42,6 +42,13 @@ void	t150_client_stop(void);
 int	t150_client_online(void);
 
 /*
+ * Which connection this is. An effect that uploaded to an older one has to
+ * say itself again, because the daemon on the other end of a new connection
+ * has never heard of it.
+ */
+unsigned int t150_client_generation(void);
+
+/*
  * Send one frame and wait for its reply. Returns 0 when the daemon answered
  * with OK. A failure here drops the connection rather than retrying, because
  * a half spoken protocol is worse than no force feedback.

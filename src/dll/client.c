@@ -30,6 +30,18 @@ static HANDLE keepalive_thread;
 static HANDLE keepalive_stop;
 static int started;
 static int online;
+/*
+ * Bumped on every successful connect. An effect object compares it against
+ * its own copy to notice that the daemon it uploaded to is not the daemon it
+ * is talking to now, which happens whenever t150d is restarted under a
+ * running game.
+ */
+static unsigned int generation;
+/* Not before this tick, so a failing reconnect cannot become a spin. */
+static ULONGLONG next_connect_ms;
+#define RECONNECT_MS	1000
+
+static int	connect_locked(void);
 
 /*
  * T150_DEBUG speaks to stderr and OutputDebugString, which is enough from a
@@ -257,6 +269,26 @@ t150_client_call(uint8_t op, const void *payload, size_t len)
 	int r;
 
 	EnterCriticalSection(&lock);
+
+	/*
+	 * A dead socket used to stay dead. t150_client_start is reachable only
+	 * from di_CreateDevice and di_EnumDevices, neither of which a game
+	 * calls again for a device it already holds, so restarting the daemon
+	 * under a running game cost that game its force feedback until it was
+	 * restarted too. The tester hit this on every comparison he ran for us.
+	 *
+	 * Rate limited, because reconnecting takes the wheel from whoever else
+	 * has it and a game that keeps asking must not turn that into a fight.
+	 */
+	if (sock == INVALID_SOCKET) {
+		ULONGLONG now = GetTickCount64();
+
+		if (now >= next_connect_ms) {
+			next_connect_ms = now + RECONNECT_MS;
+			(void)connect_locked();
+		}
+	}
+
 	r = call_locked(op, payload, len);
 	/*
 	 * Only a transport failure costs the connection. The daemon answers
@@ -295,8 +327,9 @@ keepalive_main(LPVOID arg)
  * asks about a device rather than from DllMain, where creating a thread is
  * not allowed.
  */
-int
-t150_client_start(void)
+/* The connect itself, for a caller that already holds the lock. */
+static int
+connect_locked(void)
 {
 	char token[T150_TOKEN_LEN + 1];
 	struct sockaddr_in sa;
@@ -304,12 +337,8 @@ t150_client_start(void)
 	WSADATA wsa;
 	int ok = 0;
 
-	EnterCriticalSection(&lock);
-
-	if (online) {
-		LeaveCriticalSection(&lock);
+	if (online)
 		return 0;
-	}
 	if (!started) {
 		if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
 			LeaveCriticalSection(&lock);
@@ -345,14 +374,38 @@ t150_client_start(void)
 
 	online = 1;
 	ok = 1;
+	generation++;
 	t150_log("connected to the daemon on port %u\n", port);
 
 out:
 	if (!ok)
 		drop_locked();
-	LeaveCriticalSection(&lock);
 
 	return ok ? 0 : -1;
+}
+
+int
+t150_client_start(void)
+{
+	int r;
+
+	EnterCriticalSection(&lock);
+	r = connect_locked();
+	LeaveCriticalSection(&lock);
+
+	return r;
+}
+
+unsigned int
+t150_client_generation(void)
+{
+	unsigned int g;
+
+	EnterCriticalSection(&lock);
+	g = generation;
+	LeaveCriticalSection(&lock);
+
+	return g;
 }
 
 void
