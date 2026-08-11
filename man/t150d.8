@@ -153,6 +153,18 @@ range reached the wheel rather than leaving all three of sent, refused and
 never asked for looking the same.
 Each connection is named by the port it came from, and whether its token was
 accepted is logged too, so two connections can be told apart in a report.
+.Pp
+It also prints what the game asks for, at most once a second so a game
+updating at its physics rate does not drown the terminal. A constant gives its
+magnitude, direction and gain; a condition gives its centre, coefficients,
+saturations and deadband, and is named as the
+.Em spring
+or
+.Em damper
+it is rather than as a condition, because only one of those resists
+displacement from a point and so only one can produce a vibration anchored to
+a wheel position. The kind shown is the one the wheel was given, after any
+downgrade, which is reported on its own line.
 .El
 .Sh LOSING THE WHEEL
 A wheel unplugged while a game is running takes the mach port behind its

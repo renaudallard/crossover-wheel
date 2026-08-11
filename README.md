@@ -446,6 +446,22 @@ That queue is `src/t150d/wirequeue.c`, kept apart from the macOS backend that
 uses it so `tests/wirequeue_check.c` can drive every rule in it on a machine
 with no wheel and no Mac.
 
+**`-v` says what the game asks for, once a second.** Nothing in this project
+recorded that for its whole life; only the bytes going out. A constant gives
+its magnitude, direction and gain, and a condition gives its centre,
+coefficients, saturations and deadband:
+
+```
+t150d: slot 2 constant: magnitude -8670, direction 9000, gain 10000
+t150d: slot 3 spring: centre 0, coeff 9998/9998, saturation 10000/10000, deadband 0
+```
+
+A condition is named as the **spring** or **damper** it is rather than as a
+condition, because only one of those resists displacement from a point, so
+only one can produce a vibration anchored to a wheel position. The kind shown
+is what the wheel was given, after any downgrade, which is reported on its own
+line.
+
 **A client connecting opens the wheel's input and disconnecting closes it.**
 The firmware renders no effect while no input is open, which is what
 [`docs/RESEARCH.md`](docs/RESEARCH.md) A28 established, so the daemon sends

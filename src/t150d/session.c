@@ -516,9 +516,25 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 		switch (ef.kind) {
 		case T150_EFFECT_SPRING:
 		case T150_EFFECT_DAMPER:
-			fprintf(stderr, "t150d: slot %u condition: centre %d, "
+			/*
+			 * Which one, and not just "condition". A spring
+			 * resists displacement from a centre and a damper
+			 * resists velocity, so only one of them can produce a
+			 * vibration anchored to a position. The tester
+			 * reported exactly that, at dead centre and again at
+			 * about 135 degrees, and this line said "condition"
+			 * for both kinds and could not tell them apart.
+			 *
+			 * The kind after any downgrade, which is what the
+			 * wheel is actually given. A game asking for friction
+			 * or inertia gets a damper and says so on its own
+			 * line above.
+			 */
+			fprintf(stderr, "t150d: slot %u %s: centre %d, "
 			    "coeff %d/%d, saturation %d/%d, deadband %d\n",
-			    ef.slot, ef.u.condition.center,
+			    ef.slot,
+			    ef.kind == T150_EFFECT_SPRING ? "spring" : "damper",
+			    ef.u.condition.center,
 			    ef.u.condition.pos_coeff, ef.u.condition.neg_coeff,
 			    ef.u.condition.pos_saturation,
 			    ef.u.condition.neg_saturation,

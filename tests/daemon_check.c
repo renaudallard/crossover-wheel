@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "t150/proto.h"
 #include "t150d.h"
@@ -1238,6 +1239,102 @@ test_a_refused_start_is_replayed_when_the_wheel_returns(void)
 		fail("a start refused during a replug is never replayed");
 }
 
+/*
+ * The verbose parameter line has to say which condition it is. A spring
+ * resists displacement from a centre and a damper resists velocity, so only
+ * one of them can produce a vibration anchored to a position, and the tester
+ * reported exactly that at dead centre and again near 135 degrees. The line
+ * said "condition" for both and could not settle it.
+ *
+ * Worth a test rather than an eyeball because a reversed ternary here reads
+ * perfectly and would send the next release chasing the wrong effect.
+ */
+static void
+upload_condition_verbose(uint8_t kind, char *out, size_t outlen)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+	FILE *cap;
+	int saved;
+	long n;
+
+	reset_session();
+	hello(0);
+	sess.verbose = 1;
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = kind;
+	ef.slot = 3;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.gain = T150_DI_MAX;
+	ef.u.condition.center = 0;
+	ef.u.condition.pos_coeff = 9998;
+	ef.u.condition.neg_coeff = 9998;
+	ef.u.condition.pos_saturation = 10000;
+	ef.u.condition.neg_saturation = 10000;
+	ef.u.condition.deadband = 0;
+
+	out[0] = '\0';
+	if ((cap = tmpfile()) == NULL)
+		return;
+
+	/*
+	 * The line goes to stderr, so take it over for the length of the
+	 * upload and put it back afterwards however that turns out.
+	 */
+	(void)fflush(stderr);
+	if ((saved = dup(fileno(stderr))) < 0) {
+		(void)fclose(cap);
+		return;
+	}
+	(void)dup2(fileno(cap), fileno(stderr));
+
+	/*
+	 * Any time at all past the one second rate limit, which starts at
+	 * zero on a fresh session.
+	 */
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 2000, T150_OP_OK,
+	    T150_ERR_NONE);
+
+	(void)fflush(stderr);
+	(void)dup2(saved, fileno(stderr));
+	(void)close(saved);
+
+	if ((n = ftell(cap)) > 0 && (size_t)n < outlen) {
+		rewind(cap);
+		if (fread(out, 1, (size_t)n, cap) == (size_t)n)
+			out[n] = '\0';
+	}
+	(void)fclose(cap);
+	sess.verbose = 0;
+}
+
+static void
+test_the_parameter_log_names_the_condition(void)
+{
+	char out[512];
+
+	upload_condition_verbose(T150_EFFECT_SPRING, out, sizeof(out));
+	if (strstr(out, "slot 3 spring:") == NULL)
+		fail("a spring is logged as a spring");
+	if (strstr(out, "deadband 0") == NULL)
+		fail("and its deadband is shown");
+
+	upload_condition_verbose(T150_EFFECT_DAMPER, out, sizeof(out));
+	if (strstr(out, "slot 3 damper:") == NULL)
+		fail("a damper is logged as a damper");
+
+	/*
+	 * A game asking for friction gets a damper, and the line has to show
+	 * what the wheel was given rather than what was asked for, because
+	 * the downgrade already says the latter on its own line.
+	 */
+	upload_condition_verbose(T150_EFFECT_FRICTION, out, sizeof(out));
+	if (strstr(out, "slot 3 damper:") == NULL)
+		fail("a downgraded friction is logged as the damper it became");
+}
+
+
 int
 main(void)
 {
@@ -1279,6 +1376,7 @@ main(void)
 	test_backend_epoch_reuploads_everything();
 	test_a_refused_start_is_replayed_when_the_wheel_returns();
 	test_a_start_every_frame_does_not_starve_other_slots();
+	test_the_parameter_log_names_the_condition();
 	test_hello_states_the_settings();
 	test_only_the_packet_that_moved_is_sent();
 
