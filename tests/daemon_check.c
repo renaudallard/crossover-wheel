@@ -1239,6 +1239,22 @@ test_a_refused_start_is_replayed_when_the_wheel_returns(void)
 		fail("a start refused during a replug is never replayed");
 }
 
+/* How many times a phrase appears, for logs where once is the whole point. */
+static int
+count_substr(const char *hay, const char *needle)
+{
+	size_t nlen = strlen(needle);
+	int n = 0;
+
+	while ((hay = strstr(hay, needle)) != NULL) {
+		n++;
+		hay += nlen;
+	}
+
+	return n;
+}
+
+
 /*
  * The verbose parameter line has to say which condition it is. A spring
  * resists displacement from a centre and a damper resists velocity, so only
@@ -1335,6 +1351,85 @@ test_the_parameter_log_names_the_condition(void)
 }
 
 
+/*
+ * The start and stop lines exist to answer one question: was this slot ever
+ * started at all? An effect uploaded and never started renders nothing, and
+ * a damper the game asks for and never plays looks exactly like a damper the
+ * wheel ignores.
+ *
+ * So the line has to survive the way a real game behaves. Assetto Corsa
+ * starts an already playing slot on every frame, which is 333 a second, and a
+ * line per call would bury the report it is meant to inform. Only the
+ * transition is said.
+ */
+static void
+test_start_and_stop_are_logged_once_per_transition(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	uint8_t arg[2] = { 3, 1 };
+	struct t150_effect ef;
+	char out[1024];
+	FILE *cap;
+	int saved, i;
+	long n;
+
+	reset_session();
+	hello(0);
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_DAMPER;
+	ef.slot = 3;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.gain = T150_DI_MAX;
+	ef.u.condition.pos_coeff = 9998;
+	ef.u.condition.neg_coeff = 9998;
+	ef.u.condition.pos_saturation = 10000;
+	ef.u.condition.neg_saturation = 10000;
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
+	    T150_ERR_NONE);
+
+	sess.verbose = 1;
+	out[0] = '\0';
+	if ((cap = tmpfile()) == NULL) {
+		fail("no temporary file for the capture");
+		return;
+	}
+	(void)fflush(stderr);
+	if ((saved = dup(fileno(stderr))) < 0) {
+		(void)fclose(cap);
+		fail("cannot take over stderr");
+		return;
+	}
+	(void)dup2(fileno(cap), fileno(stderr));
+
+	/* Started once, then started again nine times the way a game does. */
+	for (i = 0; i < 10; i++)
+		frame(T150_OP_EFFECT_START, arg, 2, (uint64_t)(10 + i),
+		    T150_OP_OK, T150_ERR_NONE);
+	/* Then stopped, and stopped again, which is also something games do. */
+	frame(T150_OP_EFFECT_STOP, arg, 1, 100, T150_OP_OK, T150_ERR_NONE);
+	frame(T150_OP_EFFECT_STOP, arg, 1, 101, T150_OP_OK, T150_ERR_NONE);
+
+	(void)fflush(stderr);
+	(void)dup2(saved, fileno(stderr));
+	(void)close(saved);
+	if ((n = ftell(cap)) > 0 && (size_t)n < sizeof(out)) {
+		rewind(cap);
+		if (fread(out, 1, (size_t)n, cap) == (size_t)n)
+			out[n] = '\0';
+	}
+	(void)fclose(cap);
+	sess.verbose = 0;
+
+	if (count_substr(out, "slot 3 damper started") != 1)
+		fail("ten starts of one slot say so once");
+	if (count_substr(out, "slot 3 damper stopped") != 1)
+		fail("and two stops say so once");
+	if (strstr(out, "damper started") > strstr(out, "damper stopped"))
+		fail("and the start is said before the stop");
+}
+
+
 int
 main(void)
 {
@@ -1377,6 +1472,7 @@ main(void)
 	test_a_refused_start_is_replayed_when_the_wheel_returns();
 	test_a_start_every_frame_does_not_starve_other_slots();
 	test_the_parameter_log_names_the_condition();
+	test_start_and_stop_are_logged_once_per_transition();
 	test_hello_states_the_settings();
 	test_only_the_packet_that_moved_is_sent();
 

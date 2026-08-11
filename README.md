@@ -464,6 +464,12 @@ line. The autocentre release is logged the same way the gain and the range
 are, so a report can tell a packet that was refused from one that was never
 sent.
 
+A slot that starts or stops says so too, **once per transition rather than
+once per call**, because a game may start an already playing slot on every
+frame and Assetto Corsa does. What that answers is whether a slot was ever
+started at all: an effect uploaded and never started renders nothing, and from
+the daemon's side that looks exactly like one the wheel ignores.
+
 **A client connecting opens the wheel's input and disconnecting closes it.**
 The firmware renders no effect while no input is open, which is what
 [`docs/RESEARCH.md`](docs/RESEARCH.md) A28 established, so the daemon sends

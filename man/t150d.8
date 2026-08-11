@@ -165,6 +165,13 @@ it is rather than as a condition, because only one of those resists
 displacement from a point and so only one can produce a vibration anchored to
 a wheel position. The kind shown is the one the wheel was given, after any
 downgrade, which is reported on its own line.
+.Pp
+A slot that starts or stops says so, once per transition rather than once per
+call: a game may start an already playing slot on every frame, and Assetto
+Corsa does, so a line per call would be several hundred a second. The question
+this answers is whether a slot was ever started at all, because an effect that
+is uploaded and never started renders nothing and looks from here exactly like
+one the wheel ignores.
 .El
 .Sh LOSING THE WHEEL
 A wheel unplugged while a game is running takes the mach port behind its

@@ -24,6 +24,31 @@
 
 #define PKT_MAX	T150_PKT_MAX
 
+/*
+ * What to call an effect in the log. One table, because the parameter line
+ * and the start and stop lines all want it and two tables would drift apart.
+ * The name is the kind the wheel is given, after any downgrade, which is
+ * reported on its own line when it happens.
+ */
+static const char *
+kind_name(uint8_t kind)
+{
+	switch (kind) {
+	case T150_EFFECT_CONSTANT:	return "constant";
+	case T150_EFFECT_RAMP:		return "ramp";
+	case T150_EFFECT_SQUARE:	return "square";
+	case T150_EFFECT_SINE:		return "sine";
+	case T150_EFFECT_TRIANGLE:	return "triangle";
+	case T150_EFFECT_SAWTOOTH_UP:	return "sawtooth up";
+	case T150_EFFECT_SAWTOOTH_DOWN:	return "sawtooth down";
+	case T150_EFFECT_SPRING:	return "spring";
+	case T150_EFFECT_DAMPER:	return "damper";
+	case T150_EFFECT_FRICTION:	return "friction";
+	case T150_EFFECT_INERTIA:	return "inertia";
+	default:			return "nothing";
+	}
+}
+
 static void
 reply_ok(struct t150_reply *rep)
 {
@@ -532,8 +557,7 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 			 */
 			fprintf(stderr, "t150d: slot %u %s: centre %d, "
 			    "coeff %d/%d, saturation %d/%d, deadband %d\n",
-			    ef.slot,
-			    ef.kind == T150_EFFECT_SPRING ? "spring" : "damper",
+			    ef.slot, kind_name(ef.kind),
 			    ef.u.condition.center,
 			    ef.u.condition.pos_coeff, ef.u.condition.neg_coeff,
 			    ef.u.condition.pos_saturation,
@@ -636,6 +660,18 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 	 * is that failure: two refused starts, then a game that carried on
 	 * happily and was never told anything was wrong.
 	 */
+	/*
+	 * Said once, when the slot actually changes state. Assetto Corsa
+	 * starts an already playing slot on every frame, so logging the call
+	 * rather than the transition would put 333 lines a second into a
+	 * report. What a reader needs is whether a slot was ever started at
+	 * all: an effect uploaded and never started renders nothing, and
+	 * nothing here could tell that apart from one that plays badly.
+	 */
+	if (s->verbose && !sl->playing)
+		fprintf(stderr, "t150d: slot %u %s started\n", payload[0],
+		    kind_name(sl->ef.kind));
+
 	sl->playing = 1;
 	sl->iterations = payload[1];
 	sl->started_ms = now_ms;
@@ -668,6 +704,11 @@ do_stop(struct t150_session *s, const uint8_t *payload, size_t len, int destroy,
 		reply_err(rep, T150_ERR_DEVICE_IO);
 		return;
 	}
+
+	/* The transition only, for the reason do_start says. */
+	if (s->verbose && sl->playing)
+		fprintf(stderr, "t150d: slot %u %s stopped\n", payload[0],
+		    kind_name(sl->ef.kind));
 
 	sl->playing = 0;
 	/*
