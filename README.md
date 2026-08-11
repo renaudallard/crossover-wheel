@@ -460,7 +460,9 @@ A condition is named as the **spring** or **damper** it is rather than as a
 condition, because only one of those resists displacement from a point, so
 only one can produce a vibration anchored to a wheel position. The kind shown
 is what the wheel was given, after any downgrade, which is reported on its own
-line.
+line. The autocentre release is logged the same way the gain and the range
+are, so a report can tell a packet that was refused from one that was never
+sent.
 
 **A client connecting opens the wheel's input and disconnecting closes it.**
 The firmware renders no effect while no input is open, which is what

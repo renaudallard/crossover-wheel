@@ -376,9 +376,23 @@ acquire(struct hid_be *h)
 	 * recentres, which is exactly what a tester reported. The enable flag
 	 * is not sent with it: it is a no-op on macOS, and only the force
 	 * decides the strength.
+	 *
+	 * Reported rather than sent in silence, for the reason the gain and
+	 * the range are: a wheel that vibrates about a point is what A17 says
+	 * this spring feels like, the tester now reports one at dead centre
+	 * and again near 135 degrees, and nothing anywhere could say whether
+	 * this packet had reached the wheel, been refused, or been sent to a
+	 * wheel that was already going away. That is three faults with one
+	 * silence between them.
 	 */
-	if ((len = t150_enc_autocenter_force(pkt, sizeof(pkt), 0)) > 0)
-		(void)raw_write(h, pkt, len);
+	if ((len = t150_enc_autocenter_force(pkt, sizeof(pkt), 0)) > 0) {
+		IOReturn ar = raw_write(h, pkt, len);
+
+		if (h->verbose)
+			fprintf(stderr, "t150d: wheel autocentre released: "
+			    "%s\n", ar == kIOReturnSuccess ? "sent" :
+			    "the write failed");
+	}
 	nap_ms(h->gap_ms);
 
 	/*
