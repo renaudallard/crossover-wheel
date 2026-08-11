@@ -11,6 +11,7 @@
 .Op Fl g Ar ms
 .Op Fl r Ar degrees
 .Op Fl t
+.Op Fl w
 .Sh DESCRIPTION
 .Nm
 is the macOS half of the force feedback bridge. It listens on loopback for
@@ -105,6 +106,28 @@ modulates it with bare update packets. Every write is a synchronous call on
 the thread a game is waiting for, so two writes in three were costing a game
 time to re-state bytes the wheel already had. This flag exists to compare the
 two by feel on real hardware.
+.It Fl w
+Write to the wheel from a thread of its own. Without it every packet goes out
+on the thread that also serves the socket, so while the daemon is inside a
+synchronous
+.Fn IOHIDDeviceSetReport
+it cannot answer the proxy, and the game is blocked waiting for that answer on
+its own main thread. That is measured: Assetto Corsa's warning does not appear
+with
+.Fl n ,
+which runs everything except the writes.
+.Pp
+With
+.Fl w
+the writer owns the device outright. It acquires it, releases it, scans for it
+and is the only thing that writes to it, so the file's long standing rule that
+it is not reentrant is kept by nothing else ever coming in. The poll thread
+copies bytes into a bounded ring and returns. A ring that fills drops its
+oldest entry, which is the force the game has most thoroughly superseded, and
+says how many it lost on the way out.
+.Pp
+New, and macOS only, so nothing but a real wheel has run it. Compare a run
+with it against a run without.
 .It Fl v
 Log connections, effect downgrades, every entry into the safe state, and each
 device setting as it is written, so a report can say whether the gain and the

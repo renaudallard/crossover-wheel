@@ -398,7 +398,7 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: t150d [-ntv] [-e endpoint] [-g ms] [-r degrees]\n"
+	    "usage: t150d [-ntvw] [-e endpoint] [-g ms] [-r degrees]\n"
 	    "\n"
 	    "  -e endpoint  where to publish the port and token\n"
 	    "               (default $HOME%s)\n"
@@ -414,7 +414,10 @@ usage(void)
 	    "               default sends only the packet that moved, which is\n"
 	    "               what the vendor's own driver does and is a third of\n"
 	    "               the writes. Here to compare the two by feel\n"
-	    "  -v           log effects, downgrades and safe states\n",
+	    "  -v           log effects, downgrades and safe states\n"
+	    "  -w           write to the wheel from a thread of its own, so a\n"
+	    "               game is never waiting for a USB transfer. macOS\n"
+	    "               only, and new: compare it against a run without\n",
 	    ENDPOINT_REL, T150_RANGE_MIN, T150_RANGE_MAX);
 	exit(2);
 }
@@ -433,10 +436,10 @@ main(int argc, char *argv[])
 	size_t have = 0, phave = 0;
 	unsigned short port;
 	unsigned int gap_ms = 0, range_deg = 0;
-	int always_triple = 0;
+	int always_triple = 0, writer = 0;
 	int ch, lfd, cfd = -1, pfd_pend = -1, verbose = 0, fake = 0;
 
-	while ((ch = getopt(argc, argv, "e:g:nr:tv")) != -1) {
+	while ((ch = getopt(argc, argv, "e:g:nr:tvw")) != -1) {
 		switch (ch) {
 		case 'e':
 			epopt = optarg;
@@ -457,6 +460,9 @@ main(int argc, char *argv[])
 			break;
 		case 'v':
 			verbose = 1;
+			break;
+		case 'w':
+			writer = 1;
 			break;
 		default:
 			usage();
@@ -488,7 +494,7 @@ main(int argc, char *argv[])
 #ifdef __APPLE__
 	if (!fake) {
 		if (t150_backend_hid(&be, T150_VID, T150_PID_FIRMWARE, gap_ms,
-		    verbose) != 0)
+		    verbose, writer) != 0)
 			errx(1, "cannot open the wheel backend");
 	} else if (t150_backend_fake(&be, stdout) != 0) {
 		errx(1, "cannot open the logging backend");
@@ -501,6 +507,7 @@ main(int argc, char *argv[])
 	if (t150_backend_fake(&be, stdout) != 0)
 		errx(1, "cannot open the logging backend");
 	(void)gap_ms;
+	(void)writer;
 #endif
 	if ((lfd = listen_loopback(&port)) == -1)
 		err(1, "cannot listen on loopback");

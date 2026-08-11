@@ -14,6 +14,7 @@
 #ifndef T150D_H
 #define T150D_H
 
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -38,8 +39,11 @@ struct t150_backend {
 	 * holds. Without it a wheel unplugged and replugged mid-race stays
 	 * empty for the rest of the session, silently, because the session
 	 * would go on suppressing an upload it thinks the wheel already has.
+	 *
+	 * Atomic because with -w the writer thread bumps it while the poll
+	 * thread reads it.
 	 */
-	unsigned int	 epoch;
+	atomic_uint	 epoch;
 	/*
 	 * Called from the daemon's loop whether or not anything is being
 	 * written, so a backend that has lost its device can look for it
@@ -65,7 +69,7 @@ int	t150_backend_fake(struct t150_backend *be, FILE *fp);
  * when it appears.
  */
 int	t150_backend_hid(struct t150_backend *be, long vid, long pid,
-	    unsigned int gap_ms, int verbose);
+	    unsigned int gap_ms, int verbose, int threaded);
 #endif
 
 /*

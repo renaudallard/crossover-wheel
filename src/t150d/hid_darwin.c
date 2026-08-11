@@ -30,6 +30,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/hid/IOHIDManager.h>
 
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,6 +48,20 @@
  * not a reason to walk the IOKit registry every millisecond.
  */
 #define RESCAN_MS	500u
+
+/*
+ * How many packets the writer may be behind. At the emitter's rate this is
+ * about half a second of work, and a queue that has fallen that far behind is
+ * carrying forces the game has already superseded, so the oldest goes rather
+ * than the newest. Bounded on purpose: an unbounded queue here would trade a
+ * stall for a wheel acting on a force from a second ago.
+ */
+#define QUEUE_MAX	128u
+
+struct wire_pkt {
+	uint8_t	len;
+	uint8_t	buf[T150_PKT_MAX];
+};
 
 struct hid_be {
 	IOHIDManagerRef	 mgr;
@@ -69,8 +84,12 @@ struct hid_be {
 	 * effect. Set from the intent rather than from a successful write, so
 	 * that an open sent to an absent wheel still counts. 0 means nothing
 	 * has been asked for yet.
+	 *
+	 * Atomic because with a writer it is set by the poll thread inside
+	 * hid_write and read by the writer inside acquire(). One byte, but a
+	 * race is a race.
 	 */
-	uint8_t		 input_state;
+	_Atomic uint8_t	 input_state;
 	/*
 	 * The last boot mode outcome that was logged. The scan runs twice a
 	 * second now, so saying the same thing every time buries whatever
@@ -83,6 +102,24 @@ struct hid_be {
 	unsigned int	 gap_ms;
 	int		 verbose;
 	int		 opened;
+
+	/*
+	 * The writer, when -w asked for one. Everything about the device is
+	 * then owned by that thread and touched by nothing else: this file
+	 * says at the top that it is not reentrant, and the way to keep that
+	 * true with a thread is for the other thread never to come in.
+	 *
+	 * The poll thread only ever appends to the ring and signals. It does
+	 * not acquire, does not release, does not write and does not read the
+	 * device, so there is one owner and no lock around IOKit at all.
+	 */
+	int		 threaded;
+	pthread_t	 thread;
+	pthread_mutex_t	 mtx;
+	pthread_cond_t	 cv;
+	struct wire_pkt	 ring[QUEUE_MAX];
+	unsigned int	 head, tail, dropped;
+	int		 stop;
 };
 
 static uint64_t
@@ -389,6 +426,127 @@ acquire(struct hid_be *h)
 	return 0;
 }
 
+/*
+ * One packet out of the ring, or nothing. The caller owns the device, so
+ * this only moves bytes.
+ */
+static int
+queue_pop(struct hid_be *h, struct wire_pkt *out)
+{
+	int got = 0;
+
+	pthread_mutex_lock(&h->mtx);
+	if (h->head != h->tail) {
+		*out = h->ring[h->tail % QUEUE_MAX];
+		h->tail++;
+		got = 1;
+	}
+	pthread_mutex_unlock(&h->mtx);
+
+	return got;
+}
+
+/*
+ * The writer. It owns the device: it acquires it, drops it, scans for it and
+ * is the only thing that writes to it. The poll thread appends and signals
+ * and never blocks, which is the whole point: a game waiting for the daemon's
+ * reply is no longer waiting for a USB transfer to finish.
+ */
+static void *
+writer_main(void *arg)
+{
+	struct hid_be *h = arg;
+	struct wire_pkt p;
+
+	for (;;) {
+		struct timespec ts;
+
+		pthread_mutex_lock(&h->mtx);
+		while (h->head == h->tail && !h->stop) {
+			/*
+			 * Woken by work or by the timeout, whichever comes
+			 * first. The timeout is what drives the scan for a
+			 * wheel that is not there, since nothing will signal
+			 * on its account.
+			 */
+			(void)clock_gettime(CLOCK_REALTIME, &ts);
+			ts.tv_nsec += (long)RESCAN_MS * 1000000L;
+			if (ts.tv_nsec >= 1000000000L) {
+				ts.tv_sec += ts.tv_nsec / 1000000000L;
+				ts.tv_nsec %= 1000000000L;
+			}
+			(void)pthread_cond_timedwait(&h->cv, &h->mtx, &ts);
+		}
+		if (h->stop && h->head == h->tail) {
+			pthread_mutex_unlock(&h->mtx);
+			break;
+		}
+		pthread_mutex_unlock(&h->mtx);
+
+		/*
+		 * Look for the wheel on this thread too, for the same reason
+		 * the poll thread used to: a replug leaves it at the boot id
+		 * and nothing else will go looking.
+		 */
+		if (h->dev == NULL) {
+			if (mono_ms() >= h->next_scan_ms) {
+				h->next_scan_ms = mono_ms() + RESCAN_MS;
+				(void)acquire(h);
+			}
+			if (h->dev == NULL) {
+				/* Nowhere to put them. */
+				while (queue_pop(h, &p))
+					;
+				continue;
+			}
+		}
+
+		while (queue_pop(h, &p)) {
+			IOReturn r = raw_write(h, p.buf, p.len);
+
+			if (r != kIOReturnSuccess) {
+				if (h->verbose)
+					fprintf(stderr, "t150d: SetReport "
+					    "failed: 0x%08x\n",
+					    (unsigned int)r);
+				if (means_removed(r)) {
+					drop_device(h);
+					h->next_scan_ms = mono_ms() + RESCAN_MS;
+					break;
+				}
+			}
+			nap_ms(h->gap_ms);
+		}
+	}
+
+	return NULL;
+}
+
+/* Append, and never block the caller. */
+static int
+queue_push(struct hid_be *h, const uint8_t *buf, size_t len)
+{
+	if (len > sizeof(h->ring[0].buf))
+		return -1;
+
+	pthread_mutex_lock(&h->mtx);
+	if (h->head - h->tail >= QUEUE_MAX) {
+		/*
+		 * Full. The oldest is the most superseded, and a force the
+		 * game replaced half a second ago is the one worth losing.
+		 */
+		h->tail++;
+		h->dropped++;
+	}
+	h->ring[h->head % QUEUE_MAX].len = (uint8_t)len;
+	memcpy(h->ring[h->head % QUEUE_MAX].buf, buf, len);
+	h->head++;
+	pthread_mutex_unlock(&h->mtx);
+	pthread_cond_signal(&h->cv);
+
+	return 0;
+}
+
 static int
 hid_write(void *priv, const uint8_t *buf, size_t len)
 {
@@ -410,6 +568,14 @@ hid_write(void *priv, const uint8_t *buf, size_t len)
 	 */
 	if (len == 2 && buf[0] == T150_OP_INPUT)
 		h->input_state = buf[1];
+
+	/*
+	 * With a writer, this returns the moment the bytes are copied. That
+	 * is the whole fix: the daemon goes straight back to its socket and
+	 * the game's next frame is answered without waiting for USB.
+	 */
+	if (h->threaded)
+		return queue_push(h, buf, len);
 
 	if (h->dev == NULL) {
 		uint64_t now = mono_ms();
@@ -486,6 +652,10 @@ hid_tick(void *priv, uint64_t now_ms)
 
 	(void)now_ms;	/* the backend keeps its own monotonic clock */
 
+	/* The writer scans on its own account, and owns the device. */
+	if (h->threaded)
+		return;
+
 	if (mono_ms() < h->next_scan_ms)
 		return;
 	h->next_scan_ms = mono_ms() + RESCAN_MS;
@@ -519,6 +689,23 @@ hid_close(void *priv)
 	if (h == NULL)
 		return;
 
+	/*
+	 * Let the writer finish what it has before the device goes. The
+	 * safe state is the last thing the session writes, and it is the one
+	 * burst that must not be thrown away: a wheel left holding a force
+	 * pulls on somebody's hands.
+	 */
+	if (h->threaded) {
+		pthread_mutex_lock(&h->mtx);
+		h->stop = 1;
+		pthread_mutex_unlock(&h->mtx);
+		pthread_cond_signal(&h->cv);
+		(void)pthread_join(h->thread, NULL);
+		if (h->verbose && h->dropped > 0)
+			fprintf(stderr, "t150d: the writer dropped %u packet(s) "
+			    "the wheel could not keep up with\n", h->dropped);
+	}
+
 	drop_device(h);
 	if (h->mgr != NULL) {
 		(void)IOHIDManagerClose(h->mgr, kIOHIDOptionsTypeNone);
@@ -529,7 +716,7 @@ hid_close(void *priv)
 
 int
 t150_backend_hid(struct t150_backend *be, long vid, long pid,
-    unsigned int gap_ms, int verbose)
+    unsigned int gap_ms, int verbose, int threaded)
 {
 	struct hid_be *h;
 
@@ -570,7 +757,20 @@ t150_backend_hid(struct t150_backend *be, long vid, long pid,
 	if (acquire(h) != 0 && verbose)
 		fprintf(stderr, "t150d: no wheel yet, will keep looking\n");
 
-	be->name = "macOS HID";
+	if (threaded) {
+		if (pthread_mutex_init(&h->mtx, NULL) != 0 ||
+		    pthread_cond_init(&h->cv, NULL) != 0) {
+			hid_close(h);
+			return -1;
+		}
+		if (pthread_create(&h->thread, NULL, writer_main, h) != 0) {
+			hid_close(h);
+			return -1;
+		}
+		h->threaded = 1;
+	}
+
+	be->name = threaded ? "macOS HID, threaded" : "macOS HID";
 	be->write = hid_write;
 	be->tick = hid_tick;
 	be->close = hid_close;
