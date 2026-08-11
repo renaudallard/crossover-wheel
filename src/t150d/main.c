@@ -398,7 +398,7 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: t150d [-nv] [-e endpoint] [-g ms] [-r degrees]\n"
+	    "usage: t150d [-ntv] [-e endpoint] [-g ms] [-r degrees]\n"
 	    "\n"
 	    "  -e endpoint  where to publish the port and token\n"
 	    "               (default $HOME%s)\n"
@@ -409,6 +409,11 @@ usage(void)
 	    "  -r degrees   lock to lock, %u to %u, set whenever a client takes\n"
 	    "               the wheel. No game can ask for this: DirectInput has\n"
 	    "               no property for it. Unset leaves the wheel's own\n"
+	    "  -t           re-send an effect's three packets whenever any of\n"
+	    "               them changes, as builds before this one did. The\n"
+	    "               default sends only the packet that moved, which is\n"
+	    "               what the vendor's own driver does and is a third of\n"
+	    "               the writes. Here to compare the two by feel\n"
 	    "  -v           log effects, downgrades and safe states\n",
 	    ENDPOINT_REL, T150_RANGE_MIN, T150_RANGE_MAX);
 	exit(2);
@@ -428,9 +433,10 @@ main(int argc, char *argv[])
 	size_t have = 0, phave = 0;
 	unsigned short port;
 	unsigned int gap_ms = 0, range_deg = 0;
+	int always_triple = 0;
 	int ch, lfd, cfd = -1, pfd_pend = -1, verbose = 0, fake = 0;
 
-	while ((ch = getopt(argc, argv, "e:g:nr:v")) != -1) {
+	while ((ch = getopt(argc, argv, "e:g:nr:tv")) != -1) {
 		switch (ch) {
 		case 'e':
 			epopt = optarg;
@@ -445,6 +451,9 @@ main(int argc, char *argv[])
 		case 'r':
 			if (parse_range(optarg, &range_deg) != 0)
 				usage();
+			break;
+		case 't':
+			always_triple = 1;
 			break;
 		case 'v':
 			verbose = 1;
@@ -501,6 +510,7 @@ main(int argc, char *argv[])
 	t150_session_init(&sess, &be, token);
 	sess.verbose = verbose;
 	sess.range_deg = range_deg;
+	sess.always_triple = always_triple;
 
 	/*
 	 * Every signal that would otherwise kill the process outright, so the
@@ -709,6 +719,7 @@ main(int argc, char *argv[])
 				t150_session_init(&sess, &be, token);
 				sess.verbose = verbose;
 				sess.range_deg = range_deg;
+				sess.always_triple = always_triple;
 				sess.peer_port = peer_port;
 				cfd = nfd2;
 				have = 0;
@@ -722,6 +733,7 @@ main(int argc, char *argv[])
 				t150_session_init(&psess, &be, token);
 				psess.verbose = verbose;
 				psess.range_deg = range_deg;
+				psess.always_triple = always_triple;
 				psess.peer_port = peer_port;
 				if (verbose)
 					fprintf(stderr, "t150d: second client "

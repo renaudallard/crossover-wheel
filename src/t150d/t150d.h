@@ -138,6 +138,7 @@ struct t150_session {
 	int			 input_open;	/* we opened the wheel's input and owe it a close */
 	int			 verbose;
 	unsigned int		 range_deg;	/* 0 leaves the wheel's own */
+	int			 always_triple;	/* -t: re-send the set on any change */
 	uint8_t			 next_slot;	/* where the next pass resumes */
 	uint8_t			 io_err;	/* a write failed, owed to the next upload */
 	uint8_t			 replay_starts;	/* the wheel came back, re-start what was playing */

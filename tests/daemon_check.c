@@ -386,18 +386,14 @@ test_ramp(void)
 
 	/* Halfway along, the level is halfway between the two ends. */
 	(void)tick(1500);
-	expect_log("a ramp slides",
-	    "write 9: 02 54 00 00 00 00 00 00 00\n"
-	    "write 4: 03 46 00 20\n"
-	    "write 15: 01 02 00 40 e8 03 00 00 00 46 00 54 00 00 00\n");
+	expect_log("a ramp slides, and costs one packet",
+	    "write 4: 03 46 00 20\n");
 
 	/* Past the end it holds, rather than wrapping back to the start. */
 	frame(T150_OP_KEEPALIVE, NULL, 0, 2500, T150_OP_OK, T150_ERR_NONE);
 	(void)tick(2500);
 	expect_log("a ramp holds at its end",
-	    "write 9: 02 54 00 00 00 00 00 00 00\n"
-	    "write 4: 03 46 00 40\n"
-	    "write 15: 01 02 00 40 e8 03 00 00 00 46 00 54 00 00 00\n");
+	    "write 4: 03 46 00 40\n");
 
 	frame(T150_OP_KEEPALIVE, NULL, 0, 2600, T150_OP_OK, T150_ERR_NONE);
 	(void)tick(2600);
@@ -732,10 +728,8 @@ test_subwire_change_is_silent(void)
 	ef.u.constant.magnitude = 5000;
 	upload_at(&ef, 20);
 	(void)tick(20);
-	expect_log("a magnitude that does reach the wire is sent",
-	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
-	    "write 4: 03 0e 00 20\n"
-	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+	expect_log("a magnitude that does reach the wire is sent, alone",
+	    "write 4: 03 0e 00 20\n");
 }
 
 /*
@@ -822,9 +816,7 @@ test_emit_rate_is_bounded(void)
 	upload_at(&ef, 2);
 	(void)tick(T150_EMIT_MS);
 	expect_log("and the pass that follows carries only the newest value",
-	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
-	    "write 4: 03 0e 00 10\n"
-	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+	    "write 4: 03 0e 00 10\n");
 }
 
 /*
@@ -860,18 +852,14 @@ test_updates_faster_than_the_emit_period_are_coalesced(void)
 	upload_at(&ef, 6);
 	(void)tick(6);
 	expect_log("and the superseded value is dropped, not sent late",
-	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
-	    "write 4: 03 0e 00 20\n"
-	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+	    "write 4: 03 0e 00 20\n");
 
 	/* Slower than the floor, and nothing is coalesced at all. */
 	ef.u.constant.magnitude = 2500;
 	upload_at(&ef, 20);
 	(void)tick(20);
 	expect_log("an update slower than the emit period goes straight out",
-	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
-	    "write 4: 03 0e 00 10\n"
-	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+	    "write 4: 03 0e 00 10\n");
 }
 
 static int write_fails;
@@ -994,6 +982,70 @@ test_hello_states_the_settings(void)
 	expect_log("no range given, none sent",
 	    "write 2: 42 04\n"
 	    "write 2: 43 80\n");
+}
+
+/*
+ * A level change costs one packet, and -t puts the other two back.
+ *
+ * The vendor's own DirectInput capture uploads an effect once and then
+ * modulates it with bare update packets, so that is the default. Every write
+ * is a synchronous call on the thread a game is waiting for, and two in three
+ * of them were re-stating bytes the wheel already had.
+ */
+static void
+test_only_the_packet_that_moved_is_sent(void)
+{
+	struct t150_effect ef;
+
+	reset_session();
+	hello(0);
+	/*
+	 * An earlier test moved the backend's epoch, so the first tick of any
+	 * session after it re-applies the settings. Take that here rather
+	 * than in the middle of an assertion about effect packets.
+	 */
+	(void)tick(0);
+	drain_log();
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+	expect_log("the first emission is the whole effect",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 40\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+
+	ef.u.constant.magnitude = 5000;
+	upload_at(&ef, 10);
+	(void)tick(10);
+	expect_log("a level change is one packet", "write 4: 03 0e 00 20\n");
+
+	/* A change of duration is the effect being redefined, so all three. */
+	ef.duration = 2000000;
+	upload_at(&ef, 20);
+	(void)tick(20);
+	expect_log("a change to the commit sends the set",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 20\n"
+	    "write 15: 01 00 00 40 d0 07 00 00 00 0e 00 1c 00 00 00\n");
+
+	/* -t restores the old behaviour for a side by side comparison. */
+	reset_session();
+	sess.always_triple = 1;
+	hello(0);
+	(void)tick(0);
+	drain_log();
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+	drain_log();
+	ef.u.constant.magnitude = 5000;
+	upload_at(&ef, 10);
+	(void)tick(10);
+	expect_log("with -t a level change still sends all three",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 20\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
 }
 
 /*
@@ -1193,6 +1245,7 @@ main(void)
 	test_a_refused_start_is_replayed_when_the_wheel_returns();
 	test_a_start_every_frame_does_not_starve_other_slots();
 	test_hello_states_the_settings();
+	test_only_the_packet_that_moved_is_sent();
 
 	(void)fclose(logfp);
 	free(logbuf);

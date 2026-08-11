@@ -125,12 +125,12 @@ scale_effect(struct t150_effect *ef)
  * Put a slot's desired effect on the wheel, and only if it is not there
  * already.
  *
- * The three packets correlate through slot keys, and the only sequence any
- * wheel has been measured accepting is all three together (RESEARCH.md A43),
- * so any difference at all sends the set. Sending the one packet that moved
- * would be cheaper and is probably right, since PROTOCOL.md says the second
- * block's key depends only on the slot, but probably is not a thing to put
- * between a game and a wheel that pulls on someone's hands.
+ * The three packets correlate through slot keys. This used to send all
+ * three on any difference, justified by a claim that the only sequence a
+ * wheel had been measured accepting was the set, cited to RESEARCH.md A43.
+ * That citation was wrong: A43 is the end to end force delivery test and
+ * says nothing about packet sequences. The vendor's own DirectInput capture
+ * says the opposite, and is in this tree.
  *
  * What this saves is the common case, which is a game re-uploading an effect
  * it has not changed: that now costs a comparison instead of three writes.
@@ -150,8 +150,8 @@ static int
 flush_slot(struct t150_session *s, struct t150_slot *sl)
 {
 	struct t150_wire pkt[3];
-	size_t i;
-	int changed = 0;
+	size_t i, first, last;
+	int moved[3];
 
 	memset(pkt, 0, sizeof(pkt));
 	pkt[0].len = (uint8_t)t150_enc_ff_first(pkt[0].buf, sizeof(pkt[0].buf),
@@ -164,19 +164,47 @@ flush_slot(struct t150_session *s, struct t150_slot *sl)
 	for (i = 0; i < 3; i++) {
 		if (pkt[i].len == 0)
 			return -2;
-		if (pkt[i].len != sl->sent[i].len ||
-		    memcmp(pkt[i].buf, sl->sent[i].buf, pkt[i].len) != 0)
-			changed = 1;
+		moved[i] = pkt[i].len != sl->sent[i].len ||
+		    memcmp(pkt[i].buf, sl->sent[i].buf, pkt[i].len) != 0;
 	}
-	if (!changed)
+	if (!moved[0] && !moved[1] && !moved[2])
 		return 0;
+
+	/*
+	 * Which of the three actually go.
+	 *
+	 * A level that has moved and nothing else is one packet, because that
+	 * is what the vendor's own driver sends. Its DirectInput capture,
+	 * tmp/oldffb/directX_constforce.pcapng, uploads the effect once and
+	 * then modulates it with twenty four bare ff_update packets and never
+	 * re-states the pair around them. Re-sending all three cost this
+	 * daemon two writes in every three, and every write is a synchronous
+	 * IOKit call on the one thread the game is waiting on.
+	 *
+	 * A change to ff_first or ff_commit is a different thing: those carry
+	 * the envelope, the duration and the effect's type, so the effect is
+	 * being redefined rather than moved, and then the whole set goes in
+	 * order. That also keeps the rule that a bare ff_first or a bare
+	 * ff_commit is never sent, which is a sequence no wheel has been seen
+	 * receiving.
+	 *
+	 * -t restores the old behaviour for anyone who needs to compare, and
+	 * exists because this changes the hot path of something that works.
+	 */
+	if (s->always_triple || moved[0] || moved[2]) {
+		first = 0;
+		last = 2;
+	} else {
+		first = 1;
+		last = 1;
+	}
 
 	/*
 	 * Recorded per packet and only once its write has succeeded, so a
 	 * failure part way through leaves the slot believing exactly what
 	 * reached the wheel and the next pass sends the rest.
 	 */
-	for (i = 0; i < 3; i++) {
+	for (i = first; i <= last; i++) {
 		if (emit(s, pkt[i].buf, pkt[i].len) != 0)
 			return -1;
 		sl->sent[i] = pkt[i];

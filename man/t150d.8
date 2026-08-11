@@ -10,6 +10,7 @@
 .Op Fl e Ar endpoint
 .Op Fl g Ar ms
 .Op Fl r Ar degrees
+.Op Fl t
 .Sh DESCRIPTION
 .Nm
 is the macOS half of the force feedback bridge. It listens on loopback for
@@ -95,6 +96,15 @@ by hand, with
 for driving without a game or for a game that is known to want it. This
 option exists for that case and for scripting it; it is not a default and
 should not be treated as one.
+.It Fl t
+Re-send all three of an effect's packets whenever any one of them changes,
+which is what builds before this one did. The default sends only the packet
+that moved, which is a third of the writes and is what Thrustmaster's own
+driver does: its DirectInput capture uploads an effect once and then
+modulates it with bare update packets. Every write is a synchronous call on
+the thread a game is waiting for, so two writes in three were costing a game
+time to re-state bytes the wheel already had. This flag exists to compare the
+two by feel on real hardware.
 .It Fl v
 Log connections, effect downgrades, every entry into the safe state, and each
 device setting as it is written, so a report can say whether the gain and the
@@ -146,9 +156,18 @@ intermediate value was replaced before it could be felt. A game that
 re-sends an effect it has not changed writes nothing at all: each slot keeps
 the exact bytes it last put on the wire and a pass compares against them.
 .Pp
-Any difference sends all three packets rather than the one that moved. The
-three correlate through slot keys and the only sequence measured on hardware
-is all three together, so the cheaper thing waits for a measurement.
+Only the packet that moved is sent. A level, a coefficient or a phase is one
+packet; a change to the envelope, the duration or the effect's type is the
+whole set, because those redefine the effect rather than move it. A bare
+first or a bare commit is never sent.
+.Pp
+That is the vendor's own behaviour, taken from its DirectInput capture in
+.Pa tmp/oldffb/directX_constforce.pcapng ,
+which uploads an effect once and then sends twenty four bare update packets
+as the force changes. This daemon used to re-send the set every time, on a
+claim that the set was the only sequence measured, which was cited to a
+research entry that says nothing of the kind. See
+.Fl t .
 .Pp
 Starts, stops, destroys, resets, stop-all, the three settings, the input open
 on hello, the watchdog, the safe state and shutdown are written the moment
