@@ -386,14 +386,16 @@ test_ramp(void)
 
 	/* Halfway along, the level is halfway between the two ends. */
 	(void)tick(1500);
-	expect_log("a ramp slides, and costs one packet",
-	    "write 4: 03 46 00 20\n");
+	expect_log("a ramp slides: the level, then the re-play",
+	    "write 4: 03 46 00 20\n"
+	    "write 4: 41 02 41 01\n");
 
 	/* Past the end it holds, rather than wrapping back to the start. */
 	frame(T150_OP_KEEPALIVE, NULL, 0, 2500, T150_OP_OK, T150_ERR_NONE);
 	(void)tick(2500);
 	expect_log("a ramp holds at its end",
-	    "write 4: 03 46 00 40\n");
+	    "write 4: 03 46 00 40\n"
+	    "write 4: 41 02 41 01\n");
 
 	frame(T150_OP_KEEPALIVE, NULL, 0, 2600, T150_OP_OK, T150_ERR_NONE);
 	(void)tick(2600);
@@ -996,6 +998,7 @@ static void
 test_only_the_packet_that_moved_is_sent(void)
 {
 	struct t150_effect ef;
+	uint8_t start[2];
 
 	reset_session();
 	hello(0);
@@ -1028,6 +1031,38 @@ test_only_the_packet_that_moved_is_sent(void)
 	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
 	    "write 4: 03 0e 00 20\n"
 	    "write 15: 01 00 00 40 d0 07 00 00 00 0e 00 1c 00 00 00\n");
+
+	/*
+	 * A constant that is playing is re-played after its level moves, the
+	 * way Thrustmaster's own driver does it, and a stopped one is not.
+	 * The tester felt the difference when the update went out alone.
+	 */
+	reset_session();
+	hello(0);
+	(void)tick(0);
+	drain_log();
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+	drain_log();
+
+	ef.u.constant.magnitude = 5000;
+	upload_at(&ef, 10);
+	(void)tick(10);
+	expect_log("a playing constant is re-played after its level moves",
+	    "write 4: 03 0e 00 20\n"
+	    "write 4: 41 00 41 01\n");
+
+	frame(T150_OP_EFFECT_STOP, start, 1, 20, T150_OP_OK, T150_ERR_NONE);
+	drain_log();
+	ef.u.constant.magnitude = 2500;
+	upload_at(&ef, 30);
+	(void)tick(30);
+	expect_log("a stopped one is not",
+	    "write 4: 03 0e 00 10\n");
 
 	/* -t restores the old behaviour for a side by side comparison. */
 	reset_session();

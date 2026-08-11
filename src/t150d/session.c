@@ -146,6 +146,16 @@ scale_effect(struct t150_effect *ef)
  * when the effect cannot be encoded at all. The two failures are different:
  * a write may succeed next time and an encoding never will.
  */
+static int control(struct t150_session *s, uint8_t slot, int play,
+	    uint8_t iterations);
+
+/*
+ * Returns 0 when the wheel already holds the effect and nothing was sent,
+ * 1 when only the update went, 2 when the whole set went, -1 when a write
+ * failed and -2 when the effect cannot be encoded at all. The caller needs
+ * to tell 1 from 2: a modulated constant is re-played after a bare update
+ * and must not be re-played after a full upload, which carries its own.
+ */
 static int
 flush_slot(struct t150_session *s, struct t150_slot *sl)
 {
@@ -210,7 +220,7 @@ flush_slot(struct t150_session *s, struct t150_slot *sl)
 		sl->sent[i] = pkt[i];
 	}
 
-	return 0;
+	return first == last ? 1 : 2;
 }
 
 static int
@@ -540,7 +550,7 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 	 * in one burst gets both on the wheel before it hears about either.
 	 */
 	if (sl->dirty) {
-		if (flush_slot(s, sl) != 0) {
+		if (flush_slot(s, sl) < 0) {
 			/* Reported here, so the next upload does not repeat it. */
 			s->io_err = 0;
 			reply_err(rep, T150_ERR_DEVICE_IO);
@@ -924,8 +934,29 @@ session_emit(struct t150_session *s, uint64_t now_ms)
 			continue;
 
 		done++;
-		if ((r = flush_slot(s, sl)) == 0) {
+		if ((r = flush_slot(s, sl)) >= 0) {
 			sl->dirty = 0;
+			/*
+			 * A constant force whose level has just moved is
+			 * played again, because that is what the wheel is
+			 * given by the driver that works. Thrustmaster's
+			 * DirectInput capture,
+			 * tmp/oldffb/directX_constforce.pcapng, pairs 24 of
+			 * its 25 bare updates with 41 xx 41 01 immediately
+			 * after, and the tester felt the difference when this
+			 * daemon sent the update alone: the force was there
+			 * and worse. Its control panel captures for a spring
+			 * and a sine pair none at all, so this is deliberately
+			 * limited to the constant, which is also the only
+			 * shape any capture here shows being modulated.
+			 *
+			 * Only after a bare update. A full upload ends in its
+			 * own commit and the game's own start follows it.
+			 */
+			if (r == 1 && sl->playing &&
+			    sl->ef.kind == T150_EFFECT_CONSTANT)
+				(void)control(s, (uint8_t)k, 1,
+				    sl->iterations > 0 ? sl->iterations : 1);
 			continue;
 		}
 

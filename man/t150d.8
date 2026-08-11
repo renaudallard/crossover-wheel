@@ -161,6 +161,13 @@ packet; a change to the envelope, the duration or the effect's type is the
 whole set, because those redefine the effect rather than move it. A bare
 first or a bare commit is never sent.
 .Pp
+A constant force that is playing is then played again, which is the second
+half of what the vendor does and is not optional. Sending the level alone was
+tried on hardware and the force was reported as worse, which is what sent
+this looking at the capture properly: 24 of its 25 bare updates are followed
+immediately by a play. Its control panel captures for a spring and a sine
+pair none, so nothing but the constant is re-played here.
+.Pp
 That is the vendor's own behaviour, taken from its DirectInput capture in
 .Pa tmp/oldffb/directX_constforce.pcapng ,
 which uploads an effect once and then sends twenty four bare update packets
