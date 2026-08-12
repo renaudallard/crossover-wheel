@@ -1,3 +1,9 @@
+![Force feedback for the Thrustmaster T150 in games running under CrossOver on
+macOS: no kext, no DriverKit extension, no SIP change, no root. A game in the
+bottle reaches the t150-dinput8.dll proxy over DirectInput 8, which forwards
+everything but force feedback to the t150d daemon on 127.0.0.1, which writes
+to the wheel with SetReport.](docs/banner.svg)
+
 # crossover-wheel
 
 Force feedback for the **Thrustmaster T150** in games running under
