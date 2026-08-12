@@ -1607,8 +1607,32 @@ fault: a game configured for 900 degrees against a wheel at its own 1080
 turns further than the car does, and the on-screen wheel lags the driver's
 hands by exactly that ratio.
 
-**The fix is to set the wheel to the game's number**, which is what `-r` and
-`t150ctl range` exist for. Confirmed: "the range is good".
+**The fix is that the two numbers must be the same**, and either one can be
+moved to the other. The measured values: Assetto Corsa defaults to 900, the
+T150's own range is 1080, and nothing in this project had set a range in any
+of the tester's sessions, every one of which logs "no rotation range given".
+So the two disagreed by 900 against 1080 the entire time.
+
+**He fixed it from the game's side, not the wheel's.** He set Assetto Corsa
+to 1080 to match the wheel, and reported "the range is good. It's similar to
+the normal T150 in Assetto Corsa on windows with the official drivers" —
+which is the vendor's own setup as a reference, and the closest thing to a
+control this project has. Assetto Corsa Competizione then "detected that's
+1080".
+
+**So the simplest advice is the game side.** The T150 is 1080 and games
+default to less, so setting the game to 1080 costs one setting and needs no
+daemon option at all. `-r` is for the other direction, for somebody who wants
+a shorter range and needs the wheel moved to it.
+
+> **Not confirmed: `-r` under a game.** This entry first said the fix was to
+> set the wheel to the game's number with `-r` or `t150ctl range`, and cited
+> "the range is good" for it. He never did that. He changed the game. The
+> reasoning that the numbers must agree is sound and independent of which
+> side moves, but moving the wheel under a running game has still never been
+> measured, and that distinction is exactly what A34 got wrong one entry
+> above. Citing a tester for a test he did not run is the same fault in a
+> different direction.
 
 **What this project had written instead.** A34's "test 31 set 270, 900 and
 1080 in a game and reported no change from any of them" became a documented
@@ -1624,9 +1648,9 @@ measured one that arrives and is unwelcome, and it then forbade the only
 available fix for a real symptom for four releases. A null result from a path
 that is broken says nothing about that path working.
 
-**Still open:** which number the tester used. He confirmed matching works
-without saying what he matched, so no example value in the documentation is
-backed by a measurement yet.
+**Still open:** whether `-r` does the same job from the wheel's side under a
+running game. Everything above was measured with the wheel left at its own
+1080 throughout.
 
 ---
 

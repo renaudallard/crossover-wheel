@@ -396,19 +396,30 @@ control panel and the game assumes the wheel is already there, so a game
 whose settings say 900 degrees reaches nothing and scales its steering for a
 range the wheel is not at.
 
-**Set `-r` to whatever the game's own rotation setting says, because nothing
-else can.** The two numbers have to agree and only one of them can be changed
-from inside the game. A game configured for 900 degrees against a wheel at its
-own 1080 turns further than the car does, and the on-screen wheel lags the
-driver's hands by exactly that ratio. That is what the tester reported; he set
-the wheel to match the number in his game and answered "the range is good".
+**The game's rotation setting and the wheel's own range must be the same
+number, and the easiest way is to change the game.** DirectInput has no
+property for wheel rotation, so a game cannot move a wheel; it assumes the
+wheel is already at whatever its own setting says. **The T150 is 1080 degrees
+and Assetto Corsa defaults to 900**, so out of the box they disagree, and the
+car responds to a given movement of the hands by 900/1080 of what the game
+intends.
 
-This README said the opposite until now, in bold. The warning rested on a test
-that set 270, 900 and 1080 under a game and felt no difference from any of
-them, run before the range was ever confirmed to reach the wheel. It measured
-a range that was not arriving, not a range that arrives and is unwelcome.
-`t150ctl range 900` sets the same thing by hand, which is how to try a number
-before putting it in a startup line.
+**Set the game to 1080.** That costs one setting and needs nothing from this
+daemon. Measured: the tester did exactly that and reported "the range is
+good, it's similar to the normal T150 in Assetto Corsa on windows with the
+official drivers", and Assetto Corsa Competizione then detected 1080.
+
+`-r`, and `t150ctl range`, are the other direction, for driving at a shorter
+range than the wheel's own: set the game to 540 and the wheel to 540 and they
+agree there too. **That direction has not been tested under a game.** The
+wheel was left at its own 1080 in every session that produced the result
+above.
+
+This README said the opposite until 0.1.27, in bold: do not use `-r` with a
+game. That rested on a test which set 270, 900 and 1080 under a game and felt
+no difference from any of them, run before the range had ever been confirmed
+to reach the wheel at all. It measured a range that was not arriving, not one
+that arrives and is unwelcome.
 
 **An upload is answered when it is accepted, not when it reaches the wheel.**
 The daemon keeps what each slot should hold and writes it out from a pass

@@ -87,19 +87,32 @@ assumes the wheel is already at the one in its settings. A game asking for
 900 degrees therefore reaches nothing here, and its steering is scaled for a
 range the wheel is not at.
 .Pp
-.Sy "Set this to whatever the game's own rotation setting says" .
-Because nothing else can. The two numbers have to agree and only one of them
-can be changed from inside the game, so if a game is configured for 900
-degrees and the wheel is at its own 1080, the wheel turns further than the car
-does and the on-screen wheel lags the driver's hands by exactly that ratio.
-Measured on hardware: a tester reported that mismatch, set the wheel to match
-the number in his game, and answered "the range is good".
+.Sy "The wheel's range and the game's rotation setting must be the same number" .
+DirectInput has no property for wheel rotation, so a game cannot move a wheel
+and simply assumes it is already at whatever its own setting says. The T150 is
+1080 degrees and Assetto Corsa defaults to 900, so out of the box they
+disagree and the car responds to a given movement of the hands by 900/1080 of
+what the game intends.
 .Pp
-Earlier versions of this page said the opposite, in bold, and were wrong. The
-evidence for the warning was a test that set 270, 900 and 1080 under a game
-and felt no difference from any of them, and that test ran before the range
-was ever confirmed reaching the wheel at all. What it measured was a range
-that was not arriving, not a range that arrives and is unwelcome.
+.Sy "The easy way round is to set the game to 1080" ,
+which costs one setting and needs nothing from
+.Nm .
+Measured on hardware: the tester did that and reported "the range is good,
+it's similar to the normal T150 in Assetto Corsa on windows with the official
+drivers".
+.Pp
+This option is the other direction, for driving at a shorter range than the
+wheel's own: set the game to 540 and the wheel to 540 and they agree there
+too.
+.Sy "That direction has not been tested under a game" .
+The wheel was at its own 1080 throughout the session that produced the result
+above.
+.Pp
+Earlier versions of this page said the opposite, in bold: do not use this with
+a game. That rested on a test which set 270, 900 and 1080 under a game and
+felt no difference from any of them, run before the range had ever been
+confirmed reaching the wheel. It measured a range that was not arriving, not
+one that arrives and is unwelcome.
 .Pp
 .Xr t150ctl 1
 sets the same thing by hand, which is the way to try a number before putting
