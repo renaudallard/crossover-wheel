@@ -18,56 +18,56 @@
   <rect width="1280" height="640" fill="url(#glow)"></rect>
 
   <circle cx="68" cy="78" r="4.5" fill="#6fd47f" filter="url(#dotglow)"></circle>
-  <text x="83" y="83" font-size="15" letter-spacing="2.7" fill="#3fc7d4">WORKS ON REAL HARDWARE</text>
+  <text x="83" y="83" font-size="14" letter-spacing="2.7" fill="#3fc7d4" textLength="330" lengthAdjust="spacingAndGlyphs">WORKS ON REAL HARDWARE</text>
 
-  <text x="62" y="176" font-family="&#39;Barlow Condensed&#39;,&#39;Arial Narrow&#39;,Helvetica,sans-serif" font-size="88" font-weight="700" fill="#f6f7f9" letter-spacing="-0.5">crossover‑wheel</text>
+  <text x="64" y="176" font-family="&#39;Barlow Condensed&#39;,&#39;Arial Narrow&#39;,Helvetica,sans-serif" font-size="88" font-weight="700" fill="#f6f7f9" textLength="620" lengthAdjust="spacingAndGlyphs">crossover-wheel</text>
 
-  <text x="64" y="216" font-size="20" fill="#c2c7cf">Force feedback for the <tspan fill="#f6f7f9" font-weight="500">Thrustmaster T150</tspan> in games</text>
-  <text x="64" y="246" font-size="20" fill="#c2c7cf">running under <tspan fill="#f6f7f9" font-weight="500">CrossOver</tspan> on macOS.</text>
+  <text x="64" y="216" font-size="19" fill="#c2c7cf" textLength="560" lengthAdjust="spacingAndGlyphs">Force feedback for the <tspan fill="#f6f7f9" font-weight="500">Thrustmaster T150</tspan> in games</text>
+  <text x="64" y="246" font-size="19" fill="#c2c7cf" textLength="380" lengthAdjust="spacingAndGlyphs">running under <tspan fill="#f6f7f9" font-weight="500">CrossOver</tspan> on macOS.</text>
 
   <g fill="#cdd2d9" font-size="13">
     <rect x="1097" y="62" width="119" height="32" rx="4" fill="#232830" stroke="#4b525c"></rect>
-    <text x="1156" y="82" text-anchor="middle">no kext</text>
+    <text x="1156" y="82" text-anchor="middle" textLength="64" lengthAdjust="spacingAndGlyphs">no kext</text>
     <rect x="994" y="104" width="222" height="32" rx="4" fill="#232830" stroke="#4b525c"></rect>
-    <text x="1105" y="124" text-anchor="middle">no DriverKit extension</text>
+    <text x="1105" y="124" text-anchor="middle" textLength="186" lengthAdjust="spacingAndGlyphs">no DriverKit extension</text>
     <rect x="1060" y="146" width="156" height="32" rx="4" fill="#232830" stroke="#4b525c"></rect>
-    <text x="1138" y="166" text-anchor="middle">no SIP change</text>
+    <text x="1138" y="166" text-anchor="middle" textLength="118" lengthAdjust="spacingAndGlyphs">no SIP change</text>
     <rect x="1110" y="188" width="106" height="32" rx="4" fill="#232830" stroke="#4b525c"></rect>
-    <text x="1163" y="208" text-anchor="middle">no root</text>
+    <text x="1163" y="208" text-anchor="middle" textLength="64" lengthAdjust="spacingAndGlyphs">no root</text>
   </g>
 
   <g>
     <rect x="64" y="330" width="209" height="110" rx="6" fill="#232830" stroke="#4b525c"></rect>
-    <text x="84" y="360" font-size="12" letter-spacing="1.9" fill="#8b929c">IN THE BOTTLE</text>
+    <text x="84" y="360" font-size="11" letter-spacing="1.9" fill="#8b929c" textLength="130" lengthAdjust="spacingAndGlyphs">IN THE BOTTLE</text>
     <text x="84" y="392" font-size="19" font-weight="700" fill="#f6f7f9">game</text>
-    <text x="84" y="416" font-size="13" fill="#a9afb8">DirectInput 8 / SDL</text>
+    <text x="84" y="416" font-size="12" fill="#a9afb8" textLength="169" lengthAdjust="spacingAndGlyphs">DirectInput 8 / SDL</text>
 
     <text x="315" y="382" font-size="11" fill="#3fc7d4" text-anchor="middle">effects</text>
     <line x1="273" y1="392" x2="357" y2="392" stroke="#2f8b96" stroke-width="1"></line>
 
     <rect x="357" y="330" width="241" height="110" rx="6" fill="#1f2b31" stroke="#2f8b96"></rect>
-    <text x="377" y="360" font-size="12" letter-spacing="1.9" fill="#3fc7d4">PROXY DLL</text>
-    <text x="377" y="392" font-size="19" font-weight="700" fill="#f6f7f9">t150-dinput8.dll</text>
-    <text x="377" y="416" font-size="13" fill="#a9b6ba">forwards all but force feedback</text>
+    <text x="377" y="360" font-size="11" letter-spacing="1.9" fill="#3fc7d4" textLength="95" lengthAdjust="spacingAndGlyphs">PROXY DLL</text>
+    <text x="377" y="388" font-size="19" font-weight="700" fill="#f6f7f9" textLength="196" lengthAdjust="spacingAndGlyphs">t150-dinput8.dll</text>
+    <text x="377" y="410" font-size="12" fill="#a9b6ba" textLength="150" lengthAdjust="spacingAndGlyphs">forwards everything</text><text x="377" y="428" font-size="12" fill="#a9b6ba" textLength="150" lengthAdjust="spacingAndGlyphs">but force feedback</text>
 
     <text x="640" y="382" font-size="11" fill="#3fc7d4" text-anchor="middle">127.0.0.1</text>
     <line x1="598" y1="392" x2="682" y2="392" stroke="#2f8b96" stroke-width="1"></line>
 
     <rect x="682" y="330" width="241" height="110" rx="6" fill="#1f2b31" stroke="#2f8b96"></rect>
-    <text x="702" y="360" font-size="12" letter-spacing="1.9" fill="#3fc7d4">MACOS DAEMON</text>
-    <text x="702" y="392" font-size="19" font-weight="700" fill="#f6f7f9">t150d</text>
-    <text x="702" y="416" font-size="13" fill="#a9b6ba">unprivileged, no entitlement</text>
+    <text x="702" y="360" font-size="11" letter-spacing="1.9" fill="#3fc7d4" textLength="140" lengthAdjust="spacingAndGlyphs">MACOS DAEMON</text>
+    <text x="702" y="388" font-size="19" font-weight="700" fill="#f6f7f9">t150d</text>
+    <text x="702" y="410" font-size="12" fill="#a9b6ba" textLength="150" lengthAdjust="spacingAndGlyphs">unprivileged,</text><text x="702" y="428" font-size="12" fill="#a9b6ba" textLength="150" lengthAdjust="spacingAndGlyphs">no entitlement</text>
 
     <text x="965" y="382" font-size="11" fill="#e0913f" text-anchor="middle">SetReport</text>
     <line x1="923" y1="392" x2="1007" y2="392" stroke="#e0913f" stroke-width="1"></line>
 
     <rect x="1007" y="330" width="209" height="110" rx="6" fill="#2e2419" stroke="#9c6a30"></rect>
-    <text x="1027" y="360" font-size="12" letter-spacing="1.9" fill="#e0913f">HARDWARE</text>
+    <text x="1027" y="360" font-size="11" letter-spacing="1.9" fill="#e0913f" textLength="98" lengthAdjust="spacingAndGlyphs">HARDWARE</text>
     <text x="1027" y="392" font-size="19" font-weight="700" fill="#f6f7f9">the wheel</text>
-    <text x="1027" y="416" font-size="13" fill="#cdaf8c">044f:b677</text>
+    <text x="1027" y="416" font-size="12" fill="#cdaf8c" textLength="83" lengthAdjust="spacingAndGlyphs">044f:b677</text>
   </g>
 
   <line x1="64" y1="540" x2="1216" y2="540" stroke="#3a3f47" stroke-width="1"></line>
-  <text x="1216" y="570" font-size="14" fill="#8b929c" text-anchor="end">github.com/renaudallard/crossover‑wheel</text>
-  <text x="1216" y="592" font-size="14" fill="#6c737d" text-anchor="end">BSD‑2‑Clause</text>
+  <text x="1216" y="570" font-size="14" fill="#8b929c" text-anchor="end" textLength="330" lengthAdjust="spacingAndGlyphs">github.com/renaudallard/crossover-wheel</text>
+  <text x="1216" y="592" font-size="14" fill="#6c737d" text-anchor="end" textLength="110" lengthAdjust="spacingAndGlyphs">BSD-2-Clause</text>
 </svg>
