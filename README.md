@@ -453,16 +453,17 @@ coefficients, saturations and deadband:
 
 ```
 t150d: slot 2 constant: magnitude -8670, direction 9000, gain 10000
-t150d: slot 3 spring: centre 0, coeff 9998/9998, saturation 10000/10000, deadband 0
+t150d: slot 3 damper: centre 0, coeff 9998/9998, saturation 10000/10000, deadband 0
 ```
 
 A condition is named as the **spring** or **damper** it is rather than as a
-condition, because only one of those resists displacement from a point, so
-only one can produce a vibration anchored to a wheel position. The kind shown
-is what the wheel was given, after any downgrade, which is reported on its own
-line. The autocentre release is logged the same way the gain and the range
-are, so a report can tell a packet that was refused from one that was never
-sent.
+condition, because the two are different forces and this line could not tell
+them apart. Those are Assetto Corsa's real numbers: a damper at 9998 of
+10000, which is the maximum, and the wheel is unstable there. See
+[`docs/RESEARCH.md`](docs/RESEARCH.md) A46. The kind shown is what the wheel
+was given, after any downgrade, which is reported on its own line. The
+autocentre release is logged the same way the gain and the range are, so a
+report can tell a packet that was refused from one that was never sent.
 
 A slot that starts or stops says so too, **once per transition rather than
 once per call**, because a game may start an already playing slot on every

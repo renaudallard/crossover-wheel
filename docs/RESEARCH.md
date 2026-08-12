@@ -751,6 +751,12 @@ measured. The vendor captures in A27 are the reference to check against, and
 their constant sends level `0x3e` against this project's ceiling of `0x40`,
 which is the one number that has independent support.
 
+> **Superseded for the damper by A46.** A damper has since been driven on
+> hardware across its whole coefficient range and judged as a damper, light
+> when the wheel is turned slowly and heavy when it is spun fast, and a
+> damper and a constant have been rendered together. Springs, envelopes,
+> ramps and per-effect gain are still untested.
+
 **A29. A28 replicated, two for two, and the force is a force rather than a
 lock.** A single session ran the same upload four times, twice without the
 open packet and twice with it:
@@ -1466,6 +1472,105 @@ measured through a transform that reached one pedal out of two, so no
 conclusion drawn from how they felt describes what a working correction
 does. The question of whether `invert` belongs on by default is open again,
 and this time it can be answered by trying it.
+
+**A46. The wheel's own damper is unstable at maximum coefficient, and that
+is the vibration this project spent four releases blaming on itself.** The
+hand tests that followed test 40, on hardware, with `probe_setreport` and
+raw packets.
+
+**No game, no daemon, no proxy.** That is the whole value of this run. Every
+previous report of the vibration arrived with a game running and this
+project's own code in the path, so every explanation reached for was a
+software one. One raw packet sent by hand reproduces it.
+
+**What was sent.** A damper in slot 0 at maximum, `05 0e 00 64 64 00 00 00
+00 64 64`, after `42 04` and `43 80`, committed and played. Then a constant
+in slot 1 alongside it.
+
+**Three things the wheel does correctly, none of which had been measured
+before:**
+
+- **The damper works, and works as a damper.** "A little hard but good"
+  turned slowly, "harder" spun fast. Resistance that rises with speed and
+  not with displacement is what a damper is, and this is the first time one
+  has been judged against that standard on this wheel.
+- **The constant works.** "It turn left slowly."
+- **The wheel renders a constant and a condition at the same time.** With
+  both playing, "the wheel is still hard if i spin fast". Nothing in this
+  project had ever tested simultaneous effects; A43's damper and every other
+  success used one effect alone. A game runs both, so this mattered and was
+  assumed rather than known.
+
+**The vibration, and its shape.** With the damper alone at maximum, the
+wheel buzzes when left standing at:
+
+```
+0     135     270     405     degrees
+0     1x135   2x135   3x135
+```
+
+The tester found 0, 135 and 405 unprompted and confirmed 270 when asked. The
+spacing is an eighth of the wheel's nominal 1080 degree travel. That reading
+assumes the wheel was at its default range during the test, which was not
+verified, and the same tester reports separately that the range a game asks
+for does not reach the wheel, so the assumption is worth checking before
+anything is built on the eighth.
+
+**Zero is not special.** Every release from 0.1.23 to 0.1.26 reasoned about
+"a force that changes sign across zero with nothing to hold it", because the
+first report said the wheel vibrates at centre with the car stopped. Centre
+was simply the first of four evenly spaced positions anybody happened to
+notice, and three explanations were built on top of it: a missing deadband,
+a delayed restoring force, and the wheel's own autocentre spring near A17's
+120 degree threshold. All three are dead.
+
+**The coefficient is the trigger, and the threshold is low.** Same effect,
+same positions, changing only the coefficient byte:
+
+| coefficient | byte | result |
+| --- | --- | --- |
+| 100, the maximum | `64` | buzzes |
+| 99 | `63` | buzzes |
+| 90 | `5a` | buzzes, **more slowly** |
+| 80 | `50` | quiet |
+| 64, 32, 16 | `40` `20` `10` | quiet |
+
+**The buzz slows as the gain falls**, which is what a gain dependent limit
+cycle does and what a fixed mechanical resonance does not. So this is the
+wheel's damper loop fighting itself, and the periodicity is most likely
+something in the position or velocity signal it derives its force from.
+
+**This is not an encoding error, and that was checked before it was
+believed.** `scale_signed` rounds, so DirectInput 9998 becomes 100 where
+truncation would give 99, and an off-by-one there would have been the happy
+answer. It is not one: the vendor's own divisor from A40, `0x147` on a 32767
+scale, takes 9998 to 32760 and then to 100 as well. Thrustmaster's driver
+sends 100 for the same request. The wheel dislikes a value that is correctly
+encoded.
+
+**The user cannot avoid it.** Assetto Corsa asks for 9998 of 10000 and its
+force feedback settings page has no damping control of any kind: gain,
+filter, minimum force, kerb, road, slip and ABS, and nothing else
+(screenshot, test 40's session). So the 100 percent damper is not a slider
+anybody chose and not one anybody can move.
+
+**How a fix here must be done.**
+
+- **The cap must be 80 or below.** 99 was tried first precisely because a
+  one percent trim would have cost nothing, and it buzzes. Anything between
+  81 and 89 is unmeasured; 90 is known bad.
+- **It is a workaround, not a correction.** It gives a game less than it
+  asked for, which is what A41 warns against. What distinguishes it from
+  A41's case is that the value is unreachable from the game's own settings,
+  so no user can work around it and no user chose it. Say so wherever it is
+  documented rather than presenting the wheel as doing what was asked.
+- **Do not ship it without knowing what it costs.** The tester confirmed 80
+  is quiet. Whether 80 still feels damped when the wheel is spun fast is
+  open, and a cap that trades a buzz for slack force feedback is not
+  obviously the better complaint. That question is asked and unanswered.
+- **The eighth-of-a-turn spacing is unexplained and worth keeping.** If a
+  future fix has to be something other than a cap, the periodicity is the
+  only handle anybody has on the mechanism.
 
 ---
 
