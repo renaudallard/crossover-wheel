@@ -327,6 +327,41 @@ install_proxy()
 		say "  kept the old dinput8.dll as .crossover-wheel.bak"
 	fi
 
+	# Look at dinput8_orig.dll before overwriting it, because it is not
+	# necessarily ours. Three things it can be, and only one of them is
+	# safe to replace without saying anything:
+	#
+	#   a Wine builtin   ours, or the same file from an older CrossOver.
+	#                    Replacing it is the documented thing to do after a
+	#                    CrossOver upgrade, since it stays at the version it
+	#                    was copied from.
+	#   our proxy        somebody, possibly an earlier run of this, copied
+	#                    the wrong file here. That is the exact mistake this
+	#                    installer exists to prevent, and replacing it with
+	#                    the real builtin is the repair.
+	#   anything else    another dinput8 wrapper chain-loads through this
+	#                    name too. Overwriting it silently would break that
+	#                    tool and lose a file nobody else has a copy of.
+	if [ -f "$sys32/dinput8_orig.dll" ]; then
+		if is_our_proxy "$sys32/dinput8_orig.dll"; then
+			say "  dinput8_orig.dll was the proxy, not the builtin:"
+			say "  replacing it with the real one, which repairs it"
+		elif is_wine_builtin "$sys32/dinput8_orig.dll"; then
+			say "  dinput8_orig.dll was already a builtin, refreshing"
+		elif [ -f "$sys32/dinput8_orig.dll.crossover-wheel.bak" ]; then
+			warn "dinput8_orig.dll is not a Wine builtin and a"
+			warn "backup of an earlier one already exists."
+			die "move $sys32/dinput8_orig.dll aside yourself first"
+		else
+			run cp "$sys32/dinput8_orig.dll" \
+			    "$sys32/dinput8_orig.dll.crossover-wheel.bak"
+			say "  dinput8_orig.dll was something else, and is kept"
+			say "  as .crossover-wheel.bak. If another tool put it"
+			say "  there, it chain-loads through this name too and"
+			say "  the two cannot both use it."
+		fi
+	fi
+
 	run cp "$builtin" "$sys32/dinput8_orig.dll"
 	say "  dinput8_orig.dll  <- CrossOver's builtin"
 	run cp "$DLL" "$sys32/dinput8.dll"
