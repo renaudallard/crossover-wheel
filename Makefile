@@ -92,7 +92,7 @@ DLL_CPPFLAGS = -Iinclude -Isrc/dll -DT150_PROXY_VERSION=\"$(DLL_VERSION)\"
 DLL_CFLAGS   = -O2 -std=c11 $(WARNINGS)
 DLL_LIBS     = -ldxguid -luuid -lole32 -lws2_32
 
-.PHONY: all probes tools daemon dll test check strict clean help install
+.PHONY: all probes tools daemon dll test check strict clean help install app
 
 ifeq ($(HAVE_DLL_CC),yes)
 DLL_TARGET = dll
@@ -118,6 +118,8 @@ help:
 	@echo "  daemon   build t150d"
 	@echo "  dll      cross build the in-bottle proxy (needs mingw-w64)"
 	@echo "  test     build and run the portable tests"
+	@echo "  app      build crossover-wheel.app, the menu bar item and"
+	@echo "           graphical installer (macOS only)"
 	@echo "  install  run install.sh, which puts the binaries on your PATH"
 	@echo "           and the proxy into a bottle you pick (macOS)"
 	@echo "           pass arguments with INSTALL_ARGS, e.g."
@@ -237,6 +239,38 @@ strict:
 # work the same from an extracted release where there is no Makefile at all.
 install:
 	@sh $(CURDIR)/install.sh $(INSTALL_ARGS)
+
+# crossover-wheel.app: the menu bar item and the graphical installer.
+#
+# The bundle carries install.sh, the binaries, the man pages and the proxy in
+# Resources, because install.sh resolves all of those relative to itself. That
+# is what lets the app be a front end over the shell script rather than a
+# second implementation of it: the part that can go wrong stays in the script
+# that is tested.
+APP	   = $(BIN)/crossover-wheel.app
+APP_RES	   = $(APP)/Contents/Resources
+
+ifeq ($(UNAME_S),Darwin)
+app: $(APP)
+
+$(APP): src/mac/t150menu.m dist/Info.plist $(TOOL_BINS) $(PROBE_BINS) \
+    $(DAEMON_BIN) | $(BIN)
+	rm -rf $(APP)
+	mkdir -p $(APP)/Contents/MacOS $(APP_RES)
+	cp dist/Info.plist $(APP)/Contents/Info.plist
+	$(CC) $(CPPFLAGS) $(CFLAGS) -fobjc-arc -o $(APP)/Contents/MacOS/t150menu \
+	    src/mac/t150menu.m -framework Cocoa
+	cp install.sh $(APP_RES)/
+	cp $(DAEMON_BIN) $(TOOL_BINS) $(PROBE_BINS) $(APP_RES)/
+	cp man/*.1 man/*.7 man/*.8 $(APP_RES)/
+	@if [ -f $(DLL_BIN) ]; then cp $(DLL_BIN) $(APP_RES)/; \
+	    else echo "note: no $(DLL_BIN), the app will ask for the proxy"; fi
+	@echo "built $(APP)"
+else
+app:
+	@echo "app: macOS only, nothing to do here" >&2
+endif
+
 
 clean:
 	rm -rf $(BUILD)

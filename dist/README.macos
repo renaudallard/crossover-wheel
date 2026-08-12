@@ -4,14 +4,27 @@ Force feedback for a Thrustmaster T150 in games running under CrossOver.
 Nothing is installed system wide and nothing needs root, except probe_intr,
 which is a measurement tool rather than something you need.
 
-INSTALL
+INSTALL, THE EASY WAY
+
+Double-click crossover-wheel.app.
+
+The first time, macOS will refuse: these binaries are not signed. Right-click
+the app instead, choose Open, and confirm. Once, ever.
+
+It asks which CrossOver bottle your game is in and does the rest. Afterwards
+it stays in the menu bar as a small "T150", where you can start and stop the
+daemon, see whether the wheel is connected and whether a game is using it,
+and switch on "Start at login" so you never touch it again.
+
+INSTALL, THE OTHER WAY
 
   ./install.sh
 
-That is the whole thing. It asks which CrossOver bottle your game is in and
-then does both halves: the binaries and their man pages go in ~/.local/bin,
-and the proxy goes into the bottle with the registry override and the one
-environment variable the wheel needs to appear inside it at all.
+That is the whole thing, and it is exactly what the app runs internally. It
+asks which CrossOver bottle your game is in and then does both halves: the
+binaries and their man pages go in ~/.local/bin, and the proxy goes into the
+bottle with the registry override and the one environment variable the wheel
+needs to appear inside it at all.
 
   ./install.sh -n     say what would happen and change nothing
   ./install.sh -h     the other options
@@ -22,8 +35,15 @@ it by hand.
 
 THEN, EVERY TIME
 
+If you use the app, none of this is needed: start the daemon from the menu
+bar, or switch on "Start at login" and forget it exists.
+
+By hand:
+
   t150boot            take the wheel out of boot mode. Needed after every
-                      plug-in, and after sleep and wake.
+                      plug-in, and after sleep and wake. The daemon does this
+                      by itself while it is running, so it is only needed
+                      before you start the daemon.
   t150d -v -w         start this before the game, and leave it running.
 
 The proxy looks for the daemon once, when the game creates its wheel, and

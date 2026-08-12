@@ -42,9 +42,31 @@ on a measurement that did not support them.
 ## Install
 
 Download the macOS archive from the
-[releases page](https://github.com/renaudallard/crossover-wheel/releases),
-extract it, and run the installer. It carries the proxy DLL with it, so this
-is the only thing to download:
+[releases page](https://github.com/renaudallard/crossover-wheel/releases) and
+extract it. There are two ways in, and they do the same work.
+
+### The graphical one
+
+Double-click **crossover-wheel.app**. It shows a window, asks which CrossOver
+bottle your game is in, and installs everything. Afterwards it lives in the
+menu bar as `○ T150`, where it starts and stops the daemon, says whether the
+wheel is connected and whether a game is talking to it, and has a **Start at
+login** switch.
+
+**The first launch needs a right-click.** The app is unsigned, so
+double-clicking it gives "cannot be opened because the developer cannot be
+verified". Right-click it, choose Open, and confirm. That is once, ever.
+
+The app is a front end over `install.sh` and runs the very same script from
+inside itself, so both routes do exactly the same thing to your bottle. It
+also never connects to the daemon to find out what is happening; it runs the
+daemon as its own child and reads what it prints, because the daemon serves
+one client at a time and a second connection would displace a running game.
+
+### The command line one
+
+`install.sh` carries the proxy DLL with it, so the archive is the only thing
+to download:
 
 ```sh
 V=0.1.29        # whatever the releases page shows
@@ -77,7 +99,7 @@ It asks one question, which bottle your game is in, and then does everything:
 `./install.sh -n` shows what it would do and changes nothing. `-p` picks a
 different prefix, `-b` names the bottle so it asks nothing, and `--no-bottle`
 or `--no-binaries` does one half. From a source tree, `make install` runs the
-same script.
+same script and `make app` builds the application.
 
 Then, every time:
 
@@ -181,6 +203,7 @@ in-bottle bus driver was considered and rejected.
 | `probe_dinput.exe` the in-bottle probe | run on hardware in test 27: it mapped the wheel, walked all twenty one controls with a person answering, and played two effects that were felt. Also runs under Wine in CI against a wheel shaped uinput device |
 | build, CI, docs, man pages | working |
 | `install.sh` | installs both halves, tested against a synthetic CrossOver tree; the bottle half has only been run for real by hand |
+| `crossover-wheel.app` | the menu bar item and graphical installer. **Compiled by CI and never clicked**: it is a front end over `install.sh`, which is where anything that can go wrong lives |
 | `t150ctl`, `t150boot` | working on hardware, including the rotation range, which visibly shortens and restores the wheel's travel |
 
 The encoders turn a normalized effect into the wheel's packets and are the

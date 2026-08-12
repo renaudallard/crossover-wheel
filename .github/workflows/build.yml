@@ -288,6 +288,25 @@ jobs:
       - uses: actions/checkout@v7
       - name: build everything
         run: make strict
+      - name: build the menu bar app
+        # The only check this GUI gets. Nothing on a runner can click a menu
+        # bar item, so compiling it under the same warnings as everything else
+        # is the whole of the automated confidence in it, and the app is a
+        # front end over install.sh precisely so that the part which can go
+        # wrong is tested elsewhere.
+        run: make app
+      - name: the app bundle carries what install.sh needs
+        # install.sh resolves the binaries, the man pages and the proxy
+        # relative to itself, so the bundle is only self contained if they are
+        # all beside it in Resources.
+        run: |
+          R=build/bin/crossover-wheel.app/Contents/Resources
+          test -x build/bin/crossover-wheel.app/Contents/MacOS/t150menu
+          test -f build/bin/crossover-wheel.app/Contents/Info.plist
+          for f in install.sh t150d t150ctl t150boot t150-dinput8.dll; do
+            test -f "$R/$f" || { echo "missing from the bundle: $f" >&2; exit 1; }
+          done
+          sh "$R/install.sh" -h 2>&1 | grep -q "no-bottle"
       - name: confirm the probes run
         # No wheel is attached to a CI runner, so the only thing that can be
         # checked here is that each tool starts, parses arguments and exits
