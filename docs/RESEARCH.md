@@ -2454,7 +2454,13 @@ Probes 1 to 6 are what `src/probe/` exists to answer. See
   Logitech is stable; its Thrustmaster beta targets the T300RS protocol, not
   the T150's. Useful as proof the shape works, and as an oracle: if it drives
   a wheel on your Mac, the macOS half is possible there.
-- **fffb** (eddieavd/fffb), open source, see A3.
+- **fffb** (eddieavd/fffb), open source, see A3. Drives Logitech force
+  feedback from unprivileged userspace on Apple Silicon with
+  `IOHIDDeviceSetReport`, which is the evidence that the macOS half of this
+  design was possible at all before anybody here had tried it.
+- **Kimplul/hid-tmff2**, the newer Thrustmaster family on Linux. Useful for
+  contrast rather than for constants: it drives its wheels through the HID
+  layer, which the T150 driver does not.
 - **Akellacom/thrustmaster_t300rs_gt_macos_driver**, userspace macOS T300RS
   driver. Its CrossOver mode needs neither SIP nor AMFI off, but it needs
   sudo, and it does not deliver game-driven force feedback into Wine at all.

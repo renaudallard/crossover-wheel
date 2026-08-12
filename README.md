@@ -714,18 +714,13 @@ downgraded rather than refused, because a game that gets a refusal from
 
 - [scarburato/t150_driver](https://github.com/scarburato/t150_driver) and
   [hid-tminit](https://github.com/scarburato/hid-tminit), the Linux drivers
-  every wire constant here is traced back to.
-- [Kimplul/hid-tmff2](https://github.com/Kimplul/hid-tmff2), the newer
-  Thrustmaster family, useful for contrast: it drives its wheels through the
-  HID layer, which the T150 driver does not.
-- [eddieavd/fffb](https://github.com/eddieavd/fffb), which drives Logitech
-  wheel force feedback from unprivileged userspace on Apple Silicon with
-  `IOHIDDeviceSetReport`. Different wheel, but it is the evidence that the
-  macOS half of this design is possible at all.
-- [CrossWheel](https://crosswheel.seastian.com/), a commercial macOS product
-  that already ships this architecture, a proxy DLL in the bottle plus a
-  macOS app. It is not open source and its Thrustmaster support targets the
-  T300RS protocol rather than the T150's.
+  **every wire constant here is traced back to**. This project did not work
+  the T150's protocol out; it read it there, checked it against
+  Thrustmaster's own Windows driver, and found four things to correct
+  ([`docs/RESEARCH.md`](docs/RESEARCH.md) A40).
+
+Work on other wheels, including the commercial product that ships this same
+architecture, is in [`docs/RESEARCH.md`](docs/RESEARCH.md) section F.
 
 ## License
 
