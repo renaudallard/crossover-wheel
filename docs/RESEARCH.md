@@ -928,6 +928,23 @@ the wheel at all.** Test 15.
   it yet", was the accurate one all along. What an isolated felt 270
   would establish is still open, and until it is, nothing should be built
   on the assumption that the range reaches the wheel at all.
+
+  > **Answered since, twice, and the conclusion drawn from this entry was
+  > wrong.** An isolated `t150ctl range 270` visibly shortened the wheel's
+  > travel and `range 1080` restored it, by hand with no game, which is
+  > the test this entry asked for. And a range set to match a game's own
+  > rotation setting fixed a mismatch between the driver's hands and the
+  > on-screen wheel: "the range is good".
+  >
+  > The damage was in what got built on it. "Test 31 set 270, 900 and 1080
+  > in a game and reported no change" became a documented warning, in bold
+  > in both `README.md` and `t150d(8)`, telling people not to use `-r`
+  > with a game. That is the opposite of the truth: DirectInput has no
+  > property for wheel rotation, so a game cannot set the wheel, so the
+  > wheel must be set by hand to whatever the game is configured for or
+  > the two disagree. Test 31 measured a range that was not arriving, and
+  > a warning was written as though it measured one that arrives and is
+  > unwelcome. See A47.
 - The regsvr32 chain-load check passed again after re-copying the builtin.
 
 **The blocker moved.** With the daemon on `-n` and on its real backend,
@@ -1571,6 +1588,45 @@ anybody chose and not one anybody can move.
 - **The eighth-of-a-turn spacing is unexplained and worth keeping.** If a
   future fix has to be something other than a cap, the periodicity is the
   only handle anybody has on the mechanism.
+
+**A47. The rotation range must be set to match the game, and this project
+documented the exact opposite in bold.** Reported after the hand tests of
+A46, on hardware.
+
+**The symptom, unprompted:** "if I change the in-game range for the wheel,
+this doesn't apply to my physical wheel. And when I turn, I see that there
+is a difference between the turn I made and the turn I see on the game car's
+wheel."
+
+**Both halves of that are expected and only one of them is a problem.**
+DirectInput has no property for wheel rotation. On Windows the number lives
+in the vendor's control panel and a game merely assumes the wheel is already
+at whatever its own setting says, so a game's rotation setting reaching
+nothing is correct behaviour rather than a fault. What follows from it is the
+fault: a game configured for 900 degrees against a wheel at its own 1080
+turns further than the car does, and the on-screen wheel lags the driver's
+hands by exactly that ratio.
+
+**The fix is to set the wheel to the game's number**, which is what `-r` and
+`t150ctl range` exist for. Confirmed: "the range is good".
+
+**What this project had written instead.** A34's "test 31 set 270, 900 and
+1080 in a game and reported no change from any of them" became a documented
+warning against ever using `-r` with a game, in bold, in `README.md` and in
+`t150d(8)`, reasoned as "a game sends the maximum range and scales its own
+steering for it". A game sends no range at all, which A34 itself records six
+lines earlier.
+
+**The lesson is about which measurement a conclusion rests on.** Test 31 ran
+before any range had been confirmed reaching the wheel, so it measured a
+range that was not arriving. The warning was written as though it had
+measured one that arrives and is unwelcome, and it then forbade the only
+available fix for a real symptom for four releases. A null result from a path
+that is broken says nothing about that path working.
+
+**Still open:** which number the tester used. He confirmed matching works
+without saying what he matched, so no example value in the documentation is
+backed by a measurement yet.
 
 ---
 

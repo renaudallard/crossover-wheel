@@ -396,13 +396,19 @@ control panel and the game assumes the wheel is already there, so a game
 whose settings say 900 degrees reaches nothing and scales its steering for a
 range the wheel is not at.
 
-**Do not use `-r` with a game.** That reasoning was backwards and hardware
-said so: a game sends the maximum range and scales its own steering for it, so
-a wheel quietly set to 900 underneath one steers differently from what the
-game believes, which is worse than leaving it alone. `t150ctl range 900` by
-hand, deliberately, is where this belongs. It is the same mistake
-[`docs/RESEARCH.md`](docs/RESEARCH.md) A41 records about correcting pedals
-unasked.
+**Set `-r` to whatever the game's own rotation setting says, because nothing
+else can.** The two numbers have to agree and only one of them can be changed
+from inside the game. A game configured for 900 degrees against a wheel at its
+own 1080 turns further than the car does, and the on-screen wheel lags the
+driver's hands by exactly that ratio. That is what the tester reported; he set
+the wheel to match the number in his game and answered "the range is good".
+
+This README said the opposite until now, in bold. The warning rested on a test
+that set 270, 900 and 1080 under a game and felt no difference from any of
+them, run before the range was ever confirmed to reach the wheel. It measured
+a range that was not arriving, not a range that arrives and is unwelcome.
+`t150ctl range 900` sets the same thing by hand, which is how to try a number
+before putting it in a startup line.
 
 **An upload is answered when it is accepted, not when it reaches the wheel.**
 The daemon keeps what each slot should hold and writes it out from a pass

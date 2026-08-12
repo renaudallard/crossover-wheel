@@ -42,6 +42,12 @@ Product id. The default is 0xb677, the T150 in firmware mode.
 .Bl -tag -width Ds
 .It Cm range Ar degrees
 Lock to lock, 270 to 1080. The firmware clamps anything smaller.
+.Pp
+For driving a game, set this to the number the game's own rotation setting
+says. Nothing else can: DirectInput has no property for wheel rotation, so a
+game cannot move the wheel and merely assumes it is already where its setting
+says. If the two disagree the wheel turns further than the car does and the
+on-screen wheel lags the driver's hands by the ratio between them.
 .It Cm gain Ar n
 Overall force, 0 to 10000. This scales every effect the wheel renders. It has
 nothing to scale unless something is driving force feedback, so on an idle
