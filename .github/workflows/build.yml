@@ -283,11 +283,19 @@ jobs:
 
   macos:
     name: probe tools
+    # For the proxy only. The app bundle has to carry t150-dinput8.dll to be
+    # self contained, and a macOS runner has no cross compiler to build one,
+    # so it comes from the job that does.
+    needs: dll
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
       - name: build everything
         run: make strict
+      - uses: actions/download-artifact@v8
+        with:
+          name: proxy-windows
+          path: build/bin
       - name: build the menu bar app
         # The only check this GUI gets. Nothing on a runner can click a menu
         # bar item, so compiling it under the same warnings as everything else
@@ -303,7 +311,9 @@ jobs:
           R=build/bin/crossover-wheel.app/Contents/Resources
           test -x build/bin/crossover-wheel.app/Contents/MacOS/t150menu
           test -f build/bin/crossover-wheel.app/Contents/Info.plist
-          for f in install.sh t150d t150ctl t150boot t150-dinput8.dll; do
+          for f in install.sh t150d t150ctl t150boot t150-dinput8.dll \
+                   AppIcon.icns t150-idleTemplate.png t150-idleTemplate@2x.png \
+                   t150-connectedTemplate.png t150-activeTemplate.png; do
             test -f "$R/$f" || { echo "missing from the bundle: $f" >&2; exit 1; }
           done
           sh "$R/install.sh" -h 2>&1 | grep -q "no-bottle"
@@ -354,4 +364,5 @@ jobs:
             build/bin/t150ctl
             build/bin/t150boot
             build/bin/t150d
+            build/bin/crossover-wheel.app/**
           if-no-files-found: error

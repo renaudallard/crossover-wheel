@@ -263,6 +263,8 @@ $(APP): src/mac/t150menu.m dist/Info.plist $(TOOL_BINS) $(PROBE_BINS) \
 	rm -rf $(APP)
 	mkdir -p $(APP)/Contents/MacOS $(APP_RES)
 	cp dist/Info.plist $(APP)/Contents/Info.plist
+	iconutil -c icns dist/icons/AppIcon.iconset -o $(APP_RES)/AppIcon.icns
+	cp dist/icons/menubar/*.png $(APP_RES)/
 	$(CC) $(CPPFLAGS) $(APP_CFLAGS) -o $(APP)/Contents/MacOS/t150menu \
 	    src/mac/t150menu.m -framework Cocoa
 	cp install.sh $(APP_RES)/

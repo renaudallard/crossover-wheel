@@ -165,13 +165,46 @@
 		[self openSetup:nil];
 }
 
+/*
+ * Three states, one silhouette. The glyphs are template images, which is what
+ * lets macOS tint them for a light or a dark menu bar without two sets: the
+ * name ending in Template is the convention that asks for that, and setting
+ * it explicitly costs nothing if the name ever changes.
+ *
+ * Falls back to text if the bundle has no icons, so a build without them is
+ * still usable rather than invisible.
+ */
+- (void)showGlyph:(BOOL)running
+{
+	NSString *name;
+
+	if (!running || !self.wheelSeen)
+		name = @"t150-idleTemplate";
+	else if (self.clientConnected)
+		name = @"t150-activeTemplate";
+	else
+		name = @"t150-connectedTemplate";
+
+	NSImage *img = [NSImage imageNamed:name];
+
+	if (img == nil) {
+		self.item.button.image = nil;
+		self.item.button.title = running ? @"◉ T150" : @"○ T150";
+		return;
+	}
+
+	img.template = YES;
+	self.item.button.title = @"";
+	self.item.button.image = img;
+}
+
 - (void)refresh
 {
 	BOOL running = self.daemon != nil && self.daemon.isRunning;
 	NSString *wheel = self.wheelSeen ? @"wheel connected"
 	    : @"no wheel found";
 
-	self.item.button.title = running ? @"◉ T150" : @"○ T150";
+	[self showGlyph:running];
 
 	if (running && self.clientConnected)
 		self.statusLine.title = [NSString stringWithFormat:

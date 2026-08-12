@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.55" y2="1">
+      <stop offset="0%" stop-color="#343b47"></stop>
+      <stop offset="62%" stop-color="#1a1e25"></stop>
+      <stop offset="100%" stop-color="#15181e"></stop>
+    </linearGradient>
+    <radialGradient id="sheen" cx="30%" cy="18%" r="62%">
+      <stop offset="0%" stop-color="#3fc7d4" stop-opacity="0.26"></stop>
+      <stop offset="100%" stop-color="#3fc7d4" stop-opacity="0"></stop>
+    </radialGradient>
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="1024" height="1024" rx="230" ry="230"></rect>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="url(#bg)"></rect>
+    <rect width="1024" height="1024" fill="url(#sheen)"></rect>
+    <rect x="0" y="0" width="1024" height="6" fill="#ffffff" fill-opacity="0.14"></rect>
+  </g>
+
+  <g transform="translate(512 512) scale(6.2) translate(-50 -50)" fill="none" stroke="#3fc7d4" stroke-width="8" stroke-linecap="round">
+    <circle cx="50" cy="50" r="38"></circle>
+    <path d="M12 50H33"></path>
+    <path d="M67 50H88"></path>
+    <path d="M50 67V88"></path>
+    <circle cx="50" cy="50" r="17" fill="#3fc7d4" stroke="none"></circle>
+    <path d="M50 6A44 44 0 0 1 89 29" stroke="#e0913f" stroke-width="7"></path>
+  </g>
+</svg>
