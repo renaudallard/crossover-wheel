@@ -1589,6 +1589,24 @@ anybody chose and not one anybody can move.
   future fix has to be something other than a cap, the periodicity is the
   only handle anybody has on the mechanism.
 
+**Shipped as 0.1.27, and what it actually did.** The cap costs nothing
+anybody can feel, which is what the third point above was waiting on: hand
+comparison of maximum against 80, "about the same, maybe a little less
+hard", and in a real session afterwards "other than that, it's good".
+
+**It does not remove the buzz, it damps it.** In a game, with the daemon
+driving, which is the first time any of this was tested that way: "I always
+have a little shock when i'm on the position 0, etc, but it's not a big
+deal", and asked whether that was the same buzzing or a new single bump, "a
+little buzz but shorter and weaker like a bump with one knock".
+
+So the limit cycle is still there at 80 and merely decays fast enough to
+read as a knock. That is consistent with a gain dependent oscillation rather
+than a threshold: the cap moved the wheel down its own instability curve
+instead of off it. **Anyone tempted to cap lower should know it buys
+diminishing returns and costs damping linearly**, and that the tester's
+verdict at 80 was already "not a big deal".
+
 **A47. The rotation range must be set to match the game, and this project
 documented the exact opposite in bold.** Reported after the hand tests of
 A46, on hardware.
