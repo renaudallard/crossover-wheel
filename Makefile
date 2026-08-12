@@ -92,7 +92,7 @@ DLL_CPPFLAGS = -Iinclude -Isrc/dll -DT150_PROXY_VERSION=\"$(DLL_VERSION)\"
 DLL_CFLAGS   = -O2 -std=c11 $(WARNINGS)
 DLL_LIBS     = -ldxguid -luuid -lole32 -lws2_32
 
-.PHONY: all probes tools daemon dll test check strict clean help
+.PHONY: all probes tools daemon dll test check strict clean help install
 
 ifeq ($(HAVE_DLL_CC),yes)
 DLL_TARGET = dll
@@ -118,6 +118,10 @@ help:
 	@echo "  daemon   build t150d"
 	@echo "  dll      cross build the in-bottle proxy (needs mingw-w64)"
 	@echo "  test     build and run the portable tests"
+	@echo "  install  run install.sh, which puts the binaries on your PATH"
+	@echo "           and the proxy into a bottle you pick (macOS)"
+	@echo "           pass arguments with INSTALL_ARGS, e.g."
+	@echo "           make install INSTALL_ARGS='-n -b Games'"
 	@echo "  strict   same as all, but warnings are errors (used by CI)"
 	@echo "  clean    remove the build directory"
 
@@ -227,6 +231,12 @@ check: test
 strict:
 	@$(MAKE) --no-print-directory CFLAGS="$(CFLAGS) -Werror" \
 	    DLL_CFLAGS="$(DLL_CFLAGS) -Werror" all
+
+# The installer is a shell script rather than a make rule because half of what
+# it does is asking a person which bottle they mean, and because it has to
+# work the same from an extracted release where there is no Makefile at all.
+install:
+	@sh $(CURDIR)/install.sh $(INSTALL_ARGS)
 
 clean:
 	rm -rf $(BUILD)
