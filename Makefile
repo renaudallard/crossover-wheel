@@ -250,6 +250,11 @@ install:
 APP	   = $(BIN)/crossover-wheel.app
 APP_RES	   = $(APP)/Contents/Resources
 
+# Objective-C rather than C, so it does not take the C standard flag: -std=c11
+# is strict ISO and turns off the GNU extensions Cocoa's own headers and ARC
+# rely on. The warnings are the same ones everything else is built with.
+APP_CFLAGS = -O2 -g -fobjc-arc $(WARNINGS)
+
 ifeq ($(UNAME_S),Darwin)
 app: $(APP)
 
@@ -258,7 +263,7 @@ $(APP): src/mac/t150menu.m dist/Info.plist $(TOOL_BINS) $(PROBE_BINS) \
 	rm -rf $(APP)
 	mkdir -p $(APP)/Contents/MacOS $(APP_RES)
 	cp dist/Info.plist $(APP)/Contents/Info.plist
-	$(CC) $(CPPFLAGS) $(CFLAGS) -fobjc-arc -o $(APP)/Contents/MacOS/t150menu \
+	$(CC) $(CPPFLAGS) $(APP_CFLAGS) -o $(APP)/Contents/MacOS/t150menu \
 	    src/mac/t150menu.m -framework Cocoa
 	cp install.sh $(APP_RES)/
 	cp $(DAEMON_BIN) $(TOOL_BINS) $(PROBE_BINS) $(APP_RES)/

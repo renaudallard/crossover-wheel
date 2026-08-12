@@ -255,7 +255,7 @@
 	t.standardOutput = p;
 	t.standardError = p;
 
-	__weak typeof(self) weak = self;
+	__weak __typeof__(self) weak = self;
 	p.fileHandleForReading.readabilityHandler = ^(NSFileHandle *fh) {
 		NSData *d = fh.availableData;
 
@@ -469,7 +469,7 @@
 	t.standardOutput = p;
 	t.standardError = p;
 
-	__weak typeof(self) weak = self;
+	__weak __typeof__(self) weak = self;
 	p.fileHandleForReading.readabilityHandler = ^(NSFileHandle *fh) {
 		NSData *d = fh.availableData;
 
