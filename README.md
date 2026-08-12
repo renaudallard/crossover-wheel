@@ -90,6 +90,11 @@ t150d -v -w       # start this before the game, and leave it running
 wheel is. Nothing can tell a wheel what range to be at, so a game left at its
 default of 900 steers by 900/1080 of what it means to.
 
+If the game calibrates and reports about 1030 rather than 1080, that is
+expected and needs no correcting. The wheel's limit is a force rather than a
+stop, so a calibration always ends a little short of the nominal figure, and a
+game that measured 1030 scales itself to 1030 and is right. A49.
+
 **Sit at the machine.** Writing to the wheel is gated on being the console
 user, so this fails over SSH and from a fast-user-switched session. On an
 Apple Silicon laptop, approve the wheel in System Settings, Privacy and
@@ -223,9 +228,18 @@ buys less each step and costs real damping. What the eighth-of-a-turn spacing
 actually is has never been explained, and if a cap ever turns out not to be
 enough, that periodicity is the only handle anybody has.
 
-**`-r` under a running game.** The rotation range works, and a game and a
-wheel that disagree about it have been made to agree, but only by changing the
-game. Moving the wheel underneath a running game has never been measured. A47.
+**A range shorter than the wheel's own, under a running game.** Setting the
+range to 1080 does nothing, because the wheel already powers up at its
+maximum, so `-r 1080` is pointless (A49). What has never been measured is
+moving the wheel to something *narrower* underneath a game, which is the only
+case where `-r` has anything to do. A47.
+
+**Nothing measures the range as 1080, and nothing will.** The limit is a force
+rather than a stop: the wheel pushes back at the end of its travel and can be
+pushed past it, so a game's calibration always reads short. Assetto Corsa
+measures about 1030. Tell a game the number it measured rather than the number
+the wheel claims, and do not add a correction to make them agree, because the
+shortfall depends on how hard the wheel was pushed. A49.
 
 **Effects nobody has felt.** A constant, a damper and two periodics have moved
 a wheel. Springs, envelopes, ramps and per-effect gain are checked against
@@ -694,15 +708,20 @@ writes a line never loaded the proxy, and no amount of daemon work will reach
 it. That test costs one launch and is worth running before investigating any
 game's force feedback.
 
-Dakar Desert Rally produced no proxy log, has no force feedback and no
-autocentre, and drives every button and axis through CrossOver's ordinary
-input path. What that does **not** establish is why. It was launched through
-the Heroic Game Launcher rather than by the bottle directly, so the process
-may simply have looked for `dinput8.dll` somewhere the proxy was not
-installed, and the game's own store page claims the T150 is supported. An
-absent log says the proxy was not loaded; it does not say the game cannot use
-it. Settling that means installing the proxy where that launcher's prefix
-looks, and nobody has.
+**The cheapest form of that test is the daemon's own log, not the proxy's.**
+`t150d -v` prints `client connected from port N` whenever a proxy reaches it,
+and that needs no environment variable, no file path and nothing from a game
+launcher, so nothing about a launcher's configuration can spoil it.
+
+**Dakar Desert Rally is out of reach, and this is now measured rather than
+suspected.** It steers the car, so the wheel reaches it, and the daemon
+records no connection at all while it runs. It is in the same bottle as
+Assetto Corsa, which drives the wheel through the same proxy, and Heroic
+launches it with CrossOver's own Wine rather than its own. So the proxy is
+present and working in that prefix and the game simply never loads
+`dinput8.dll`: it asks for its wheel some other way, and neither of the other
+ways carries DirectInput force feedback. No work here reaches it.
+[`docs/RESEARCH.md`](docs/RESEARCH.md) A48.
 
 Native macOS games are close to unreachable: no public API drives an
 arbitrary HID wheel, and library validation blocks injecting into signed

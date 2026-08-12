@@ -1689,6 +1689,88 @@ that is broken says nothing about that path working.
 running game. Everything above was measured with the wheel left at its own
 1080 throughout.
 
+> **Answered by A49 for 1080, and narrowed.** Setting 1080 explicitly changed
+> nothing, because the wheel already powers up at its maximum. What remains
+> untested is a range *shorter* than the wheel's own under a running game.
+
+**A48. Dakar Desert Rally does not use DirectInput, and the daemon's own log
+is the cheapest way to find that out.** Measured on hardware, closing a
+question that had been open and guessed at since 0.1.19.
+
+**The measurement.** `t150d -v -w` running and visible, Dakar launched, driven.
+The daemon prints two lines whenever a client connects:
+
+```
+t150d: client connected from port 55437
+t150d: port 55437 said hello, the wheel is its own now
+```
+
+Neither appeared. **The wheel steers the car**, so the game has the wheel
+through CrossOver's ordinary input path and only force feedback is missing.
+
+**Everything that could have confounded it was ruled out first, and each cost
+a mail:**
+
+- **Same bottle as a game that works.** The proxy is installed in the bottle
+  named `Steam`, and Assetto Corsa is in that same bottle and drives the wheel
+  through it. So the proxy is present and functional in the very prefix Dakar
+  runs in.
+- **Heroic uses CrossOver's own Wine**, not its own. Its `launch.log` says
+  `"name": "CrossOver - 26.3", "type": "crossover"` and
+  `[cli] INFO: Using CrossOver Bottle "Steam"`. So the builtin behind the
+  proxy matches, and `cxbottle.conf` is read, which is why the wheel is in the
+  bottle at all.
+- **The environment reached the game.** `WINEDEBUG=+loaddll` appears in the
+  launch command line in that log.
+
+**So the game never loads `system32`'s `dinput8.dll`.** It asks for its wheel
+some other way, SDL or XInput, and neither carries DirectInput force feedback
+to a device this proxy can wrap. **No work in this project reaches this game.**
+
+**Two method notes, both of which cost time here.**
+
+- **The daemon's connection log is the test, not `T150_LOG`.** It needs no
+  environment variable, no file path and nothing from a launcher, so it cannot
+  be spoiled by any of them. Three mails were spent chasing a proxy log
+  through Heroic's settings before this was reached.
+- **A `T150_LOG` path must be the `Z:` form.** The proxy opens it with plain
+  `fopen`, which Wine resolves as a Windows path, so `/Users/...` becomes
+  `C:\Users\...` *inside the bottle* and writes a log nobody looks at. An
+  absent log at a unix path is not evidence of anything.
+
+**A49. The rotation range is enforced by a force, not by a stop, so no
+measurement of it reads the nominal number.** Measured on hardware after A47.
+
+**Setting the range explicitly changed nothing.** With `t150ctl range 1080`,
+"the max is always to one turn plus this". So the wheel powers up at its
+maximum and `-r 1080` under a game buys nothing at all. Every session in this
+project's history logged `no rotation range given`, and every one of them was
+therefore already at the wheel's widest.
+
+**And the limit is not a limit.** In the tester's words: *"the wheel can turn
+more but i must turn with more force to turn it more."* The firmware pushes
+back at the end of the range rather than stopping the shaft, so how far the
+wheel turns depends on how hard it is pushed.
+
+**Which explains a discrepancy this project met twice and dismissed once.** A
+game's calibration asks a person to turn to the stops; they stop when it gets
+hard, which is short of where the force would eventually win. Assetto Corsa
+measured 1030 against a nominal 1080, about four and a half percent, and the
+same shortfall appears "in any games".
+
+**It is not an encoding error, and that was checked before this was written.**
+`t150_range_arg` is linear against all three of the vendor's own tokens:
+`270 -> 0x3fff`, `360 -> 0x5555`, `900 -> 0xd555`, each exactly its fraction
+of 1080, and 1080 sends `0xffff`, the maximum by definition.
+
+**How to act on this.** Tell the game the number it measured, not the number
+the wheel claims. A game that calibrates does this by itself and needs no
+help. **Do not add a correction that scales the range to make the numbers
+agree**: the shortfall is not a constant, it depends on how hard the wheel was
+pushed during calibration, so any fixed correction is wrong for the next
+person. This is the same trap as A41's pedals, where a correction aimed at
+something the game had already resolved made it worse.
+
 ---
 
 ## B. How CrossOver handles HID and force feedback
