@@ -278,6 +278,15 @@ $(APP): src/mac/t150menu.m dist/Info.plist $(TOOL_BINS) $(PROBE_BINS) \
 	cp man/*.1 man/*.7 man/*.8 $(APP_RES)/
 	@if [ -f $(DLL_BIN) ]; then cp $(DLL_BIN) $(APP_RES)/; \
 	    else echo "note: no $(DLL_BIN), the app will ask for the proxy"; fi
+	# Seal the bundle. The linker already ad-hoc signs the executable on
+	# Apple Silicon, but nothing seals the bundle around it, and macOS
+	# validates the bundle: a quarantined app whose bundle has no
+	# _CodeSignature is reported to the user as damaged, with an offer to
+	# move it to the bin and no way to proceed. Ad-hoc is not a Developer
+	# ID and does not clear Gatekeeper by itself, but it turns that dead
+	# end into the ordinary unverified-developer prompt.
+	codesign --force --sign - $(APP)
+	@codesign --verify --strict $(APP) && echo "bundle signature verifies"
 	@echo "built $(APP)"
 else
 app:

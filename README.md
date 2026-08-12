@@ -60,9 +60,19 @@ menu bar as `○ T150`, where it starts and stops the daemon, says whether the
 wheel is connected and whether a game is talking to it, and has a **Start at
 login** switch.
 
-**The first launch needs a right-click.** The app is unsigned, so
-double-clicking it gives "cannot be opened because the developer cannot be
-verified". Right-click it, choose Open, and confirm. That is once, ever.
+**Clear the quarantine flag first, or macOS will call the app damaged.** A
+browser marks every download, and an app that is marked and not signed by a
+registered developer is refused with *"crossover-wheel.app is damaged and
+can't be opened. You should move it to the Bin."* Nothing is damaged and
+right-click Open does not get past that one. This does:
+
+```sh
+xattr -dr com.apple.quarantine crossover-wheel.app
+```
+
+Downloading with `curl` instead of a browser avoids the flag being set at all.
+And `./install.sh` copies the app into `~/Applications` and clears it for you,
+so running the command line installer once is another way past it.
 
 The app is a front end over `install.sh` and runs the very same script from
 inside itself, so both routes do exactly the same thing to your bottle. It

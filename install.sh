@@ -27,6 +27,7 @@ DLL=""
 DRYRUN=0
 WANT_BOTTLE=1
 WANT_BINARIES=1
+WANT_APP=1
 
 MACOS_BINARIES="t150d t150ctl t150boot probe_hid probe_setreport probe_ep0 probe_intr"
 
@@ -43,6 +44,7 @@ usage: $SELF [-n] [-p prefix] [-b bottle] [-d dll] [--no-bottle] [--no-binaries]
   -n             say what would happen and change nothing
   --no-bottle    install only the macOS binaries
   --no-binaries  install only the proxy into a bottle
+  --no-app       do not install crossover-wheel.app
   -h             this
 
 Environment: PREFIX, CX_ROOT and BOTTLE_ROOT override the paths above, which
@@ -91,6 +93,7 @@ while [ $# -gt 0 ]; do
 	-n)	DRYRUN=1; shift ;;
 	--no-bottle)	WANT_BOTTLE=0; shift ;;
 	--no-binaries)	WANT_BINARIES=0; shift ;;
+	--no-app)	WANT_APP=0; shift ;;
 	-h|--help)	usage ;;
 	*)	warn "unknown argument: $1"; usage ;;
 	esac
@@ -356,7 +359,37 @@ install_proxy()
 
 ################################################################
 
+################################################################
+# The application, when there is one beside us.
+################################################################
+
+# A downloaded app carries com.apple.quarantine, and macOS tells the person
+# it is damaged and offers to move it to the bin: that message means the
+# bundle is quarantined and not signed by a known developer, not that
+# anything is wrong with it, and right-click Open does not get past it.
+# Clearing the attribute is what does. The app cannot do this for itself,
+# which is why it is worth doing from here.
+install_app()
+{
+	src=$here/crossover-wheel.app
+	dst=$HOME/Applications/crossover-wheel.app
+
+	[ -d "$src" ] || return 0
+
+	step "the application into ~/Applications"
+	run mkdir -p "$HOME/Applications"
+	run rm -rf "$dst"
+	run cp -R "$src" "$dst"
+
+	if command -v xattr >/dev/null 2>&1; then
+		run xattr -dr com.apple.quarantine "$dst" 2>/dev/null || :
+		say "  quarantine cleared, it will open by double-click"
+	fi
+	say "  $dst"
+}
+
 [ "$WANT_BINARIES" -eq 1 ] && install_binaries
+[ "$WANT_APP" -eq 1 ] && install_app
 [ "$WANT_BOTTLE" -eq 1 ] && install_proxy
 
 step "done"

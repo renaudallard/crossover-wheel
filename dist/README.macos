@@ -6,10 +6,18 @@ which is a measurement tool rather than something you need.
 
 INSTALL, THE EASY WAY
 
-Double-click crossover-wheel.app.
+First, one command. Then double-click crossover-wheel.app.
 
-The first time, macOS will refuse: these binaries are not signed. Right-click
-the app instead, choose Open, and confirm. Once, ever.
+  xattr -dr com.apple.quarantine crossover-wheel.app
+
+Without it macOS says the app is "damaged" and offers to move it to the bin.
+Nothing is damaged: a browser marks everything it downloads, and macOS refuses
+a marked application that is not signed by a registered developer. That
+message has no "open anyway" button and right-clicking does not help. The
+command above removes the mark, and then it opens normally, for good.
+
+If you would rather not, ./install.sh does the same thing and puts a
+de-quarantined copy of the app in ~/Applications.
 
 It asks which CrossOver bottle your game is in and does the rest. Afterwards
 it stays in the menu bar as a small "T150", where you can start and stop the
