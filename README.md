@@ -25,14 +25,19 @@ extension approval.
 >
 > **What works:** force feedback in a game, unplug and replug mid race,
 > restarting the daemon under a running game, the pedals, the steering range,
-> and the effect set the wheel actually implements. **`./install.sh` does the
-> whole setup**, including the part of the bottle configuration that nobody
-> gets right by hand.
+> and the effect set the wheel actually implements.
+>
+> **Getting it:** double-click `crossover-wheel.app`, answer one question, and
+> it lives in the menu bar afterwards. `./install.sh` does the same work from
+> a terminal, and the app runs that very script from inside itself.
 >
 > **What is imperfect:** the wheel gives a small knock when it is left
 > standing at four evenly spaced positions, which is the wheel's own damper
 > loop and not this software — see [`docs/RESEARCH.md`](docs/RESEARCH.md) A46,
-> where it is measured with no game, no daemon and no proxy running.
+> where it is measured with no game, no daemon and no proxy running. And the
+> application has been compiled but never clicked: nothing on a build machine
+> can press a menu bar item, so it is the one part of this that reached a user
+> untested.
 
 **Picking this up?** [`docs/RESEARCH.md`](docs/RESEARCH.md) is the evidence
 behind every claim here, including the routes that were investigated and are
@@ -46,6 +51,8 @@ Download the macOS archive from the
 extract it. There are two ways in, and they do the same work.
 
 ### The graphical one
+
+<img src="dist/icons/crossover-wheel-256.png" alt="" width="96" align="right">
 
 Double-click **crossover-wheel.app**. It shows a window, asks which CrossOver
 bottle your game is in, and installs everything. Afterwards it lives in the
@@ -69,7 +76,7 @@ one client at a time and a second connection would displace a running game.
 to download:
 
 ```sh
-V=0.1.29        # whatever the releases page shows
+V=0.1.30        # whatever the releases page shows
 U=https://github.com/renaudallard/crossover-wheel/releases/download/v$V
 curl -LO "$U/crossover-wheel-$V-macos-arm64.tar.gz"
 curl -LO "$U/SHA256SUMS"
@@ -285,12 +292,14 @@ built by CI from the tagged commit. Two archives:
 
 | Archive | Contains |
 | --- | --- |
-| `crossover-wheel-<v>-macos-arm64.tar.gz` | `install.sh`, `t150d`, `t150ctl`, `t150boot`, the four `probe_*` tools, the man pages, and `t150-dinput8.dll` |
+| `crossover-wheel-<v>-macos-arm64.tar.gz` | `crossover-wheel.app`, `install.sh`, `t150d`, `t150ctl`, `t150boot`, the four `probe_*` tools, the man pages, and `t150-dinput8.dll` |
 | `crossover-wheel-<v>-windows-x86_64.zip` | `t150-dinput8.dll` and `probe_dinput.exe` |
 
 **The macOS archive is the only one you need.** It carries the proxy DLL as
-well, because the bottle it goes into is on the same Mac, so `install.sh` has
-everything it needs beside it. The Windows zip is there for anyone who wants
+well, because the bottle it goes into is on the same Mac, so both the
+application and `install.sh` have everything they need beside them. The
+application carries its own copy of all of it inside the bundle, so it keeps
+working after the archive is deleted. The Windows zip is there for anyone who wants
 the proxy on its own, or who wants `probe_dinput.exe` to test a bottle
 without a game.
 
@@ -419,7 +428,16 @@ t150d: backend macOS HID
 
 It does not need root and it does not need the wheel to be plugged in when it
 starts: if the wheel is absent, or still at the boot product id, it keeps
-looking and picks one up when it appears.
+looking and picks one up when it appears. **That includes the boot mode
+switch**, which it sends itself when it finds nothing at the firmware id, so
+`t150boot` is only needed before the daemon is running rather than on every
+plug-in.
+
+`crossover-wheel.app` starts and stops the same daemon from the menu bar, with
+`-v -w`, and shows what it prints as an icon: the hub fills when it holds the
+wheel and fills completely when a game is pulling on it. It runs the daemon as
+its own child rather than connecting to it, because a second client can
+displace the first and that would throw a game off the wheel.
 
 `-n` drives nothing and prints every packet instead, in the same form
 `probe_setreport` prints, so the two can be compared directly. That is the
