@@ -7,6 +7,25 @@ are dead, and re-exploring them wastes days.
 
 Where a claim could not be verified it appears in section E, not in A to C.
 
+**The project's question is answered.** A game drives the wheel: Assetto
+Corsa, on hardware, with force feedback its tester compares to the same wheel
+on Windows under Thrustmaster's own drivers. Nothing is installed system wide
+and nothing needs root. What is left is in the README under "What is left",
+and it is short.
+
+**What this file is for now** is the reasoning behind decisions that look
+arbitrary from the code, and a record of how often this project's own
+conclusions turned out to rest on measurements that did not support them.
+A34 forbade the only fix for a real problem for four releases because a null
+result from a broken path was written up as a finding. A41's advice was
+sound but was judged against a correction that had never worked (A45). A46
+cost four releases of looking in the wrong place because the first report
+happened to name the wheel's centre. A47 then repeated A34's mistake, one
+entry below it and one day later, by crediting a tester with a test he had
+not run. **The pattern is always the same: a conclusion written down more
+strongly than the measurement behind it.** That is the failure mode this file
+exists to catch, and it has caught it more often than it has prevented it.
+
 ---
 
 ## A. What already works on a stock Mac
@@ -2404,15 +2423,22 @@ turned on.
    position and needs the mode switch.
 5. **Answered yes, unprivileged.** The ep0 vendor requests work against the
    HID-claimed interface with no capture and no root: A6.
-6. How many `IOHIDDevice` nodes does one wheel publish, and which one accepts
-   the output report? CrossWheel's documentation says a working G29 shows two
-   nodes, usage page 1 and usage page 65280, and that both are needed.
-7. What PE architecture is the bottle, x86_64 or arm64ec? One command:
-   `file "$BOTTLE/drive_c/windows/system32/winedevice.exe"`.
-8. Where does CrossOver keep the real builtin `dinput8.dll`, and can a
-   renamed copy be loaded? Wine creates fake DLL stubs in a prefix's
-   `system32` while loading builtins from its own directory, so the proxy
-   must copy the right file. Unverified.
+6. **Answered: one node is enough on this wheel.** The daemon narrows its
+   match to the joystick node, generic desktop usage page 1 usage 4, and
+   writes only there, and that drives a game's force feedback on hardware.
+   CrossWheel's two-node note describes a G29 and does not generalise to the
+   T150.
+7. **Answered: x86_64.** CrossOver 26 bottles run x86_64 under Rosetta, and
+   the x86_64 proxy loads and serves games in them. CrossOver 27's ARM64EC
+   bottles still load an x86_64 PE, so the same build covers both; a native
+   ARM64EC build remains an optimisation nobody needs.
+8. **Answered, and it is what `install.sh` does.** The builtin lives in
+   `$CX_ROOT/lib/wine/x86_64-windows/dinput8.dll`, a renamed copy loads
+   perfectly well as `dinput8_orig.dll`, and the `dinput8.dll` already in a
+   bottle's `system32` is a placeholder that must not be copied. A bottle can
+   move the builtin directory with `DllPath` in `cxbottle.conf`, so the
+   installer reads that first and falls back to searching. The check that
+   tells the two apart is the `Wine builtin DLL` signature at byte 64.
 
 Probes 1 to 6 are what `src/probe/` exists to answer. See
 [PROBES.md](PROBES.md).

@@ -6,17 +6,20 @@ feedback, which it forwards to the t150d daemon on the macOS side. Other
 devices pass through untouched, and with no daemon answering it wraps
 nothing and is transparent.
 
-It loads in a real CrossOver bottle and chain-loads the builtin behind it;
-that was proven with regsvr32 under loader tracing. The force feedback
-path has run end to end: probe_dinput -f created a constant force and a
-damper through this proxy and both were felt on the wheel. What has never
-run is a game doing it, rather than the probe.
+It works: Assetto Corsa drives a T150 through it on real hardware, with
+force feedback its tester describes as similar to the same wheel on Windows
+with Thrustmaster's own drivers. It also reconnects by itself to a daemon
+that was restarted underneath a running game.
 
 It serves 64-bit games only: a 32-bit process is redirected to syswow64 and
 never sees it.
 
-Install it as <bottle>/drive_c/windows/system32/dinput8.dll, with CrossOver's
-builtin copied alongside as dinput8_orig.dll, and set dinput8 to
+INSTALL IT WITH install.sh, which is in the macOS archive along with a copy
+of this DLL. It does the steps below and checks that it copied the right
+file, which is the part people get wrong.
+
+By hand: install it as <bottle>/drive_c/windows/system32/dinput8.dll, with
+CrossOver's builtin copied alongside as dinput8_orig.dll, and set dinput8 to
 "native,builtin". Copy the builtin from CrossOver's own
 lib/wine/x86_64-windows, never the dinput8.dll already in the bottle's
 system32, which is an empty placeholder. Set T150_DEBUG=1 in the bottle to

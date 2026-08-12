@@ -5,43 +5,89 @@ Force feedback for the **Thrustmaster T150** in games running under
 DriverKit system extension, no SIP change, no AMFI change, no system
 extension approval.
 
-> **Status: the wheel pushes back.** Force feedback works on a T150 under
-> macOS, from an unprivileged process, which is what this project exists for.
-> A constant force drives the wheel steadily to one side and holds it, firmly
-> enough to feel and lightly enough to turn back by hand; a periodic makes it
-> oscillate. Both transports carry effects: the interrupt OUT pipe and, with
-> no root and no device capture, `IOHIDDeviceSetReport`. Replicated across two
-> sessions, four runs, with and without the open packet each time.
+> **Status: it works, in a game, on real hardware.** Assetto Corsa drives a
+> T150 through this, with force feedback the tester describes as *"similar to
+> the normal T150 in Assetto Corsa on windows with the official drivers"* —
+> the vendor's own setup as the benchmark. Nothing is installed system wide
+> and nothing needs root.
 >
-> **The missing piece was one two-byte packet, `42 04`.** The firmware
-> renders nothing until something opens the wheel's input, and nothing on
-> macOS does. The same fact had been staring at the project for months in the
-> Linux driver's own comment, which says the autocenter "is always active
-> while no input are open"; four sessions were spent believing the packet's
-> bytes were unrecoverable from the published source. They were in
-> `t150_init()` the whole time. See [`docs/RESEARCH.md`](docs/RESEARCH.md)
-> A26 and A28.
+> The path is a proxy `dinput8.dll` inside the CrossOver bottle, forwarding
+> DirectInput force feedback over loopback to a macOS daemon that writes the
+> wheel's own packets with `IOHIDDeviceSetReport`. CrossOver keeps reading the
+> wheel as an ordinary joystick throughout, so input comes down the normal
+> path and only the forces come down this one.
 >
-> **What is not finished.** No game has reached the wheel end to end.
-> `t150boot`, `t150ctl` and the daemon's macOS backend have all now touched
-> hardware and worked (A31), the proxy loads and chain-loads in a real
-> bottle (A33), and an effect has crossed the loopback and been felt: a
-> constant force and a damper, played through the whole chain by
-> `probe_dinput -f` with no game involved (A43). What no game has done yet
-> is ask for one. A constant force, a damper and two periodics have been
-> played on a wheel, though the encoders
-> themselves are no longer guesswork: every packet layout and constant is
-> now checked against Thrustmaster's own Windows driver, which corrected
-> four of them (A40). The wheel reaches the bottle again with
-> `SDL_JOYSTICK_HIDAPI=0` set (A35), and the proxy has loaded inside a
-> real game; what has still never happened is the game and the daemon
-> running at the same time.
+> **What works:** force feedback in a game, unplug and replug mid race,
+> restarting the daemon under a running game, the pedals, the steering range,
+> and the effect set the wheel actually implements. **`./install.sh` does the
+> whole setup**, including the part of the bottle configuration that nobody
+> gets right by hand.
+>
+> **What is imperfect:** the wheel gives a small knock when it is left
+> standing at four evenly spaced positions, which is the wheel's own damper
+> loop and not this software — see [`docs/RESEARCH.md`](docs/RESEARCH.md) A46,
+> where it is measured with no game, no daemon and no proxy running.
 
-**Picking this up?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first. It is
-written for someone starting with no context: what is decided, what is
-verified, what is still unknown, and what to build in what order.
-[`docs/RESEARCH.md`](docs/RESEARCH.md) is the evidence behind every claim,
-including the routes that were investigated and are dead.
+**Picking this up?** [`docs/RESEARCH.md`](docs/RESEARCH.md) is the evidence
+behind every claim here, including the routes that were investigated and are
+dead, and the several times this project's own conclusions turned out to rest
+on a measurement that did not support them.
+
+## Install
+
+Download the macOS archive from the
+[releases page](https://github.com/renaudallard/crossover-wheel/releases),
+extract it, and run the installer. It carries the proxy DLL with it, so this
+is the only thing to download:
+
+```sh
+V=0.1.29        # whatever the releases page shows
+U=https://github.com/renaudallard/crossover-wheel/releases/download/v$V
+curl -LO "$U/crossover-wheel-$V-macos-arm64.tar.gz"
+curl -LO "$U/SHA256SUMS"
+shasum -a 256 -c SHA256SUMS --ignore-missing
+tar xzf "crossover-wheel-$V-macos-arm64.tar.gz"
+cd "crossover-wheel-$V-macos-arm64"
+./install.sh
+```
+
+Fetching with `curl` rather than a browser matters: a browser quarantines the
+files and macOS refuses to run unsigned binaries. The installer clears the
+quarantine flag anyway, so either way works.
+
+It asks one question, which bottle your game is in, and then does everything:
+
+- puts `t150d`, `t150ctl`, `t150boot` and the probes in `~/.local/bin`, with
+  their man pages
+- copies **CrossOver's builtin** `dinput8.dll` into the bottle as
+  `dinput8_orig.dll`, which is the step nobody gets right by hand, and
+  verifies afterwards that it copied the builtin and not the placeholder of
+  the same name already sitting there
+- copies the proxy in as `dinput8.dll`
+- sets the `dinput8` registry override to `native,builtin`
+- adds `SDL_JOYSTICK_HIDAPI=0` to the bottle, without which the wheel does not
+  appear inside it at all
+
+`./install.sh -n` shows what it would do and changes nothing. `-p` picks a
+different prefix, `-b` names the bottle so it asks nothing, and `--no-bottle`
+or `--no-binaries` does one half. From a source tree, `make install` runs the
+same script.
+
+Then, every time:
+
+```sh
+t150boot          # after every plug-in, and after sleep and wake
+t150d -v -w       # start this before the game, and leave it running
+```
+
+**Set the game's own steering rotation to 1080 degrees**, which is what this
+wheel is. Nothing can tell a wheel what range to be at, so a game left at its
+default of 900 steers by 900/1080 of what it means to.
+
+**Sit at the machine.** Writing to the wheel is gated on being the console
+user, so this fails over SSH and from a fast-user-switched session. On an
+Apple Silicon laptop, approve the wheel in System Settings, Privacy and
+Security, Accessories.
 
 ## Why this exists
 
@@ -119,11 +165,12 @@ in-bottle bus driver was considered and rejected.
 | `src/lib/proto.c` DLL to daemon protocol | written, round-trip tested on Linux |
 | `t150d` protocol, slots, downgrades, watchdog | written and tested on Linux |
 | `src/t150d/wirequeue.c` the writer's coalescing queue | written and tested on Linux; the threading around it is macOS only |
-| `t150d` macOS HID backend | working: opened a real wheel unprivileged, rendered a constant force and a damper that were felt on the wheel, and its shutdown stopped a runaway effect |
-| `t150-dinput8.dll` the in-bottle proxy | loads and chain-loads in a real bottle, and a game creates effects through it, test 23b |
+| `t150d` macOS HID backend | working: drives a real wheel unprivileged under a running game, survives unplug and replug, and its shutdown stops a runaway effect |
+| `t150-dinput8.dll` the in-bottle proxy | working: Assetto Corsa drives the wheel through it, and it reconnects by itself to a restarted daemon |
 | `probe_dinput.exe` the in-bottle probe | run on hardware in test 27: it mapped the wheel, walked all twenty one controls with a person answering, and played two effects that were felt. Also runs under Wine in CI against a wheel shaped uinput device |
 | build, CI, docs, man pages | working |
-| `t150ctl`, `t150boot` | working on hardware: `t150boot` switched a wheel, `t150ctl` talked to one. The range change has run but nobody felt it yet |
+| `install.sh` | installs both halves, tested against a synthetic CrossOver tree; the bottle half has only been run for real by hand |
+| `t150ctl`, `t150boot` | working on hardware, including the rotation range, which visibly shortens and restores the wheel's travel |
 
 The encoders turn a normalized effect into the wheel's packets and are the
 only code that knows both DirectInput units and wheel units. They do no I/O,
@@ -154,77 +201,38 @@ The wheel agrees with the settings bytes and with force feedback, on both
 pipes. [`docs/PROBES.md`](docs/PROBES.md) is the procedure that established
 it and the thing to rerun after any change to the encoders.
 
-## What needs doing next
+## What is left
 
-**The wheel is answered and the software is not.** Settings and force
-feedback both work through an unprivileged `IOHIDDeviceSetReport`, with
-CrossOver keeping the wheel throughout, so there is no ownership conflict and
-nothing here needs root. What has never happened is a game reaching the wheel
-through this project's own code.
+The goal is met: a game drives the wheel, and the parts that used to need a
+person babysitting them, replug, daemon restarts, boot mode, do it themselves
+now. What follows is what is genuinely unfinished, and it is short.
 
-What is left needs the Mac. In order:
+**The knock at four positions.** With a condition effect running, the wheel
+gives a small knock when it is left standing at 0, 135, 270 and 405 degrees,
+an eighth of its travel apart. This is the wheel and not this software:
+[`docs/RESEARCH.md`](docs/RESEARCH.md) A46 reproduces it with `probe_setreport`
+and one raw packet, with no game, no daemon and no proxy running. Holding the
+coefficient at 80 of 100 turns a sustained buzz into that knock; going lower
+buys less each step and costs real damping. What the eighth-of-a-turn spacing
+actually is has never been explained, and if a cap ever turns out not to be
+enough, that periodicity is the only handle anybody has.
 
-**0. Let the wheel find its centre again.** Driving it into its end stops
-shifts its idea of straight ahead, which test 13 watched happen (A32), and
-everything below is read through that: a symmetric force about a displaced
-centre looks asymmetric. Unplug it from mains and USB, let it sweep, and
-start from there, and again after any run that worked against a stop.
+**`-r` under a running game.** The rotation range works, and a game and a
+wheel that disagree about it have been made to agree, but only by changing the
+game. Moving the wheel underneath a running game has never been measured. A47.
 
-**1. The game and the daemon at the same time.** Everything else has now
-happened separately: the wheel is back in the bottle
-(`SDL_JOYSTICK_HIDAPI=0`, A35), the proxy loads inside Assetto Corsa,
-chain-loads the builtin and logs what it does, and the daemon drives the
-wheel. Test 16 missed the join on ordering, the daemon must start first
-and stay running, and test 17 missed it on one wrong path, the proxy
-guessing the daemon's home from a bottle username that is always
-`crossover` (A36), now fixed. Nothing measured blocks the join any more.
+**Effects nobody has felt.** A constant, a damper and two periodics have moved
+a wheel. Springs, envelopes, ramps and per-effect gain are checked against
+Thrustmaster's own Windows driver byte for byte (A40) and have still never
+touched hardware. `probe_setreport -x` plays any of them in one line.
 
-**2. Leave the pedals alone unless a game forces the issue.** Test 19
-measured the mislabel, the brake on the first pedal axis and the
-accelerator on the second where games expect the opposite (A37), which
-DirectInput publishes as Y and Z (A43). Correcting it by default regressed
-a working setup twice: Assetto Corsa had bound the raw layout correctly by
-detection, and both the swap and the mirror re-crossed it (A39, A41). The
-descriptor's own usage names are not where DirectInput puts those axes,
-and reading them as if they were is what aimed the correction at an axis
-this wheel does not have (A44). The proxy forwards
-input untouched now, with `T150_PEDALS` there for a game that assumes the
-convention and cannot rebind. The buttons are already whole on the
-`Hidraw` route, so keep that route on, and the durable fix to offer
-CodeWeavers is the allowlist line B12 describes.
+**Telling `0x4020` from `0x4021` back to back**, which is the last waveform
+question. `0x4025` is settled: it renders nothing, because the vendor's own
+effect table has no ninth entry.
 
-**3. Play the effects nobody has played yet.** A constant, a damper and two
-periodics have moved the wheel. Springs, envelopes, ramps and per-effect
-gain have never touched hardware, and every one of them is arithmetic this
-project derived from a driver rather than measured. `probe_setreport -x`
-plays any of them in a line, and the encoders' own golden vectors say what
-the bytes should be. The one waveform question left is telling `0x4020`
-from `0x4021` back to back; `0x4025` is settled, it renders nothing.
-
-Then, whichever way those went:
-
-**4. Package what is written.** `t150boot` wants to be a user LaunchAgent
-matching the boot product id, because sleep, wake and every replug drop the
-wheel back, and `t150d` wants to be another so a game never has to be told to
-start it. Both run unprivileged, so neither needs an admin prompt at install.
-That is the last thing between this and something a person could just use.
-
-**5. Robustness, then a real game.** Reconnect on both ends, hot plug, and
-the watchdog under real crash conditions. Measure the latency and jitter of
-the whole path under Rosetta while you are there. The daemon now caps itself
-at one emission every 4 ms and sends only what changed, so what is still
-unmeasured is narrower than it was: whether this wheel sustains that rate,
-and whether a driver can feel the difference between that cap and a faster
-one.
-
-Later, and not blocking: an ARM64EC build for CrossOver 27's bottles, an
-installer that does the bottle setup in one step, and optionally an SCS
-telemetry plugin, which is the only way any native macOS game can be reached.
-
-The gate said yes for settings, on both pipes. Force feedback has not
-followed, and if it turns out not to, the ladder of fallbacks is in
-[`docs/HANDOFF.md`](docs/HANDOFF.md) section 8, and the honest last rung is
-to say so and stop.
+**Not blocking, and not planned:** an ARM64EC build for CrossOver 27's
+bottles, and an SCS telemetry plugin, which is the only route by which a
+native macOS game could ever be reached.
 
 ## Using a release
 
@@ -234,8 +242,14 @@ built by CI from the tagged commit. Two archives:
 
 | Archive | Contains |
 | --- | --- |
-| `crossover-wheel-<v>-macos-arm64.tar.gz` | `t150ctl`, `t150boot`, `t150d`, and the four `probe_*` tools |
-| `crossover-wheel-<v>-windows-x86_64.zip` | `t150-dinput8.dll`, the in-bottle proxy |
+| `crossover-wheel-<v>-macos-arm64.tar.gz` | `install.sh`, `t150d`, `t150ctl`, `t150boot`, the four `probe_*` tools, the man pages, and `t150-dinput8.dll` |
+| `crossover-wheel-<v>-windows-x86_64.zip` | `t150-dinput8.dll` and `probe_dinput.exe` |
+
+**The macOS archive is the only one you need.** It carries the proxy DLL as
+well, because the bottle it goes into is on the same Mac, so `install.sh` has
+everything it needs beside it. The Windows zip is there for anyone who wants
+the proxy on its own, or who wants `probe_dinput.exe` to test a bottle
+without a game.
 
 Each archive carries a short README; those are `dist/README.macos` and
 `dist/README.windows` in this repository, packaged verbatim at release time
@@ -245,19 +259,14 @@ Apple Silicon only, and there is no Intel build. Verify what you downloaded
 before running it:
 
 ```sh
-shasum -a 256 -c SHA256SUMS
-tar xzf crossover-wheel-<v>-macos-arm64.tar.gz
-cd crossover-wheel-<v>-macos-arm64
+shasum -a 256 -c SHA256SUMS --ignore-missing
 ```
 
 **The binaries are unsigned and not notarized.** Downloaded through a browser
 they are quarantined and macOS will refuse to run them, with a message about
-an unidentified developer. Either fetch them with `curl`, which sets no
-quarantine attribute, or clear it:
-
-```sh
-xattr -d com.apple.quarantine probe_hid probe_setreport probe_ep0 t150d
-```
+an unidentified developer. `install.sh` clears the quarantine flag on
+everything it installs; fetching with `curl` avoids setting it in the first
+place.
 
 Two more things will otherwise cost you a session, both of them macOS rather
 than this project:
@@ -269,17 +278,9 @@ than this project:
   and Security, Accessories. Until you do, the wheel appears nowhere and
   `probe_hid` reports no matches.
 
-What to actually do with them is
-[what needs doing next](#what-needs-doing-next): the probes answer the gate,
-and the daemon and the proxy together let the bottle half be tried even
-before it is answered. Bear in mind throughout that `t150d` has no macOS HID
-backend yet, so it logs rather than driving: what you can see today is a
-game's effects arriving as wheel packets, which is worth seeing and is not
-force feedback.
-
-Commands below are written as `./build/bin/...` because that is where a
-source build puts them; from a release archive, run them from the directory
-you just extracted.
+Commands below are written as `./build/bin/...` because that is where a source
+build puts them. After `install.sh` they are on your PATH, so `t150d` and
+`t150ctl` work as written without a path at all.
 
 ## Building
 
@@ -522,8 +523,11 @@ effect downgrades.
 
 ## Installing the proxy into a bottle
 
-`make dll` cross builds it, and needs `gcc-mingw-w64-x86-64`. It has to go in
-the bottle's `system32` rather than beside a game, because SDL reaches
+**`./install.sh` does all of this**, and the rest of this section is what it
+does and why, for anyone debugging an install or doing it by hand.
+
+`make dll` cross builds the proxy, and needs `gcc-mingw-w64-x86-64`. It has to
+go in the bottle's `system32` rather than beside a game, because SDL reaches
 DirectInput through `CoCreateInstance`, which the loader resolves to an
 absolute `system32` path and never to a game directory.
 
@@ -648,8 +652,9 @@ overwrites `system32` files that are still placeholders. `dinput8_orig.dll`
 stays at the Wine version it was copied from, so copy it again after an
 upgrade.
 
-None of this has been tried in a real bottle yet. If the chain-load does not
-resolve, the fallbacks are in [`docs/HANDOFF.md`](docs/HANDOFF.md) under M4.
+All of this has run in a real bottle, with a game driving a wheel through it.
+If a chain-load ever does not resolve, the fallbacks are in
+[`docs/HANDOFF.md`](docs/HANDOFF.md) under M4.
 
 ## Testing it today
 

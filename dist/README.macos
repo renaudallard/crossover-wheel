@@ -1,51 +1,81 @@
-crossover-wheel, macOS arm64 binaries.
+crossover-wheel, macOS arm64.
 
-Force feedback works on a Thrustmaster T150 under macOS, from an
-unprivileged process. Nothing here needs root except probe_intr, which is a
-measurement tool rather than something you need.
+Force feedback for a Thrustmaster T150 in games running under CrossOver.
+Nothing is installed system wide and nothing needs root, except probe_intr,
+which is a measurement tool rather than something you need.
 
-Start here:
+INSTALL
 
-  ./t150boot            take the wheel out of boot mode. Run it on every
-                        plug-in; sleep and wake put the wheel back.
-  ./t150ctl status      what the wheel is
-  ./t150ctl range 270   three quarters of a turn lock to lock
-  ./t150ctl autocenter 0    let go of the wheel completely
-  ./t150d -v            the daemon a game talks to
+  ./install.sh
 
-macOS will refuse to run these until you clear the quarantine flag, because
-they are unsigned:
+That is the whole thing. It asks which CrossOver bottle your game is in and
+then does both halves: the binaries and their man pages go in ~/.local/bin,
+and the proxy goes into the bottle with the registry override and the one
+environment variable the wheel needs to appear inside it at all.
 
-  xattr -d com.apple.quarantine ./*
+  ./install.sh -n     say what would happen and change nothing
+  ./install.sh -h     the other options
 
-Sit at the machine. IOHIDDeviceSetReport is gated on being the console user
-and fails over SSH.
+t150-dinput8.dll is in here too, which is why the installer needs nothing
+else. It is the file that goes inside the bottle; there is nothing to do with
+it by hand.
 
-The man pages are here too. Read one with:
+THEN, EVERY TIME
 
-  man ./t150ctl.1
+  t150boot            take the wheel out of boot mode. Needed after every
+                      plug-in, and after sleep and wake.
+  t150d -v -w         start this before the game, and leave it running.
 
-The daemon stops every effect and closes the wheel's input the moment it
-takes the wheel. The open outlives whoever sent it, so a wheel left running
-an effect by an earlier tool would otherwise keep rendering it. If a wheel
-is ever moving on its own, starting and stopping t150d is the rescue, and a
-replug lets it re-find its centre.
+The proxy looks for the daemon once, when the game creates its wheel, and
+never again, so the order matters. -w writes to the wheel from a separate
+thread, which is what stops a game reporting 100% CPU; it is not the default
+only because it is newer than the rest.
 
-TWO THINGS EVERY BOTTLE NEEDS. The SDL library CrossOver 26 ships drops
-Thrustmaster wheels, so the wheel only appears inside a bottle with
-SDL_JOYSTICK_HIDAPI=0 set in its environment; put it in the bottle's
-cxbottle.conf, the repository README shows the exact lines. And start
-t150d before the game, then leave it running: the proxy looks for the
-daemon once, when the game creates its wheel, and never again.
+SET YOUR GAME TO 1080 DEGREES
 
-WHAT DOES NOT WORK YET. No game has reached the wheel through this.
-t150boot, t150ctl and t150d have all run against a real wheel and worked,
-the proxy loads inside a real game and chain-loads CrossOver's builtin,
-and an effect has crossed to the daemon and been felt: a constant force
-and a damper, played by probe_dinput -f with no game involved. What has
-not happened is a game asking for one. Springs, envelopes and per-effect
-gain are checked against Thrustmaster's own Windows driver but nobody has
-felt them on a wheel yet.
+Nothing can tell a wheel what rotation range to be at: on Windows that number
+lives in Thrustmaster's control panel, and a game simply assumes the wheel is
+already at whatever the game's own setting says. This wheel is 1080 and games
+often default to 900, so out of the box they disagree and the car responds to
+your hands by 900/1080 of what it means to.
 
-docs/PROBES.md in the repository is the procedure, and what each outcome
-means.
+Set the game to 1080 and they agree. t150ctl range moves the wheel instead,
+if you would rather drive at a shorter range: set both to the same number.
+
+TWO THINGS macOS WILL DO TO YOU
+
+Sit at the machine. Writing to the wheel is gated on being the console user,
+so this fails over SSH, from the login window and from a fast-user-switched
+session.
+
+Approve the wheel. On an Apple Silicon laptop: System Settings, Privacy and
+Security, Accessories. Until you do, the wheel appears nowhere at all.
+
+These binaries are unsigned and not notarized, so a browser download is
+quarantined and macOS refuses to run it. install.sh clears that flag on
+everything it installs.
+
+IF THE WHEEL EVER MOVES ON ITS OWN
+
+Start and stop t150d. It stops every effect and closes the wheel's input the
+moment it takes the wheel, because that state outlives whatever set it, so a
+wheel left rendering something by an earlier program would otherwise carry on.
+A replug also lets it re-find its centre.
+
+WHAT IS NOT PERFECT
+
+With a condition effect running, the wheel gives a small knock when it is left
+standing at 0, 135, 270 and 405 degrees. That is the wheel's own damper loop
+and not this software: it reproduces with one raw packet and no game, no
+daemon and no proxy running. The daemon already holds the coefficient below
+the value where it becomes a continuous buzz.
+
+Springs, envelopes, ramps and per-effect gain are encoded to match
+Thrustmaster's own Windows driver byte for byte, and no one has felt them on a
+wheel yet. A constant force, a damper and two periodics have been.
+
+The man pages are here. Read one with:
+
+  man ./t150d.8
+
+docs/RESEARCH.md in the repository is the evidence behind all of this.
