@@ -471,6 +471,24 @@ frame and Assetto Corsa does. What that answers is whether a slot was ever
 started at all: an effect uploaded and never started renders nothing, and from
 the daemon's side that looks exactly like one the wheel ignores.
 
+**A condition's coefficient is held at 80% of what the wheel takes, and this
+is the one place the daemon knowingly gives a game less than it asked for.**
+The T150's own condition loop is unstable at the top of its range. Measured by
+hand with no game, no daemon and no proxy: a damper at 100 makes the wheel buzz
+wherever it is left standing, 99 still buzzes, 90 buzzes more slowly, 80 is
+quiet. An oscillation that slows as the gain falls is the wheel fighting
+itself, not a resonance.
+
+The encoding is not what is wrong; Thrustmaster's own divisor reaches 100 for
+the same request, so the wheel dislikes a value that is faithfully encoded.
+What justifies overriding a game here is that nobody can work around it
+themselves: Assetto Corsa asks for 9998 of 10000 and its force feedback page
+has no damping control at all. The coefficient is **clamped rather than
+rescaled**, so a game asking for half strength still gets half strength and
+only the top of the range is flattened. The tester's verdict on the difference
+at full request: *"about the same, maybe a little less hard"*. See
+[`docs/RESEARCH.md`](docs/RESEARCH.md) A46.
+
 **A client connecting opens the wheel's input and disconnecting closes it.**
 The firmware renders no effect while no input is open, which is what
 [`docs/RESEARCH.md`](docs/RESEARCH.md) A28 established, so the daemon sends

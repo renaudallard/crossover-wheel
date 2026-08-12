@@ -197,6 +197,31 @@
 #define T150_FF_PERIODIC_MAX	127u	/* periodic magnitude and offset, from >>8 */
 #define T150_FF_PHASE_MAX	0xffu	/* a full turn */
 #define T150_FF_COEFF_MAX	100u	/* from /0x147 */
+
+/*
+ * How far a condition coefficient is actually allowed to go, which is not as
+ * far as the wheel will take.
+ *
+ * The T150's own damper loop is unstable at the top of its range. Measured on
+ * hardware with no game, no daemon and no proxy, one raw packet: at 100 the
+ * wheel buzzes wherever it is left standing, at 99 it still buzzes, at 90 it
+ * buzzes more slowly, and at 80 it stops. An oscillation that slows as the
+ * gain falls is a gain dependent limit cycle rather than a resonance, so this
+ * is the wheel fighting itself. RESEARCH.md A46.
+ *
+ * This is a workaround and not a correction. The encoding is right: the
+ * vendor's own divisor takes the same request to 100 too, so the wheel
+ * dislikes a value that is faithfully encoded, and clamping here hands a game
+ * less than it asked for. What justifies it is that the value cannot be
+ * reached from the game's own settings, so nobody can work around it: Assetto
+ * Corsa asks for 9998 of 10000 and its force feedback page has no damping
+ * control at all.
+ *
+ * Clamped rather than rescaled, so everything below the ceiling is untouched
+ * and only the top of the range is flattened. The tester's verdict on the
+ * difference at full request: "about the same, maybe a little less hard".
+ */
+#define T150_FF_COEFF_SAFE_MAX	80
 #define T150_FF_CENTER_MAX	500u	/* from /(0x7fff / 0x01f4) */
 #define T150_FF_DEADBAND_MAX	1000u	/* from /(0xffff / 0x03e8) */
 #define T150_FF_SAT_SPRING_MAX	0x54u	/* from /0x030c */

@@ -304,9 +304,15 @@ test_condition(void)
 	    t150_enc_ff_first(b, sizeof(b), &ef),
 	    0x05, 0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46, 0x54);
 	memset(&ef.envelope, 0, sizeof(ef.envelope));
-	/* A spring saturates at 0x54, a damper at 0x64. */
+	/*
+	 * A spring saturates at 0x54, a damper at 0x64. The coefficients are
+	 * 0x50 and 0xb0, plus and minus 80, rather than the plus and minus 100
+	 * the wheel would take: the wheel's condition loop is unstable at the
+	 * top of its range, so the encoder holds it below. RESEARCH.md A46 and
+	 * T150_FF_COEFF_SAFE_MAX.
+	 */
 	CHECK("spring update", b, t150_enc_ff_update(b, sizeof(b), &ef),
-	    0x05, 0x46, 0x00, 0x64, 0x9c, 0x00, 0x00, 0x00, 0x00, 0x54, 0x54);
+	    0x05, 0x46, 0x00, 0x50, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x54, 0x54);
 	CHECK("spring commit", b, t150_enc_ff_commit(b, sizeof(b), &ef),
 	    0x01, 0x02, 0x40, 0x40, 0xff, 0xff, 0x00, 0x00, 0x00, 0x46, 0x00,
 	    0x54, 0x00, 0x00, 0x00);
@@ -388,16 +394,25 @@ test_vendor_bytes(void)
 
 	CHECK("vendor spring first", b, t150_enc_ff_first(b, sizeof(b), &ef),
 	    0x05, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46, 0x54);
-	CHECK("vendor spring update", b, t150_enc_ff_update(b, sizeof(b), &ef),
-	    0x05, 0x0e, 0x00, 0x64, 0x64, 0x00, 0x00, 0x00, 0x00, 0x54, 0x54);
+	/*
+	 * The one field where this encoder deliberately departs from the
+	 * vendor. Thrustmaster sends 0x64 here and so did this project until
+	 * the wheel was measured buzzing at that value; everything else in the
+	 * packet still reproduces their traffic exactly, which is what makes
+	 * the departure visible rather than lost in a rewrite. A46.
+	 */
+	CHECK("vendor spring update, coefficient held below the vendor's", b,
+	    t150_enc_ff_update(b, sizeof(b), &ef),
+	    0x05, 0x0e, 0x00, 0x50, 0x50, 0x00, 0x00, 0x00, 0x00, 0x54, 0x54);
 	CHECK("vendor spring commit", b, t150_enc_ff_commit(b, sizeof(b), &ef),
 	    0x01, 0x00, 0x40, 0x40, 0xb8, 0x0b, 0x00, 0x00, 0x00, 0x0e, 0x00,
 	    0x1c, 0x00, 0x00, 0x00);
 
 	/* A damper, whose saturation reaches 100 where a spring stops at 84. */
 	ef.kind = T150_EFFECT_DAMPER;
-	CHECK("vendor damper update", b, t150_enc_ff_update(b, sizeof(b), &ef),
-	    0x05, 0x0e, 0x00, 0x64, 0x64, 0x00, 0x00, 0x00, 0x00, 0x64, 0x64);
+	CHECK("vendor damper update, same departure, saturation untouched", b,
+	    t150_enc_ff_update(b, sizeof(b), &ef),
+	    0x05, 0x0e, 0x00, 0x50, 0x50, 0x00, 0x00, 0x00, 0x00, 0x64, 0x64);
 
 	/*
 	 * A sawtooth down in slot 5 with a 100 ms start delay, the packet that
@@ -460,6 +475,76 @@ test_refusals(void)
 	    (long)t150_enc_control(b, sizeof(b), T150_SLOT_MAX, 1, 1), 0);
 }
 
+/*
+ * The safety cap on condition coefficients, which is the one place this
+ * encoder knowingly hands a game less than it asked for.
+ *
+ * The wheel's own condition loop is unstable at the top of its range: with a
+ * damper at 100 it buzzes wherever it is left standing, at 99 it still does,
+ * at 90 it does so more slowly, and at 80 it stops. RESEARCH.md A46.
+ *
+ * Clamped and not rescaled, which is the property worth pinning: a game
+ * asking for half strength must still get half strength, or the cap would
+ * quietly weaken every condition rather than only the ones that would buzz.
+ */
+static void
+test_condition_coefficients_are_held_below_the_unstable_value(void)
+{
+	struct t150_effect ef;
+	uint8_t b[BUFLEN];
+	int i;
+	static const struct { int32_t di; int want; } below[] = {
+		{ 0,     0  },
+		{ 1000,  10 },
+		{ 5000,  50 },
+		{ 7900,  79 },
+		{ 8000,  80 },
+	};
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_DAMPER;
+	ef.slot = 0;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.u.condition.pos_saturation = T150_DI_MAX;
+	ef.u.condition.neg_saturation = T150_DI_MAX;
+
+	/* Everything at or below the ceiling passes through untouched. */
+	for (i = 0; i < (int)(sizeof(below) / sizeof(below[0])); i++) {
+		ef.u.condition.pos_coeff = below[i].di;
+		ef.u.condition.neg_coeff = -below[i].di;
+		(void)t150_enc_ff_update(b, sizeof(b), &ef);
+		check_int("a coefficient below the ceiling is not touched",
+		    (int8_t)b[3], below[i].want);
+		check_int("and neither is its negative half",
+		    (int8_t)b[4], -below[i].want);
+	}
+
+	/* Everything above it is flattened onto it, in both directions. */
+	ef.u.condition.pos_coeff = 8100;
+	ef.u.condition.neg_coeff = -8100;
+	(void)t150_enc_ff_update(b, sizeof(b), &ef);
+	check_int("just above the ceiling is held", (int8_t)b[3], 80);
+	check_int("and so is just above it downwards", (int8_t)b[4], -80);
+
+	ef.u.condition.pos_coeff = T150_DI_MAX;
+	ef.u.condition.neg_coeff = -T150_DI_MAX;
+	(void)t150_enc_ff_update(b, sizeof(b), &ef);
+	check_int("the maximum a game can ask for is held", (int8_t)b[3], 80);
+	check_int("in both directions", (int8_t)b[4], -80);
+
+	/* And a game sending nonsense cannot get round it either. */
+	ef.u.condition.pos_coeff = 32767;
+	ef.u.condition.neg_coeff = -32767;
+	(void)t150_enc_ff_update(b, sizeof(b), &ef);
+	check_int("an out of range request is held too", (int8_t)b[3], 80);
+	check_int("in both directions", (int8_t)b[4], -80);
+
+	/* The saturation is a different field and keeps its own maximum. */
+	check_int("the damper saturation is untouched by the cap",
+	    b[9], T150_FF_SAT_DAMPER_MAX);
+}
+
+
 int
 main(void)
 {
@@ -471,6 +556,7 @@ main(void)
 	test_condition();
 	test_downgrades();
 	test_vendor_bytes();
+	test_condition_coefficients_are_held_below_the_unstable_value();
 	test_refusals();
 
 	if (failures != 0) {

@@ -330,6 +330,27 @@ level far enough to change a byte on the wire sends nothing.
 .Pp
 A per-effect gain has no equivalent on the wheel, which has one device gain,
 so it is folded into the effect's magnitude before encoding.
+.Pp
+.Sy "A condition's coefficient is held at 80 percent of what the wheel takes" .
+This is the one place
+.Nm
+knowingly gives a game less than it asked for, and it is a workaround for the
+wheel rather than a correction of the game. The T150's own condition loop is
+unstable at the top of its range: measured by hand with no game, no daemon and
+no proxy, a damper at 100 makes the wheel buzz wherever it is left standing,
+99 still buzzes, 90 buzzes more slowly, and 80 is quiet. An oscillation that
+slows as the gain falls is the wheel fighting itself.
+.Pp
+The encoding is not what is wrong. Thrustmaster's own divisor takes the same
+request to 100 as well, so the wheel dislikes a value that is faithfully
+encoded. What justifies overriding a game here is that the value cannot be
+reached from the game's own settings: Assetto Corsa asks for 9998 of 10000 and
+its force feedback page has no damping control at all, so nobody can work
+around this themselves. The coefficient is clamped rather than rescaled, so a
+game asking for half strength still gets half strength and only the top of the
+range is flattened. See
+.Pa docs/RESEARCH.md
+A46.
 .Sh FILES
 .Bl -tag -width Ds
 .It Pa ~/Library/Application Support/t150ffb/endpoint

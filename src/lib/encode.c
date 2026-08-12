@@ -139,6 +139,26 @@ commit_type(uint8_t kind, uint16_t *out)
 	}
 }
 
+/*
+ * A condition coefficient, held below the value the wheel goes unstable at.
+ * Scaled onto the wheel's full range first and clamped afterwards, so a game
+ * asking for half strength still gets half strength and only the top of the
+ * range is flattened. See T150_FF_COEFF_SAFE_MAX for why this exists and for
+ * why it is a workaround rather than a correction.
+ */
+static int32_t
+safe_coeff(int32_t di)
+{
+	int32_t v = scale_signed(di, T150_DI_MAX, T150_FF_COEFF_MAX);
+
+	if (v > T150_FF_COEFF_SAFE_MAX)
+		return T150_FF_COEFF_SAFE_MAX;
+	if (v < -T150_FF_COEFF_SAFE_MAX)
+		return -T150_FF_COEFF_SAFE_MAX;
+
+	return v;
+}
+
 uint8_t
 t150_effect_downgrade(uint8_t kind)
 {
@@ -399,10 +419,10 @@ t150_enc_ff_update(uint8_t *buf, size_t buflen, const struct t150_effect *ef)
 		    sat_max);
 
 		buf[0] = T150_FF_UPDATE_CONDITION;
-		buf[3] = (uint8_t)(int8_t)scale_signed(
-		    ef->u.condition.pos_coeff, T150_DI_MAX, T150_FF_COEFF_MAX);
-		buf[4] = (uint8_t)(int8_t)scale_signed(
-		    ef->u.condition.neg_coeff, T150_DI_MAX, T150_FF_COEFF_MAX);
+		buf[3] = (uint8_t)(int8_t)safe_coeff(
+		    ef->u.condition.pos_coeff);
+		buf[4] = (uint8_t)(int8_t)safe_coeff(
+		    ef->u.condition.neg_coeff);
 		put_le16(buf + 5, (uint16_t)(int16_t)scale_signed(
 		    ef->u.condition.center, T150_DI_MAX, T150_FF_CENTER_MAX));
 		put_le16(buf + 7, (uint16_t)scale_unsigned(
