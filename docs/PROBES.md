@@ -541,7 +541,7 @@ something else is wrong.
 only when a client says hello, so with no game connected it prints nothing
 after those three lines and sends nothing beyond the startup scrub. Silence
 is health, not a hang. What connects a client is the proxy in a bottle:
-question 8, and the README's Test B is the step by step for it.
+question 8, and `install.sh` puts it there.
 
 ## Question 8: does a game reach the wheel?
 
