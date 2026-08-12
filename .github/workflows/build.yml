@@ -331,9 +331,15 @@ jobs:
           pkgutil --payload-files "$P" | grep -q "crossover-wheel.app/Contents/MacOS/t150menu"
           pkgutil --payload-files "$P" | grep -q "crossover-wheel.app/Contents/Resources/install.sh"
           pkgutil --payload-files "$P" | grep -q "crossover-wheel.app/Contents/Resources/t150-dinput8.dll"
-          # The scripts archive is separate from the payload; expand to see it.
-          rm -rf /tmp/pkgcheck && pkgutil --expand "$P" /tmp/pkgcheck
-          test -f /tmp/pkgcheck/Scripts || { echo "no scripts in the pkg" >&2; exit 1; }
+          # The scripts live outside the payload. --expand leaves them as an
+          # archive whose shape differs between releases of pkgutil, so unpack
+          # fully and read the script itself: that it exists, and that it
+          # opens the application rather than something stale.
+          rm -rf /tmp/pkgcheck && pkgutil --expand-full "$P" /tmp/pkgcheck
+          test -f /tmp/pkgcheck/Scripts/postinstall ||
+              { echo "the pkg carries no postinstall" >&2; exit 1; }
+          grep -q "crossover-wheel.app" /tmp/pkgcheck/Scripts/postinstall ||
+              { echo "postinstall does not open the app" >&2; exit 1; }
       - name: confirm the probes run
         # No wheel is attached to a CI runner, so the only thing that can be
         # checked here is that each tool starts, parses arguments and exits
