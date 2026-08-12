@@ -310,6 +310,9 @@ jobs:
         run: |
           R=build/bin/crossover-wheel.app/Contents/Resources
           test -x build/bin/crossover-wheel.app/Contents/MacOS/t150menu
+          # Debug leftovers are debris in something a user downloads.
+          test ! -e build/bin/crossover-wheel.app/Contents/MacOS/t150menu.dSYM
+          test -z "$(find build/bin/crossover-wheel.app -name '*.d')"
           test -f build/bin/crossover-wheel.app/Contents/Info.plist
           for f in install.sh t150d t150ctl t150boot t150-dinput8.dll \
                    AppIcon.icns t150-idleTemplate.png t150-idleTemplate@2x.png \

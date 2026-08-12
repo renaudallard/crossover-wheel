@@ -253,7 +253,13 @@ APP_RES	   = $(APP)/Contents/Resources
 # Objective-C rather than C, so it does not take the C standard flag: -std=c11
 # is strict ISO and turns off the GNU extensions Cocoa's own headers and ARC
 # rely on. The warnings are the same ones everything else is built with.
-APP_CFLAGS = -O2 -g -fobjc-arc $(WARNINGS)
+#
+# Built without CPPFLAGS and without -g on purpose. CPPFLAGS carries -MMD -MP,
+# which drops a dependency file inside the bundle, and -g leaves a .dSYM
+# directory there: both ship to users as debris in an application nobody can
+# attach a debugger to anyway. It includes nothing but Cocoa, so it needs no
+# include path either.
+APP_CFLAGS = -O2 -fobjc-arc $(WARNINGS)
 
 ifeq ($(UNAME_S),Darwin)
 app: $(APP)
@@ -265,7 +271,7 @@ $(APP): src/mac/t150menu.m dist/Info.plist $(TOOL_BINS) $(PROBE_BINS) \
 	cp dist/Info.plist $(APP)/Contents/Info.plist
 	iconutil -c icns dist/icons/AppIcon.iconset -o $(APP_RES)/AppIcon.icns
 	cp dist/icons/menubar/*.png $(APP_RES)/
-	$(CC) $(CPPFLAGS) $(APP_CFLAGS) -o $(APP)/Contents/MacOS/t150menu \
+	$(CC) $(APP_CFLAGS) -o $(APP)/Contents/MacOS/t150menu \
 	    src/mac/t150menu.m -framework Cocoa
 	cp install.sh $(APP_RES)/
 	cp $(DAEMON_BIN) $(TOOL_BINS) $(PROBE_BINS) $(APP_RES)/
