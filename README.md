@@ -69,9 +69,15 @@ pulling on it, and switch on **Start at login** to never think about it again.
 | full hub | a game is streaming force feedback |
 
 **Made a new bottle since?** *Install into a bottle…* in that menu puts the
-proxy into it and does nothing else. The list is re-read every time it opens,
-and the checkbox for the command line tools is already off once they are
-installed, so a second bottle costs one dialog rather than a reinstall.
+proxy into it, and that is the only thing the application ever installs. The
+list is re-read every time it opens, so a bottle made five minutes ago is in
+it, and a second bottle costs one dialog.
+
+**The application needs nothing on your PATH.** It carries the daemon it was
+built against and runs that one, so the two always match. `t150ctl`,
+`t150boot` and the probes are for people who want them: `./install.sh` from a
+source tree puts them in `~/.local/bin`, and nothing in the menu bar route
+depends on that having happened.
 
 **Why right-click Open, once.** macOS marks everything a browser downloads and
 refuses anything marked that carries no paid developer identity. Right-click

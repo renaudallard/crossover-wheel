@@ -35,7 +35,13 @@ Start and stop the daemon there, and switch on "Start at login" if you would
 rather never think about it.
 
 If you make another CrossOver bottle later, "Install into a bottle..." in that
-menu adds the proxy to it on its own. It does not reinstall anything else.
+menu adds the proxy to it. That is the only thing the app ever installs: it
+carries its own copy of the daemon and runs that, so nothing has to be put on
+your PATH for the menu bar to work.
+
+The command line tools, t150ctl and t150boot and the probes, are optional and
+are not installed by the app. ./install.sh from the source tree is where they
+come from if you want them.
 
 THEN, EVERY TIME
 

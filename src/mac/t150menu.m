@@ -33,10 +33,7 @@
 @property (strong) NSTask *daemon;
 @property (strong) NSWindow *setup;
 @property (strong) NSPopUpButton *bottles;
-@property (strong) NSTextField *prefix;
-@property (strong) NSTextField *prefixLabel;
 @property (strong) NSButton *install;
-@property (strong) NSButton *alsoTools;
 @property (strong) NSTextView *out;
 @property (strong) NSMenuItem *statusLine;
 @property (strong) NSMenuItem *runItem;
@@ -61,29 +58,16 @@
 }
 
 /*
- * Where the tools were told to go. The text field only exists while the setup
- * window is open, so this must not read it blind: everything else here can be
- * asked for the daemon's path before that window has ever been made.
+ * The daemon this runs, which is always the one inside this bundle.
+ *
+ * Not a copy installed somewhere on the PATH, deliberately. This application
+ * ships the daemon it was built against, so running that one means the two
+ * always match and there is no version of this that depends on a separate
+ * install having happened. It is also why the menu never installs command
+ * line tools: nothing here needs them.
  */
-- (NSString *)prefixPath
+- (NSString *)daemonPath
 {
-	NSString *typed = self.prefix.stringValue;
-
-	if (typed.length > 0)
-		return [typed stringByExpandingTildeInPath];
-
-	return [NSHomeDirectory() stringByAppendingPathComponent:@".local"];
-}
-
-- (NSString *)installedDaemon
-{
-	NSString *p = [[self prefixPath]
-	    stringByAppendingPathComponent:@"bin/t150d"];
-
-	if ([[NSFileManager defaultManager] isExecutableFileAtPath:p])
-		return p;
-
-	/* Not installed yet: the bundled one still works. */
 	return [self resource:@"t150d"];
 }
 
@@ -169,8 +153,7 @@
 	 * way to find out why. Not finding a bottle is exactly when somebody
 	 * needs to be told something.
 	 */
-	if (![[NSFileManager defaultManager] isExecutableFileAtPath:
-	    [[self prefixPath] stringByAppendingPathComponent:@"bin/t150d"]])
+	if (![[NSUserDefaults standardUserDefaults] boolForKey:@"installedOnce"])
 		[self openSetup:nil];
 }
 
@@ -292,7 +275,7 @@
 	NSPipe *p = [NSPipe pipe];
 	NSError *err = nil;
 
-	t.executableURL = [NSURL fileURLWithPath:[self installedDaemon]];
+	t.executableURL = [NSURL fileURLWithPath:[self daemonPath]];
 	t.arguments = @[ @"-v", @"-w" ];
 	t.standardOutput = p;
 	t.standardError = p;
@@ -384,7 +367,7 @@
 
 	NSDictionary *plist = @{
 		@"Label" : AGENT_LABEL,
-		@"ProgramArguments" : @[ [self installedDaemon], @"-w" ],
+		@"ProgramArguments" : @[ [self daemonPath], @"-w" ],
 		@"RunAtLoad" : @YES,
 		/*
 		 * Restarted if it dies, which is what makes this worth
@@ -444,42 +427,19 @@
 	[v addSubview:self.bottles];
 
 	NSTextField *l2 = [NSTextField labelWithString:
-	    @"Where should the command line tools go?"];
-	l2.frame = NSMakeRect(20, 306, 400, 20);
+	    @"The proxy goes into that bottle. Nothing else is touched."];
+	l2.frame = NSMakeRect(20, 306, 460, 20);
+	l2.textColor = [NSColor secondaryLabelColor];
 	[v addSubview:l2];
-
-	self.prefix = [[NSTextField alloc]
-	    initWithFrame:NSMakeRect(20, 278, 300, 24)];
-	self.prefix.stringValue = [NSHomeDirectory()
-	    stringByAppendingPathComponent:@".local"];
-	[v addSubview:self.prefix];
-	self.prefixLabel = l2;
-
-	/*
-	 * Off once the tools are installed, so adding the proxy to a bottle
-	 * made later is picking it from the list and pressing Install. The
-	 * whole point is that a second bottle costs one dialog rather than a
-	 * reinstall of everything.
-	 */
-	BOOL haveTools = [[NSFileManager defaultManager] isExecutableFileAtPath:
-	    [[self prefixPath] stringByAppendingPathComponent:@"bin/t150d"]];
-
-	self.alsoTools = [NSButton checkboxWithTitle:
-	    @"Also install the command line tools and their man pages"
-	    target:self action:@selector(toolsToggled:)];
-	self.alsoTools.frame = NSMakeRect(20, 246, 460, 20);
-	self.alsoTools.state = haveTools ? NSControlStateValueOff
-	    : NSControlStateValueOn;
-	[v addSubview:self.alsoTools];
 
 	self.install = [NSButton buttonWithTitle:@"Install"
 	    target:self action:@selector(runInstall:)];
-	self.install.frame = NSMakeRect(440, 276, 100, 30);
+	self.install.frame = NSMakeRect(440, 338, 100, 32);
 	self.install.keyEquivalent = @"\r";
 	[v addSubview:self.install];
 
 	NSScrollView *sc = [[NSScrollView alloc]
-	    initWithFrame:NSMakeRect(20, 20, 520, 214)];
+	    initWithFrame:NSMakeRect(20, 20, 520, 268)];
 	sc.hasVerticalScroller = YES;
 	sc.borderType = NSBezelBorder;
 
@@ -491,8 +451,6 @@
 	self.out.autoresizingMask = NSViewWidthSizable;
 	sc.documentView = self.out;
 	[v addSubview:sc];
-
-	[self toolsToggled:nil];
 
 	self.setup = w;
 	[w center];
@@ -536,15 +494,16 @@
 	NSPipe *p = [NSPipe pipe];
 	NSError *err = nil;
 
+	/*
+	 * The bottle and nothing else. The command line tools are not this
+	 * application's business: it carries the daemon it runs, so a person
+	 * who only ever uses the menu bar never needs anything on their PATH.
+	 * install.sh is still there for anyone who wants them.
+	 */
 	t.executableURL = [NSURL fileURLWithPath:@"/bin/sh"];
-	if (self.alsoTools.state == NSControlStateValueOn)
-		t.arguments = @[ [self resource:@"install.sh"],
-		    @"-b", self.bottles.titleOfSelectedItem,
-		    @"-p", self.prefix.stringValue ];
-	else
-		t.arguments = @[ [self resource:@"install.sh"],
-		    @"-b", self.bottles.titleOfSelectedItem,
-		    @"--no-binaries", @"--no-app" ];
+	t.arguments = @[ [self resource:@"install.sh"],
+	    @"-b", self.bottles.titleOfSelectedItem,
+	    @"--no-binaries", @"--no-app" ];
 	t.currentDirectoryURL = [NSURL fileURLWithPath:
 	    [[NSBundle mainBundle] resourcePath]];
 	t.standardOutput = p;
@@ -571,6 +530,9 @@
 
 		dispatch_async(dispatch_get_main_queue(), ^{
 			weak.install.enabled = YES;
+			if (st == 0)
+				[[NSUserDefaults standardUserDefaults]
+				    setBool:YES forKey:@"installedOnce"];
 			[weak say:st == 0 ?
 			    @"\nDone. Start the daemon from the menu bar, then "
 			    "start your game.\n" :
@@ -588,17 +550,6 @@
 		[self say:[NSString stringWithFormat:@"cannot run the "
 		    "installer: %@\n", err.localizedDescription]];
 	}
-}
-
-/* The prefix is meaningless when only the bottle is being touched. */
-- (void)toolsToggled:(id)sender
-{
-	(void)sender;
-	BOOL on = self.alsoTools.state == NSControlStateValueOn;
-
-	self.prefix.enabled = on;
-	self.prefixLabel.textColor = on ? [NSColor labelColor]
-	    : [NSColor secondaryLabelColor];
 }
 
 - (void)say:(NSString *)s
