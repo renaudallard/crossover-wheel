@@ -158,9 +158,15 @@
 	 * Nothing installed yet means the person just double clicked this to
 	 * install, so show them the window rather than a menu bar icon they
 	 * have to find.
+	 *
+	 * Deliberately not conditional on having found a bottle. It was, and
+	 * that was the worst possible way round: a machine where the bottles
+	 * could not be listed showed no window at all, so an installer that
+	 * had just reported success was followed by nothing happening and no
+	 * way to find out why. Not finding a bottle is exactly when somebody
+	 * needs to be told something.
 	 */
-	if ([self findBottles].count > 0 &&
-	    ![[NSFileManager defaultManager] isExecutableFileAtPath:
+	if (![[NSFileManager defaultManager] isExecutableFileAtPath:
 	    [[self prefixPath] stringByAppendingPathComponent:@"bin/t150d"]])
 		[self openSetup:nil];
 }
@@ -467,12 +473,23 @@
 	[NSApp activateIgnoringOtherApps:YES];
 	[w makeKeyAndOrderFront:nil];
 
-	if ([self findBottles].count == 0)
-		[self say:@"No CrossOver bottles found. Make one in CrossOver "
-		    "first, install the game in it, then come back.\n"];
-	else
+	if ([self findBottles].count == 0) {
+		/*
+		 * Say where it looked. An empty list means either there are no
+		 * bottles or this could not read the folder, and those need
+		 * different answers from the person reading it.
+		 */
+		[self say:[NSString stringWithFormat:
+		    @"No CrossOver bottles found in:\n  %@\n\n"
+		    "If your bottles are there, macOS may be refusing this app "
+		    "access to the folder: look in System Settings, Privacy "
+		    "and Security, Files and Folders. If they are somewhere "
+		    "else, or there are none yet, make one in CrossOver and "
+		    "install the game into it first.\n", [self bottleRoot]]];
+	} else {
 		[self say:@"Ready. Pick the bottle your game is in and press "
 		    "Install.\n\n"];
+	}
 }
 
 /*
