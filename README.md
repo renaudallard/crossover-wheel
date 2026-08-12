@@ -68,6 +68,11 @@ pulling on it, and switch on **Start at login** to never think about it again.
 | filled hub | the daemon holds the wheel |
 | full hub | a game is streaming force feedback |
 
+**Made a new bottle since?** *Install into a bottle…* in that menu puts the
+proxy into it and does nothing else. The list is re-read every time it opens,
+and the checkbox for the command line tools is already off once they are
+installed, so a second bottle costs one dialog rather than a reinstall.
+
 **Why right-click Open, once.** macOS marks everything a browser downloads and
 refuses anything marked that carries no paid developer identity. Right-click
 Open is the way past that for an installer: it is a dialog with a button, and

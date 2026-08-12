@@ -34,7 +34,9 @@
 @property (strong) NSWindow *setup;
 @property (strong) NSPopUpButton *bottles;
 @property (strong) NSTextField *prefix;
+@property (strong) NSTextField *prefixLabel;
 @property (strong) NSButton *install;
+@property (strong) NSButton *alsoTools;
 @property (strong) NSTextView *out;
 @property (strong) NSMenuItem *statusLine;
 @property (strong) NSMenuItem *runItem;
@@ -139,7 +141,8 @@
 
 	[m addItem:[NSMenuItem separatorItem]];
 
-	NSMenuItem *s = [[NSMenuItem alloc] initWithTitle:@"Setup…"
+	NSMenuItem *s = [[NSMenuItem alloc] initWithTitle:
+	    @"Install into a bottle…"
 	    action:@selector(openSetup:) keyEquivalent:@""];
 	s.target = self;
 	[m addItem:s];
@@ -412,6 +415,9 @@
 	(void)sender;
 
 	if (self.setup != nil) {
+		/* A bottle may have been made since this was last opened. */
+		[self.bottles removeAllItems];
+		[self.bottles addItemsWithTitles:[self findBottles]];
 		[NSApp activateIgnoringOtherApps:YES];
 		[self.setup makeKeyAndOrderFront:nil];
 		return;
@@ -447,6 +453,24 @@
 	self.prefix.stringValue = [NSHomeDirectory()
 	    stringByAppendingPathComponent:@".local"];
 	[v addSubview:self.prefix];
+	self.prefixLabel = l2;
+
+	/*
+	 * Off once the tools are installed, so adding the proxy to a bottle
+	 * made later is picking it from the list and pressing Install. The
+	 * whole point is that a second bottle costs one dialog rather than a
+	 * reinstall of everything.
+	 */
+	BOOL haveTools = [[NSFileManager defaultManager] isExecutableFileAtPath:
+	    [[self prefixPath] stringByAppendingPathComponent:@"bin/t150d"]];
+
+	self.alsoTools = [NSButton checkboxWithTitle:
+	    @"Also install the command line tools and their man pages"
+	    target:self action:@selector(toolsToggled:)];
+	self.alsoTools.frame = NSMakeRect(20, 246, 460, 20);
+	self.alsoTools.state = haveTools ? NSControlStateValueOff
+	    : NSControlStateValueOn;
+	[v addSubview:self.alsoTools];
 
 	self.install = [NSButton buttonWithTitle:@"Install"
 	    target:self action:@selector(runInstall:)];
@@ -455,7 +479,7 @@
 	[v addSubview:self.install];
 
 	NSScrollView *sc = [[NSScrollView alloc]
-	    initWithFrame:NSMakeRect(20, 20, 520, 240)];
+	    initWithFrame:NSMakeRect(20, 20, 520, 214)];
 	sc.hasVerticalScroller = YES;
 	sc.borderType = NSBezelBorder;
 
@@ -467,6 +491,8 @@
 	self.out.autoresizingMask = NSViewWidthSizable;
 	sc.documentView = self.out;
 	[v addSubview:sc];
+
+	[self toolsToggled:nil];
 
 	self.setup = w;
 	[w center];
@@ -511,9 +537,14 @@
 	NSError *err = nil;
 
 	t.executableURL = [NSURL fileURLWithPath:@"/bin/sh"];
-	t.arguments = @[ [self resource:@"install.sh"],
-	    @"-b", self.bottles.titleOfSelectedItem,
-	    @"-p", self.prefix.stringValue ];
+	if (self.alsoTools.state == NSControlStateValueOn)
+		t.arguments = @[ [self resource:@"install.sh"],
+		    @"-b", self.bottles.titleOfSelectedItem,
+		    @"-p", self.prefix.stringValue ];
+	else
+		t.arguments = @[ [self resource:@"install.sh"],
+		    @"-b", self.bottles.titleOfSelectedItem,
+		    @"--no-binaries", @"--no-app" ];
 	t.currentDirectoryURL = [NSURL fileURLWithPath:
 	    [[NSBundle mainBundle] resourcePath]];
 	t.standardOutput = p;
@@ -557,6 +588,17 @@
 		[self say:[NSString stringWithFormat:@"cannot run the "
 		    "installer: %@\n", err.localizedDescription]];
 	}
+}
+
+/* The prefix is meaningless when only the bottle is being touched. */
+- (void)toolsToggled:(id)sender
+{
+	(void)sender;
+	BOOL on = self.alsoTools.state == NSControlStateValueOn;
+
+	self.prefix.enabled = on;
+	self.prefixLabel.textColor = on ? [NSColor labelColor]
+	    : [NSColor secondaryLabelColor];
 }
 
 - (void)say:(NSString *)s

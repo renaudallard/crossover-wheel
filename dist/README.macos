@@ -34,6 +34,9 @@ Afterwards it lives in your menu bar as a small steering wheel:
 Start and stop the daemon there, and switch on "Start at login" if you would
 rather never think about it.
 
+If you make another CrossOver bottle later, "Install into a bottle..." in that
+menu adds the proxy to it on its own. It does not reinstall anything else.
+
 THEN, EVERY TIME
 
 If you use the app, none of this is needed: start the daemon from the menu
