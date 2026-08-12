@@ -1,0 +1,24 @@
+#!/bin/sh
+#
+# Open the application once the installer has placed it, so the setup window
+# appears by itself and the person is never asked to go and find anything.
+#
+# postinstall runs as root. Opening an application as root would put it in
+# root's session, where nobody would ever see it, so this hands it to whoever
+# is actually sitting at the machine. That is also the only user for whom the
+# app makes sense: writing to the wheel is gated on being the console user.
+#
+# Never fails the install. The payload is already on disk by this point and a
+# window that did not open is worth far less than an installer that reports
+# failure over it.
+
+set -u
+
+console_uid=$(stat -f %u /dev/console 2>/dev/null || echo 0)
+
+if [ "$console_uid" -gt 0 ]; then
+	launchctl asuser "$console_uid" \
+	    open -a "/Applications/crossover-wheel.app" 2>/dev/null || :
+fi
+
+exit 0

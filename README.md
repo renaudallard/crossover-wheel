@@ -46,84 +46,59 @@ on a measurement that did not support them.
 
 ## Install
 
-Download the macOS archive from the
-[releases page](https://github.com/renaudallard/crossover-wheel/releases) and
-extract it. There are two ways in, and they do the same work.
-
-### The graphical one
-
 <img src="dist/icons/crossover-wheel-256.png" alt="" width="96" align="right">
 
-Double-click **crossover-wheel.app**. It shows a window, asks which CrossOver
-bottle your game is in, and installs everything. Afterwards it lives in the
-menu bar as `○ T150`, where it starts and stops the daemon, says whether the
-wheel is connected and whether a game is talking to it, and has a **Start at
-login** switch.
+**One download.** Get `crossover-wheel-<version>.pkg` from the
+[releases page](https://github.com/renaudallard/crossover-wheel/releases),
+then **right-click it and choose Open**.
 
-**Clear the quarantine flag first, or macOS will call the app damaged.** A
-browser marks every download, and an app that is marked and not signed by a
-registered developer is refused with *"crossover-wheel.app is damaged and
-can't be opened. You should move it to the Bin."* Nothing is damaged and
-right-click Open does not get past that one. This does:
+That is the whole thing. The installer places the application, the application
+opens by itself and asks which CrossOver bottle your game is in, and it
+installs everything else: the daemon and the tools, their man pages, the proxy
+into the bottle, the registry override, and the setting without which the
+wheel does not appear inside a bottle at all.
 
-```sh
-xattr -dr com.apple.quarantine crossover-wheel.app
-```
+Afterwards it lives in the menu bar as a small steering wheel. Start and stop
+the daemon there, see whether the wheel is connected and whether a game is
+pulling on it, and switch on **Start at login** to never think about it again.
 
-Downloading with `curl` instead of a browser avoids the flag being set at all.
-And `./install.sh` copies the app into `~/Applications` and clears it for you,
-so running the command line installer once is another way past it.
+| icon | meaning |
+| --- | --- |
+| thin hub | the daemon is stopped, or no wheel is plugged in |
+| filled hub | the daemon holds the wheel |
+| full hub | a game is streaming force feedback |
 
-The app is a front end over `install.sh` and runs the very same script from
-inside itself, so both routes do exactly the same thing to your bottle. It
-also never connects to the daemon to find out what is happening; it runs the
-daemon as its own child and reads what it prints, because the daemon serves
-one client at a time and a second connection would displace a running game.
+**Why right-click Open, once.** macOS marks everything a browser downloads and
+refuses anything marked that carries no paid developer identity. Right-click
+Open is the way past that for an installer: it is a dialog with a button, and
+you only meet it once. **The application itself never hits this**, because
+files laid down by the installer are not marked, so it opens by double-click
+from then on. That is the whole reason this ships as a `.pkg` rather than as
+the application on its own, which macOS calls "damaged" and offers to move to
+the bin, with no way forward at all.
 
-### The command line one
-
-`install.sh` carries the proxy DLL with it, so the archive is the only thing
-to download:
-
-```sh
-V=0.1.30        # whatever the releases page shows
-U=https://github.com/renaudallard/crossover-wheel/releases/download/v$V
-curl -LO "$U/crossover-wheel-$V-macos-arm64.tar.gz"
-curl -LO "$U/SHA256SUMS"
-shasum -a 256 -c SHA256SUMS --ignore-missing
-tar xzf "crossover-wheel-$V-macos-arm64.tar.gz"
-cd "crossover-wheel-$V-macos-arm64"
-./install.sh
-```
-
-Fetching with `curl` rather than a browser matters: a browser quarantines the
-files and macOS refuses to run unsigned binaries. The installer clears the
-quarantine flag anyway, so either way works.
-
-It asks one question, which bottle your game is in, and then does everything:
-
-- puts `t150d`, `t150ctl`, `t150boot` and the probes in `~/.local/bin`, with
-  their man pages
-- copies **CrossOver's builtin** `dinput8.dll` into the bottle as
-  `dinput8_orig.dll`, which is the step nobody gets right by hand, and
-  verifies afterwards that it copied the builtin and not the placeholder of
-  the same name already sitting there
-- copies the proxy in as `dinput8.dll`
-- sets the `dinput8` registry override to `native,builtin`
-- adds `SDL_JOYSTICK_HIDAPI=0` to the bottle, without which the wheel does not
-  appear inside it at all
-
-`./install.sh -n` shows what it would do and changes nothing. `-p` picks a
-different prefix, `-b` names the bottle so it asks nothing, and `--no-bottle`
-or `--no-binaries` does one half. From a source tree, `make install` runs the
-same script and `make app` builds the application.
-
-Then, every time:
+### From a source tree, or without the installer
 
 ```sh
-t150boot          # after every plug-in, and after sleep and wake
-t150d -v -w       # start this before the game, and leave it running
+make            # build and test
+make install    # the same work, from a terminal
+make app        # just the application
+make pkg        # the installer
 ```
+
+`install.sh` is the script the application runs from inside its own bundle, so
+both routes do exactly the same thing to your bottle. `./install.sh -n` shows
+what it would do and changes nothing; `-b` names the bottle so it asks
+nothing; `--no-bottle`, `--no-binaries` and `--no-app` each do less.
+
+### Once it is installed
+
+```sh
+t150boot          # only before the daemon runs: it does this itself afterwards
+t150d -v -w       # start before the game, leave it running
+```
+
+None of that is needed if you use the menu bar item.
 
 **Set the game's own steering rotation to 1080 degrees**, which is what this
 wheel is. Nothing can tell a wheel what range to be at, so a game left at its
@@ -300,16 +275,15 @@ Prebuilt binaries are on the
 [releases page](https://github.com/renaudallard/crossover-wheel/releases),
 built by CI from the tagged commit. Two archives:
 
-| Archive | Contains |
+| File | For |
 | --- | --- |
-| `crossover-wheel-<v>-macos-arm64.tar.gz` | `crossover-wheel.app`, `install.sh`, `t150d`, `t150ctl`, `t150boot`, the four `probe_*` tools, the man pages, and `t150-dinput8.dll` |
-| `crossover-wheel-<v>-windows-x86_64.zip` | `t150-dinput8.dll` and `probe_dinput.exe` |
+| `crossover-wheel-<v>.pkg` | **everyone.** The installer, which carries the application, and the application carries the daemon, the tools, the man pages, the proxy and `install.sh` inside its own bundle |
+| `crossover-wheel-<v>-windows-x86_64.zip` | nobody, unless you want the proxy on its own or `probe_dinput.exe` to question a bottle without a game |
 
-**The macOS archive is the only one you need.** It carries the proxy DLL as
-well, because the bottle it goes into is on the same Mac, so both the
-application and `install.sh` have everything they need beside them. The
-application carries its own copy of all of it inside the bundle, so it keeps
-working after the archive is deleted. The Windows zip is there for anyone who wants
+**The `.pkg` is the only thing to download.** Everything is inside it,
+including the proxy that goes into the bottle, because that bottle is on the
+same Mac. Nothing needs to be kept afterwards: the application holds its own
+copy of all of it. The Windows zip is there for anyone who wants
 the proxy on its own, or who wants `probe_dinput.exe` to test a bottle
 without a game.
 
@@ -324,11 +298,11 @@ before running it:
 shasum -a 256 -c SHA256SUMS --ignore-missing
 ```
 
-**The binaries are unsigned and not notarized.** Downloaded through a browser
-they are quarantined and macOS will refuse to run them, with a message about
-an unidentified developer. `install.sh` clears the quarantine flag on
-everything it installs; fetching with `curl` avoids setting it in the first
-place.
+**Nothing here is signed by a paid developer identity or notarized.** That is
+why the installer needs right-click Open the first time, and it is why the
+installer exists: what it lays down is not marked, so the application and the
+tools it delivers are usable normally. Fetching with `curl` rather than a
+browser avoids the mark being set at all.
 
 Two more things will otherwise cost you a session, both of them macOS rather
 than this project:

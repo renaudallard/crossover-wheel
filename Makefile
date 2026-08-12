@@ -92,7 +92,7 @@ DLL_CPPFLAGS = -Iinclude -Isrc/dll -DT150_PROXY_VERSION=\"$(DLL_VERSION)\"
 DLL_CFLAGS   = -O2 -std=c11 $(WARNINGS)
 DLL_LIBS     = -ldxguid -luuid -lole32 -lws2_32
 
-.PHONY: all probes tools daemon dll test check strict clean help install app
+.PHONY: all probes tools daemon dll test check strict clean help install app pkg
 
 ifeq ($(HAVE_DLL_CC),yes)
 DLL_TARGET = dll
@@ -120,6 +120,8 @@ help:
 	@echo "  test     build and run the portable tests"
 	@echo "  app      build crossover-wheel.app, the menu bar item and"
 	@echo "           graphical installer (macOS only)"
+	@echo "  pkg      wrap the app in a double-clickable installer, which is"
+	@echo "           the single thing a user downloads (macOS only)"
 	@echo "  install  run install.sh, which puts the binaries on your PATH"
 	@echo "           and the proxy into a bottle you pick (macOS)"
 	@echo "           pass arguments with INSTALL_ARGS, e.g."
@@ -288,9 +290,34 @@ $(APP): src/mac/t150menu.m dist/Info.plist $(TOOL_BINS) $(PROBE_BINS) \
 	codesign --force --sign - $(APP)
 	@codesign --verify --strict $(APP) && echo "bundle signature verifies"
 	@echo "built $(APP)"
+
+# The one download. A .pkg rather than the app on its own, for a reason that
+# is not cosmetic: macOS marks anything a browser downloads, and refuses a
+# marked application that carries no developer identity, calling it damaged
+# with no way forward. Files laid down by Installer are not marked, so the app
+# this delivers opens by double-click from then on. The installer itself still
+# has to be opened once with right-click Open, which is a dialog with a button
+# rather than a dead end.
+PKG	   = $(BIN)/crossover-wheel-$(PKG_VERSION).pkg
+PKG_VERSION := $(shell git describe --tags --always 2>/dev/null | sed 's/^v//' \
+	         || echo 0)
+
+pkg: $(PKG)
+
+$(PKG): $(APP) dist/pkg-scripts/postinstall
+	pkgbuild --identifier it.allard.crossover-wheel \
+	    --version $(PKG_VERSION) \
+	    --install-location /Applications \
+	    --scripts dist/pkg-scripts \
+	    --component $(APP) $(PKG)
+	@echo "built $(PKG)"
+
 else
 app:
 	@echo "app: macOS only, nothing to do here" >&2
+
+pkg:
+	@echo "pkg: macOS only, nothing to do here" >&2
 endif
 
 

@@ -1,45 +1,38 @@
 crossover-wheel, macOS arm64.
 
 Force feedback for a Thrustmaster T150 in games running under CrossOver.
-Nothing is installed system wide and nothing needs root, except probe_intr,
-which is a measurement tool rather than something you need.
 
-INSTALL, THE EASY WAY
+No kext, no system extension, no SIP or AMFI change, and nothing that drives
+the wheel needs root. The installer asks for your password once, because it
+puts the application in /Applications like any other; everything after that
+happens in your own account, and the daemon that talks to the wheel runs
+unprivileged.
 
-First, one command. Then double-click crossover-wheel.app.
+INSTALL
 
-  xattr -dr com.apple.quarantine crossover-wheel.app
+Right-click crossover-wheel.pkg and choose Open. Not double-click, the first
+time: nothing here is signed by a paid Apple developer account, and macOS
+refuses a downloaded installer that is not, unless you open it that way. It is
+a dialog with a button, and you meet it once.
 
-Without it macOS says the app is "damaged" and offers to move it to the bin.
-Nothing is damaged: a browser marks everything it downloads, and macOS refuses
-a marked application that is not signed by a registered developer. That
-message has no "open anyway" button and right-clicking does not help. The
-command above removes the mark, and then it opens normally, for good.
+The installer places the application and opens it. The application asks which
+CrossOver bottle your game is in and installs everything else: the daemon, the
+tools, their man pages, the proxy into the bottle, and the settings the bottle
+needs.
 
-If you would rather not, ./install.sh does the same thing and puts a
-de-quarantined copy of the app in ~/Applications.
+The application itself will never give you that dialog. What an installer
+lays down is not marked as downloaded, which is exactly why this ships as an
+installer rather than as an application in a folder: an application downloaded
+directly is called "damaged" by macOS, with no way past it.
 
-It asks which CrossOver bottle your game is in and does the rest. Afterwards
-it stays in the menu bar as a small "T150", where you can start and stop the
-daemon, see whether the wheel is connected and whether a game is using it,
-and switch on "Start at login" so you never touch it again.
+Afterwards it lives in your menu bar as a small steering wheel:
 
-INSTALL, THE OTHER WAY
+  thin centre    nothing running, or no wheel plugged in
+  filled centre  the daemon has the wheel
+  full centre    a game is pulling on it right now
 
-  ./install.sh
-
-That is the whole thing, and it is exactly what the app runs internally. It
-asks which CrossOver bottle your game is in and then does both halves: the
-binaries and their man pages go in ~/.local/bin, and the proxy goes into the
-bottle with the registry override and the one environment variable the wheel
-needs to appear inside it at all.
-
-  ./install.sh -n     say what would happen and change nothing
-  ./install.sh -h     the other options
-
-t150-dinput8.dll is in here too, which is why the installer needs nothing
-else. It is the file that goes inside the bottle; there is nothing to do with
-it by hand.
+Start and stop the daemon there, and switch on "Start at login" if you would
+rather never think about it.
 
 THEN, EVERY TIME
 

@@ -320,6 +320,20 @@ jobs:
             test -f "$R/$f" || { echo "missing from the bundle: $f" >&2; exit 1; }
           done
           sh "$R/install.sh" -h 2>&1 | grep -q "no-bottle"
+      - name: wrap it in the installer people download
+        run: make pkg
+      - name: the installer contains the app and will place it
+        # An installer that unpacks to nothing, or that forgets the script
+        # which opens the app, looks identical to a working one until someone
+        # double-clicks it.
+        run: |
+          P=$(ls build/bin/crossover-wheel-*.pkg)
+          pkgutil --payload-files "$P" | grep -q "crossover-wheel.app/Contents/MacOS/t150menu"
+          pkgutil --payload-files "$P" | grep -q "crossover-wheel.app/Contents/Resources/install.sh"
+          pkgutil --payload-files "$P" | grep -q "crossover-wheel.app/Contents/Resources/t150-dinput8.dll"
+          # The scripts archive is separate from the payload; expand to see it.
+          rm -rf /tmp/pkgcheck && pkgutil --expand "$P" /tmp/pkgcheck
+          test -f /tmp/pkgcheck/Scripts || { echo "no scripts in the pkg" >&2; exit 1; }
       - name: confirm the probes run
         # No wheel is attached to a CI runner, so the only thing that can be
         # checked here is that each tool starts, parses arguments and exits
@@ -368,4 +382,5 @@ jobs:
             build/bin/t150boot
             build/bin/t150d
             build/bin/crossover-wheel.app/**
+            build/bin/crossover-wheel-*.pkg
           if-no-files-found: error
