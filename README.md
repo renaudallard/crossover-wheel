@@ -117,7 +117,10 @@ game can ask for either: DirectInput has no property for a wheel's rotation or
 its centring spring, so on Windows they live in the vendor's control panel.
 
 - **Rotation** sets lock to lock, from 270 to 1080 degrees. Set it to whatever
-  your game's own steering setting says, or leave the wheel's own.
+  your game's own steering setting says. *The wheel's own, full travel* puts
+  it back to 1080 and stops the daemon reapplying anything after a replug: the
+  wheel keeps a range until it is unplugged, so going back has to ask for the
+  full one rather than simply stop asking.
 - **Centring spring** is for games that send **no** force feedback at all,
   where the wheel would otherwise stay limp. Off by default, because a game
   that does send forces has the spring fighting them.

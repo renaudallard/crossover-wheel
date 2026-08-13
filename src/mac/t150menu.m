@@ -330,7 +330,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	unsigned i;
 
 	NSMenuItem *none = [[NSMenuItem alloc] initWithTitle:
-	    @"Leave the wheel's own" action:@selector(pickRotation:)
+	    @"The wheel's own, full travel" action:@selector(pickRotation:)
 	    keyEquivalent:@""];
 	none.target = self;
 	none.tag = 0;
@@ -402,11 +402,20 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	    forKey:@"rotation"];
 
 	/*
-	 * Nothing to send for "leave the wheel's own": the wheel is already
-	 * at whatever it powers up with, and there is no packet meaning
-	 * "forget what I told you".
+	 * "The wheel's own" has to send something, and this is where that was
+	 * wrong. The wheel keeps a range until it is unplugged, so choosing
+	 * this after setting 540 left it at 540: there is no packet meaning
+	 * "forget what I told you", and doing nothing meant keeping the last
+	 * choice while the tick moved to a row that claimed otherwise.
+	 *
+	 * Its own range is its widest. A49 measured that: setting 1080
+	 * explicitly changes nothing because that is where it powers up. So
+	 * this asks for the maximum, which restores full travel now, and
+	 * stores zero, which stops the daemon reapplying any range after a
+	 * replug.
 	 */
-	if (deg > 0 && ![self wheelSetting:@"range" value:deg])
+	if (![self wheelSetting:@"range"
+	    value:deg > 0 ? deg : T150_RANGE_MAX])
 		[self note:@"The wheel did not take that rotation. Is it "
 		    "plugged in and out of boot mode?"];
 
