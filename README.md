@@ -48,15 +48,20 @@ on a measurement that did not support them.
 
 <img src="dist/icons/crossover-wheel-256.png" alt="" width="96" align="right">
 
-**One download.** Get `crossover-wheel-<version>.pkg` from the
+**One download.** Get `crossover-wheel-<version>.dmg` from the
 [releases page](https://github.com/renaudallard/crossover-wheel/releases),
-then **right-click it and choose Open**.
+open it, and **drag the app onto the Applications shortcut** next to it.
 
-That is the whole thing. The installer places the application, the application
-opens by itself and asks which CrossOver bottle your game is in, and it
-installs everything else: the daemon and the tools, their man pages, the proxy
-into the bottle, the registry override, and the setting without which the
-wheel does not appear inside a bottle at all.
+Then launch it from Applications. **The first launch needs a right-click:**
+choose Open rather than double-clicking, and confirm. macOS marks everything a
+browser downloads and asks about anything not signed by a paid developer
+identity. That is once, ever, and **no password is needed at any point** —
+nothing is installed outside your own account.
+
+When it opens it asks which CrossOver bottle your game is in, and puts the
+proxy there, along with the registry override and the setting without which
+the wheel does not appear inside a bottle at all. That is the only thing it
+installs.
 
 Afterwards it lives in the menu bar as a small steering wheel. Start and stop
 the daemon there, see whether the wheel is connected and whether a game is
@@ -79,14 +84,13 @@ built against and runs that one, so the two always match. `t150ctl`,
 source tree puts them in `~/.local/bin`, and nothing in the menu bar route
 depends on that having happened.
 
-**Why right-click Open, once.** macOS marks everything a browser downloads and
-refuses anything marked that carries no paid developer identity. Right-click
-Open is the way past that for an installer: it is a dialog with a button, and
-you only meet it once. **The application itself never hits this**, because
-files laid down by the installer are not marked, so it opens by double-click
-from then on. That is the whole reason this ships as a `.pkg` rather than as
-the application on its own, which macOS calls "damaged" and offers to move to
-the bin, with no way forward at all.
+**If macOS says the app is damaged**, the copy you have is older than 0.1.34.
+That message means the bundle carried no signature at all, and it is a dead
+end: no button, and right-click Open does nothing for it. The bundle is
+ad-hoc signed now, which turns it into the ordinary unverified-developer
+dialog that right-click Open does answer. Ad-hoc is not a paid identity and
+never clears Gatekeeper by itself; that is the one thing missing, and it costs
+$99 a year.
 
 ### From a source tree, or without the installer
 
@@ -94,7 +98,7 @@ the bin, with no way forward at all.
 make            # build and test
 make install    # the same work, from a terminal
 make app        # just the application
-make pkg        # the installer
+make dmg        # the disk image
 ```
 
 `install.sh` is the script the application runs from inside its own bundle, so
@@ -288,13 +292,14 @@ built by CI from the tagged commit. Two archives:
 
 | File | For |
 | --- | --- |
-| `crossover-wheel-<v>.pkg` | **everyone.** The installer, which carries the application, and the application carries the daemon, the tools, the man pages, the proxy and `install.sh` inside its own bundle |
+| `crossover-wheel-<v>.dmg` | **everyone.** The application and a shortcut to Applications. The application carries the daemon, the man pages, the proxy and `install.sh` inside its own bundle |
 | `crossover-wheel-<v>-windows-x86_64.zip` | nobody, unless you want the proxy on its own or `probe_dinput.exe` to question a bottle without a game |
 
-**The `.pkg` is the only thing to download.** Everything is inside it,
+**The `.dmg` is the only thing to download.** Everything is inside it,
 including the proxy that goes into the bottle, because that bottle is on the
-same Mac. Nothing needs to be kept afterwards: the application holds its own
-copy of all of it. The Windows zip is there for anyone who wants
+same Mac. Nothing needs to be kept afterwards, and nothing asks for a
+password: the application is the only thing installed, into Applications, by
+you dragging it there. The Windows zip is there for anyone who wants
 the proxy on its own, or who wants `probe_dinput.exe` to test a bottle
 without a game.
 
@@ -310,10 +315,10 @@ shasum -a 256 -c SHA256SUMS --ignore-missing
 ```
 
 **Nothing here is signed by a paid developer identity or notarized.** That is
-why the installer needs right-click Open the first time, and it is why the
-installer exists: what it lays down is not marked, so the application and the
-tools it delivers are usable normally. Fetching with `curl` rather than a
-browser avoids the mark being set at all.
+why the first launch needs right-click Open. The bundle is ad-hoc signed,
+which is what makes that dialog answerable rather than the dead end macOS
+shows for an unsigned one. Fetching with `curl` rather than a browser avoids
+the mark being set at all.
 
 Two more things will otherwise cost you a session, both of them macOS rather
 than this project:

@@ -2,28 +2,26 @@ crossover-wheel, macOS arm64.
 
 Force feedback for a Thrustmaster T150 in games running under CrossOver.
 
-No kext, no system extension, no SIP or AMFI change, and nothing that drives
-the wheel needs root. The installer asks for your password once, because it
-puts the application in /Applications like any other; everything after that
-happens in your own account, and the daemon that talks to the wheel runs
-unprivileged.
+No kext, no system extension, no SIP or AMFI change, and no password at any
+point. Everything happens in your own account and the daemon that talks to the
+wheel runs unprivileged.
 
 INSTALL
 
-Right-click crossover-wheel.pkg and choose Open. Not double-click, the first
-time: nothing here is signed by a paid Apple developer account, and macOS
-refuses a downloaded installer that is not, unless you open it that way. It is
-a dialog with a button, and you meet it once.
+Open the disk image and drag crossover-wheel onto the Applications shortcut
+beside it. Then launch it from Applications.
 
-The installer places the application and opens it. The application asks which
-CrossOver bottle your game is in and installs everything else: the daemon, the
-tools, their man pages, the proxy into the bottle, and the settings the bottle
-needs.
+The first launch only: RIGHT-CLICK the app and choose Open, rather than
+double-clicking, and confirm. macOS marks everything a browser downloads and
+asks about anything not signed by a paid Apple developer account. Nobody has
+paid for one here. You meet that dialog once and never again.
 
-The application itself will never give you that dialog. What an installer
-lays down is not marked as downloaded, which is exactly why this ships as an
-installer rather than as an application in a folder: an application downloaded
-directly is called "damaged" by macOS, with no way past it.
+No password is asked for at any point. Nothing is installed outside your own
+account.
+
+The app then asks which CrossOver bottle your game is in and puts the proxy
+there. That is the only thing it installs: it carries its own copy of the
+daemon and runs that.
 
 Afterwards it lives in your menu bar as a small steering wheel:
 

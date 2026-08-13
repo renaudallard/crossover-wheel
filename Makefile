@@ -92,7 +92,7 @@ DLL_CPPFLAGS = -Iinclude -Isrc/dll -DT150_PROXY_VERSION=\"$(DLL_VERSION)\"
 DLL_CFLAGS   = -O2 -std=c11 $(WARNINGS)
 DLL_LIBS     = -ldxguid -luuid -lole32 -lws2_32
 
-.PHONY: all probes tools daemon dll test check strict clean help install app pkg
+.PHONY: all probes tools daemon dll test check strict clean help install app dmg
 
 ifeq ($(HAVE_DLL_CC),yes)
 DLL_TARGET = dll
@@ -120,8 +120,8 @@ help:
 	@echo "  test     build and run the portable tests"
 	@echo "  app      build crossover-wheel.app, the menu bar item and"
 	@echo "           graphical installer (macOS only)"
-	@echo "  pkg      wrap the app in a double-clickable installer, which is"
-	@echo "           the single thing a user downloads (macOS only)"
+	@echo "  dmg      the disk image people download: the app and a"
+	@echo "           shortcut to Applications, no password (macOS only)"
 	@echo "  install  run install.sh, which puts the binaries on your PATH"
 	@echo "           and the proxy into a bottle you pick (macOS)"
 	@echo "           pass arguments with INSTALL_ARGS, e.g."
@@ -291,33 +291,39 @@ $(APP): src/mac/t150menu.m dist/Info.plist $(TOOL_BINS) $(PROBE_BINS) \
 	@codesign --verify --strict $(APP) && echo "bundle signature verifies"
 	@echo "built $(APP)"
 
-# The one download. A .pkg rather than the app on its own, for a reason that
-# is not cosmetic: macOS marks anything a browser downloads, and refuses a
-# marked application that carries no developer identity, calling it damaged
-# with no way forward. Files laid down by Installer are not marked, so the app
-# this delivers opens by double-click from then on. The installer itself still
-# has to be opened once with right-click Open, which is a dialog with a button
-# rather than a dead end.
-PKG	   = $(BIN)/crossover-wheel-$(PKG_VERSION).pkg
-PKG_VERSION := $(shell git describe --tags --always 2>/dev/null | sed 's/^v//' \
+# The one download: a disk image holding the application and a shortcut to
+# Applications, which is the drag-and-drop every Mac user already knows and
+# which needs no password, because nothing is written outside the place the
+# person drops it.
+#
+# The application is ad-hoc signed, which matters here. macOS marks anything a
+# browser downloads, and a marked application with no signature at all is
+# called damaged and offered to the bin with no way forward. With a signature
+# it is the ordinary unverified-developer dialog instead, which has a way
+# through. Signed by a paid identity it would have none of this, and that is
+# the only thing missing.
+REL_VERSION := $(shell git describe --tags --always 2>/dev/null | sed 's/^v//' \
 	         || echo 0)
+DMG	    = $(BIN)/crossover-wheel-$(REL_VERSION).dmg
+DMG_STAGE   = $(BUILD)/dmg
 
-pkg: $(PKG)
+dmg: $(DMG)
 
-$(PKG): $(APP) dist/pkg-scripts/postinstall
-	pkgbuild --identifier it.allard.crossover-wheel \
-	    --version $(PKG_VERSION) \
-	    --install-location /Applications \
-	    --scripts dist/pkg-scripts \
-	    --component $(APP) $(PKG)
-	@echo "built $(PKG)"
+$(DMG): $(APP)
+	rm -rf $(DMG_STAGE) $(DMG)
+	mkdir -p $(DMG_STAGE)
+	cp -R $(APP) $(DMG_STAGE)/
+	ln -s /Applications $(DMG_STAGE)/Applications
+	hdiutil create -volname crossover-wheel -srcfolder $(DMG_STAGE) \
+	    -fs HFS+ -format UDZO -ov $(DMG)
+	@echo "built $(DMG)"
 
 else
 app:
 	@echo "app: macOS only, nothing to do here" >&2
 
-pkg:
-	@echo "pkg: macOS only, nothing to do here" >&2
+dmg:
+	@echo "dmg: macOS only, nothing to do here" >&2
 endif
 
 
