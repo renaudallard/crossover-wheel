@@ -181,6 +181,12 @@
 	 */
 	if (![[NSUserDefaults standardUserDefaults] boolForKey:@"installedOnce"])
 		[self openSetup:nil];
+
+	/*
+	 * Every launch, and quietly: it says nothing at all unless there is
+	 * something newer than this.
+	 */
+	[self lookForUpdate:NO];
 }
 
 /*
@@ -857,8 +863,17 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
  */
 - (void)checkForUpdates:(id)sender
 {
-	(void)sender;
+	[self lookForUpdate:sender != nil];
+}
 
+/*
+ * Quiet when it runs itself at launch and talkative when a person asks.
+ * Telling somebody they are up to date is an answer to a question; saying it
+ * unprompted every time the application starts is noise, and noise trains
+ * people to dismiss the dialog that matters.
+ */
+- (void)lookForUpdate:(BOOL)announce
+{
 	NSString *mine = [[NSBundle mainBundle]
 	    objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
 	NSURL *api = [NSURL URLWithString:@"https://api.github.com/repos/"
@@ -894,6 +909,9 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 			latest = [latest substringFromIndex:1];
 
 		dispatch_async(dispatch_get_main_queue(), ^{
+			if (!announce && (latest.length == 0 ||
+			    [latest isEqualToString:mine]))
+				return;
 			[self showUpdate:latest mine:mine dmg:dmg sums:sums
 			    error:e];
 		});
@@ -1069,14 +1087,36 @@ sha256_of(NSData *d)
 	}
 
 	/*
-	 * Refuse anything whose signature does not check out. This is the one
-	 * point where a bad download could put a broken bundle where a working
-	 * one was, and the check costs nothing.
+	 * Two checks before anything replaces a working application, and they
+	 * answer different questions.
+	 *
+	 * The signature, verified deeply, says the bundle arrived whole: every
+	 * nested file still hashes to what the seal says it should. That is
+	 * what catches a download that was truncated or tampered with in
+	 * transit.
+	 *
+	 * The identifier says it is this application rather than some other
+	 * one. A valid signature on its own proves only that somebody signed
+	 * something, and ad-hoc signatures carry no authority to compare
+	 * against, so the identifier is what is left to check and it is worth
+	 * checking: replacing crossover-wheel with a correctly signed
+	 * something-else should never be one bad URL away.
 	 */
-	if ([self run:@"/usr/bin/codesign" args:@[ @"--verify", @"--strict",
-	    staged ]] != 0) {
+	if ([self run:@"/usr/bin/codesign" args:@[ @"--verify", @"--deep",
+	    @"--strict", staged ]] != 0) {
 		[self note:@"The downloaded application is not correctly "
 		    "signed. Nothing was changed."];
+		return;
+	}
+
+	NSBundle *nb = [NSBundle bundleWithPath:staged];
+	NSString *want = [[NSBundle mainBundle] bundleIdentifier];
+
+	if (nb == nil || ![nb.bundleIdentifier isEqualToString:want]) {
+		[self note:[NSString stringWithFormat:@"The downloaded "
+		    "application identifies itself as %@ rather than %@. "
+		    "Nothing was changed.",
+		    nb.bundleIdentifier ?: @"nothing", want]];
 		return;
 	}
 
