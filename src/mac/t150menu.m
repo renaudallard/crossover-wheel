@@ -134,6 +134,11 @@
 	s.target = self;
 	[m addItem:s];
 
+	NSMenuItem *u = [[NSMenuItem alloc] initWithTitle:@"Check for updates…"
+	    action:@selector(checkForUpdates:) keyEquivalent:@""];
+	u.target = self;
+	[m addItem:u];
+
 	NSMenuItem *q = [[NSMenuItem alloc] initWithTitle:@"Quit"
 	    action:@selector(quit:) keyEquivalent:@"q"];
 	q.target = self;
@@ -426,6 +431,20 @@
 	w.titlebarAppearsTransparent = NO;
 	w.minSize = NSMakeSize(520, 380);
 
+	/*
+	 * A material behind the content rather than a flat fill. macOS draws
+	 * its own current look into this, so the window follows whatever the
+	 * system does rather than whatever was fashionable when it was
+	 * written, which is the complaint that prompted it.
+	 */
+	NSVisualEffectView *bg = [[NSVisualEffectView alloc]
+	    initWithFrame:w.contentView.bounds];
+	bg.material = NSVisualEffectMaterialWindowBackground;
+	bg.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+	bg.state = NSVisualEffectStateFollowsWindowActiveState;
+	bg.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+	w.contentView = bg;
+
 	NSView *v = w.contentView;
 
 	/*
@@ -616,6 +635,88 @@
 	(void)n;
 	self.setup = nil;
 	self.out = nil;
+}
+
+#pragma mark - updates
+
+/*
+ * Asks the releases API what the newest tag is and compares it with the
+ * version stamped into this bundle at build time. It downloads nothing and
+ * installs nothing: an application that replaces itself is a good way to
+ * destroy a working install, and the disk image takes one drag.
+ */
+- (void)checkForUpdates:(id)sender
+{
+	(void)sender;
+
+	NSString *mine = [[NSBundle mainBundle]
+	    objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+	NSURL *api = [NSURL URLWithString:@"https://api.github.com/repos/"
+	    "renaudallard/crossover-wheel/releases/latest"];
+	NSURLRequest *req = [NSURLRequest requestWithURL:api
+	    cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+	    timeoutInterval:15];
+
+	[[[NSURLSession sharedSession] dataTaskWithRequest:req
+	    completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
+		(void)r;
+		NSString *latest = nil;
+
+		if (d != nil) {
+			id j = [NSJSONSerialization JSONObjectWithData:d
+			    options:0 error:NULL];
+			if ([j isKindOfClass:[NSDictionary class]])
+				latest = [j objectForKey:@"tag_name"];
+		}
+		if ([latest hasPrefix:@"v"])
+			latest = [latest substringFromIndex:1];
+
+		dispatch_async(dispatch_get_main_queue(), ^{
+			[self showUpdate:latest mine:mine error:e];
+		});
+	}] resume];
+}
+
+- (void)showUpdate:(NSString *)latest mine:(NSString *)mine
+    error:(NSError *)e
+{
+	NSAlert *a = [[NSAlert alloc] init];
+
+	if (latest.length == 0) {
+		a.messageText = @"Could not check for updates";
+		a.informativeText = e != nil ? e.localizedDescription
+		    : @"The releases page did not answer with a version.";
+		[a addButtonWithTitle:@"OK"];
+		[a runModal];
+		return;
+	}
+
+	/*
+	 * String equality rather than an ordering. Versions here are always
+	 * the newest tag against the one this was built from, so "different"
+	 * is the only question, and comparing them numerically would need a
+	 * parser for a format nothing enforces.
+	 */
+	if ([latest isEqualToString:mine]) {
+		a.messageText = [NSString stringWithFormat:
+		    @"Up to date (%@)", mine];
+		a.informativeText = @"This is the newest release.";
+		[a addButtonWithTitle:@"OK"];
+		[a runModal];
+		return;
+	}
+
+	a.messageText = [NSString stringWithFormat:@"Version %@ is available",
+	    latest];
+	a.informativeText = [NSString stringWithFormat:
+	    @"You have %@. The download is a disk image: open it and drag the "
+	    "app onto Applications, replacing this one.", mine];
+	[a addButtonWithTitle:@"Open the releases page"];
+	[a addButtonWithTitle:@"Later"];
+
+	if ([a runModal] == NSAlertFirstButtonReturn)
+		[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:
+		    @"https://github.com/renaudallard/crossover-wheel/releases/latest"]];
 }
 
 - (void)quit:(id)sender

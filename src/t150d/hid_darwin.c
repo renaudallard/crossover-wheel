@@ -12,13 +12,15 @@
  * RESEARCH.md A19 for the run that settled it and PROTOCOL.md for why the
  * declared id 0x0A report is a red herring.
  *
- * Opening the wheel's input is protocol and session.c owns it: the wheel
- * renders no effect while no input is open. This file remembers the last such
- * packet and replays it after re-acquiring a device, because a replugged
- * wheel forgets and the session has no way to know that happened. It also
- * scrubs every slot on acquire, because the open outlives whoever sent it
- * and a wheel inherited from a dead process can still be rendering that
- * process's last effect. RESEARCH.md A30.
+ * Opening the wheel's input is protocol, and this file holds it open for as
+ * long as it holds the wheel. The firmware renders no effect while no
+ * application has the input open, and it also rests the pedals at maximum,
+ * so a wheel whose input is shut reads to a game as though both pedals are
+ * pressed. Every acquire therefore closes the input and opens it again: the
+ * close ends anything an inherited wheel was still rendering, since an open
+ * outlives whoever sent it (A30), and the open is what the pedals and the
+ * next game need. Every slot is scrubbed first for the same inheritance
+ * reason.
  *
  * NOT reentrant and not thread safe, which suits the single threaded daemon
  * that owns it.
@@ -396,21 +398,37 @@ acquire(struct hid_be *h)
 	nap_ms(h->gap_ms);
 
 	/*
-	 * Then put the input where the session believes it is. A replugged
-	 * wheel has forgotten that its input was open, and the session will
-	 * not say so again, so replay it here or every effect after a replug
-	 * is accepted and ignored. With no session wanting it open, close it,
-	 * which is what ends the rendering of anything the scrub above could
-	 * not reach and returns an inherited wheel to its idle state.
+	 * Close the input, then open it, and both halves are load bearing.
+	 *
+	 * The close is what ends the rendering of anything the scrub above
+	 * could not reach: the firmware runs no effect while no application
+	 * holds the input (A28), and an open outlives whoever sent it (A30),
+	 * so a wheel inherited from a crashed daemon or an abandoned probe
+	 * can arrive still pushing. Closing it goes quiet at startup rather
+	 * than at shutdown.
+	 *
+	 * The open is what makes the pedals read correctly, and this cost a
+	 * release to learn. With the input shut, the wheel rests its pedals at
+	 * maximum, so a game that enumerates the wheel before the proxy has
+	 * connected calibrates them fully pressed and is inverted from then
+	 * on. That is what a tester saw the moment the daemon started doing
+	 * its own boot switch: the wheel re-enumerates, comes back with the
+	 * input shut, and the game reads it in that state. Running t150boot by
+	 * hand first had hidden it, because the input was still open from an
+	 * earlier session.
+	 *
+	 * So the daemon holds the input for as long as it holds the wheel.
+	 * Nothing renders while no client has uploaded anything, and the
+	 * session still closes it in the safe state when the client goes.
 	 */
-	if (h->input_state == T150_INPUT_OPEN)
-		len = t150_enc_input_open(pkt, sizeof(pkt));
-	else
-		len = t150_enc_input_close(pkt, sizeof(pkt));
-	if (len > 0 && raw_write(h, pkt, len) != kIOReturnSuccess &&
-	    h->verbose)
-		fprintf(stderr, "t150d: could not set the wheel's input "
-		    "state\n");
+	if ((len = t150_enc_input_close(pkt, sizeof(pkt))) > 0)
+		(void)raw_write(h, pkt, len);
+	nap_ms(h->gap_ms);
+
+	if ((len = t150_enc_input_open(pkt, sizeof(pkt))) > 0 &&
+	    raw_write(h, pkt, len) != kIOReturnSuccess && h->verbose)
+		fprintf(stderr, "t150d: could not open the wheel's input\n");
+	h->input_state = T150_INPUT_OPEN;
 
 	/*
 	 * Say that the wheel is a new one as far as its contents go. The

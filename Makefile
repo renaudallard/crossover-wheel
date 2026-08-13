@@ -249,6 +249,8 @@ install:
 # is what lets the app be a front end over the shell script rather than a
 # second implementation of it: the part that can go wrong stays in the script
 # that is tested.
+REL_VERSION := $(shell git describe --tags --always 2>/dev/null | sed 's/^v//' \
+	         || echo 0)
 APP	   = $(BIN)/crossover-wheel.app
 APP_RES	   = $(APP)/Contents/Resources
 
@@ -270,7 +272,8 @@ $(APP): src/mac/t150menu.m dist/Info.plist $(TOOL_BINS) $(PROBE_BINS) \
     $(DAEMON_BIN) | $(BIN)
 	rm -rf $(APP)
 	mkdir -p $(APP)/Contents/MacOS $(APP_RES)
-	cp dist/Info.plist $(APP)/Contents/Info.plist
+	sed 's/@VERSION@/$(REL_VERSION)/g' dist/Info.plist \
+	    > $(APP)/Contents/Info.plist
 	iconutil -c icns dist/icons/AppIcon.iconset -o $(APP_RES)/AppIcon.icns
 	cp dist/icons/menubar/*.png $(APP_RES)/
 	$(CC) $(APP_CFLAGS) -o $(APP)/Contents/MacOS/t150menu \
@@ -303,8 +306,6 @@ $(APP): src/mac/t150menu.m dist/Info.plist $(TOOL_BINS) $(PROBE_BINS) \
 # it is the ordinary unverified-developer dialog instead, which has a way
 # through. Signed by a paid identity it would have none of this, and that is
 # the only thing missing.
-REL_VERSION := $(shell git describe --tags --always 2>/dev/null | sed 's/^v//' \
-	         || echo 0)
 DMG	    = $(BIN)/crossover-wheel-$(REL_VERSION).dmg
 DMG_STAGE   = $(BUILD)/dmg
 
