@@ -7,6 +7,7 @@
 .Sh SYNOPSIS
 .Nm
 .Op Fl nv
+.Op Fl a Ar force
 .Op Fl e Ar endpoint
 .Op Fl g Ar ms
 .Op Fl r Ar degrees
@@ -26,20 +27,24 @@ console user, because
 is gated on that privilege, and it must not be sandboxed, because App Sandbox
 breaks IOKit HID access.
 .Pp
-When it takes the wheel it stops every effect slot, releases the autocenter
-and closes the wheel's input, before anything else touches it. Effects and
-the input state both outlive the process that set them, so a wheel inherited
-from a crashed daemon, or from a probe that never cleaned up after itself,
-can arrive still rendering that process's last effect. The scrub means it
-goes quiet at startup rather than at shutdown.
+When it takes the wheel it stops every effect slot and closes the wheel's
+input, before anything else touches it. Effects and the input state both
+outlive the process that set them, so a wheel inherited from a crashed daemon,
+or from a probe that never cleaned up after itself, can arrive still rendering
+that process's last effect. The scrub means it goes quiet at startup rather
+than at shutdown.
 .Pp
-The autocenter release is part of that and not an afterthought: the firmware
-runs its own centring spring whenever no application has the wheel's input
-open, so closing the input re-arms it, and that spring is felt as a stiffness
-about a point that never returns the wheel to centre. Without the release an
-idle
-.Nm
-would leave a wheel that is hard to turn.
+Then it opens the input again and holds it for as long as it holds the wheel.
+That is not tidiness: with the input shut the firmware rests both pedals at
+maximum, so a game which enumerates the wheel before the proxy has connected
+calibrates them fully pressed and reads every press backwards from then on.
+.Pp
+It also releases the wheel's own centring spring, unless
+.Fl a
+asked for one. The firmware runs that spring whenever no application holds the
+input, and it is felt as a stiffness about a point that never returns the
+wheel to centre. A game's own forces do the centring, and the spring only
+fights them.
 .Pp
 One client is served at a time. A second connection may displace the first,
 because the usual reason for one is a game that crashed and was restarted,
@@ -51,6 +56,19 @@ displacing on the connection alone would let any local process end a game's
 force feedback at will.
 .Sh OPTIONS
 .Bl -tag -width Ds
+.It Fl a Ar force
+Leave the wheel's own centring spring at this, 0 to 10000, every time the
+daemon takes the wheel. Zero releases it and is the default, because a game's
+own forces do the centring and the firmware's spring only fights them.
+.Pp
+A game that sends no force feedback at all wants the opposite, and has no way
+to ask for it: DirectInput has no property for a wheel's centring spring, so
+on Windows it lives in the vendor's control panel. This is where it lives
+here, and the application offers it in its menu as
+.Em Centring spring .
+.Pp
+It is applied on every acquire rather than once, because the wheel forgets it
+when it is unplugged and the daemon is the only thing that notices.
 .It Fl g Ar ms
 Pause this long after every packet sent to the wheel. Off by default. The
 probe tools have always left 20 milliseconds between writes, on a comment

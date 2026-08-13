@@ -128,6 +128,23 @@
 
 	[m addItem:[NSMenuItem separatorItem]];
 
+	/*
+	 * The two things the wheel itself keeps, which no game can ask for.
+	 * DirectInput has no property for either, so on Windows they live in
+	 * Thrustmaster's control panel and here they live in this menu.
+	 */
+	NSMenuItem *rot = [[NSMenuItem alloc] initWithTitle:@"Rotation"
+	    action:NULL keyEquivalent:@""];
+	rot.submenu = [self buildRotationMenu];
+	[m addItem:rot];
+
+	NSMenuItem *ac = [[NSMenuItem alloc] initWithTitle:@"Centring spring"
+	    action:NULL keyEquivalent:@""];
+	ac.submenu = [self buildAutocentreMenu];
+	[m addItem:ac];
+
+	[m addItem:[NSMenuItem separatorItem]];
+
 	NSMenuItem *s = [[NSMenuItem alloc] initWithTitle:
 	    @"Install into a bottle…"
 	    action:@selector(openSetup:) keyEquivalent:@""];
@@ -265,6 +282,164 @@
 	return NO;
 }
 
+#pragma mark - what the wheel keeps for itself
+
+/*
+ * Both of these are the wheel's own settings rather than anything a game
+ * sends, so they are applied with t150ctl, which writes them without taking
+ * the wheel from whatever is using it, and remembered so the daemon can put
+ * them back after a replug. The wheel forgets both when it is unplugged.
+ */
+static const int rotations[] = { 270, 360, 540, 720, 900, 1080 };
+
+/* Named rather than numbered: 0 to 10000 means nothing to a person. */
+static const int springs[] = { 0, 2500, 5000, 7500, 10000 };
+static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
+    @"Firm", @"Full" };
+
+- (int)storedRotation
+{
+	NSInteger v = [[NSUserDefaults standardUserDefaults]
+	    integerForKey:@"rotation"];
+
+	return v > 0 ? (int)v : 0;		/* 0 means leave the wheel's own */
+}
+
+- (int)storedSpring
+{
+	return (int)[[NSUserDefaults standardUserDefaults]
+	    integerForKey:@"autocentre"];
+}
+
+- (NSMenu *)buildRotationMenu
+{
+	NSMenu *sub = [[NSMenu alloc] init];
+	unsigned i;
+
+	NSMenuItem *none = [[NSMenuItem alloc] initWithTitle:
+	    @"Leave the wheel's own" action:@selector(pickRotation:)
+	    keyEquivalent:@""];
+	none.target = self;
+	none.tag = 0;
+	none.state = [self storedRotation] == 0 ? NSControlStateValueOn
+	    : NSControlStateValueOff;
+	[sub addItem:none];
+	[sub addItem:[NSMenuItem separatorItem]];
+
+	for (i = 0; i < sizeof(rotations) / sizeof(rotations[0]); i++) {
+		NSMenuItem *it = [[NSMenuItem alloc] initWithTitle:
+		    [NSString stringWithFormat:@"%d degrees", rotations[i]]
+		    action:@selector(pickRotation:) keyEquivalent:@""];
+		it.target = self;
+		it.tag = rotations[i];
+		it.state = [self storedRotation] == rotations[i] ?
+		    NSControlStateValueOn : NSControlStateValueOff;
+		[sub addItem:it];
+	}
+
+	return sub;
+}
+
+- (NSMenu *)buildAutocentreMenu
+{
+	NSMenu *sub = [[NSMenu alloc] init];
+	unsigned i;
+
+	for (i = 0; i < sizeof(springs) / sizeof(springs[0]); i++) {
+		NSMenuItem *it = [[NSMenuItem alloc] initWithTitle:springNames[i]
+		    action:@selector(pickSpring:) keyEquivalent:@""];
+		it.target = self;
+		it.tag = springs[i];
+		it.state = [self storedSpring] == springs[i] ?
+		    NSControlStateValueOn : NSControlStateValueOff;
+		[sub addItem:it];
+	}
+
+	NSMenuItem *note = [[NSMenuItem alloc] initWithTitle:
+	    @"For games that send no force feedback" action:NULL
+	    keyEquivalent:@""];
+	note.enabled = NO;
+	[sub addItem:[NSMenuItem separatorItem]];
+	[sub addItem:note];
+
+	return sub;
+}
+
+/* t150ctl, from this bundle, so what runs matches what shipped. */
+- (BOOL)wheelSetting:(NSString *)command value:(int)v
+{
+	NSTask *t = [[NSTask alloc] init];
+
+	t.executableURL = [NSURL fileURLWithPath:[self resource:@"t150ctl"]];
+	t.arguments = @[ command, [NSString stringWithFormat:@"%d", v] ];
+	t.standardOutput = [NSFileHandle fileHandleWithNullDevice];
+	t.standardError = [NSFileHandle fileHandleWithNullDevice];
+	if (![t launchAndReturnError:NULL])
+		return NO;
+	[t waitUntilExit];
+
+	return t.terminationStatus == 0;
+}
+
+- (void)pickRotation:(NSMenuItem *)sender
+{
+	int deg = (int)sender.tag;
+
+	[[NSUserDefaults standardUserDefaults] setInteger:deg
+	    forKey:@"rotation"];
+
+	/*
+	 * Nothing to send for "leave the wheel's own": the wheel is already
+	 * at whatever it powers up with, and there is no packet meaning
+	 * "forget what I told you".
+	 */
+	if (deg > 0 && ![self wheelSetting:@"range" value:deg])
+		[self note:@"The wheel did not take that rotation. Is it "
+		    "plugged in and out of boot mode?"];
+
+	[self tick:sender.menu tag:deg];
+	[self refresh];
+}
+
+- (void)pickSpring:(NSMenuItem *)sender
+{
+	int v = (int)sender.tag;
+
+	[[NSUserDefaults standardUserDefaults] setInteger:v
+	    forKey:@"autocentre"];
+
+	if (![self wheelSetting:@"autocenter" value:v])
+		[self note:@"The wheel did not take that. Is it plugged in "
+		    "and out of boot mode?"];
+
+	[self tick:sender.menu tag:v];
+	[self refresh];
+}
+
+/*
+ * Move the tick to the chosen row. Rebuilding the submenu from the item that
+ * owns it was the first attempt and reached the wrong item: a submenu knows
+ * its parent menu, not its own position in it. Setting the states directly
+ * needs neither. Separators and the explanatory line carry no action, which
+ * is what tells them apart from a row with a tag of zero that is a real
+ * choice.
+ */
+- (void)tick:(NSMenu *)menu tag:(NSInteger)tag
+{
+	for (NSMenuItem *it in menu.itemArray)
+		it.state = (it.action != NULL && it.tag == tag) ?
+		    NSControlStateValueOn : NSControlStateValueOff;
+}
+
+- (void)note:(NSString *)text
+{
+	NSAlert *a = [[NSAlert alloc] init];
+
+	a.messageText = text;
+	[a addButtonWithTitle:@"OK"];
+	[a runModal];
+}
+
 #pragma mark - the daemon
 
 - (void)toggleDaemon:(id)sender
@@ -289,8 +464,23 @@
 	NSPipe *p = [NSPipe pipe];
 	NSError *err = nil;
 
+	/*
+	 * Both settings go to the daemon as well as to the wheel. The wheel
+	 * forgets them when it is unplugged, and the daemon is the only thing
+	 * that notices a replug and can put them back.
+	 */
+	NSMutableArray *args = [@[ @"-v", @"-w" ] mutableCopy];
+	int deg = [self storedRotation], spring = [self storedSpring];
+
+	if (deg > 0)
+		[args addObjectsFromArray:@[ @"-r",
+		    [NSString stringWithFormat:@"%d", deg] ]];
+	if (spring > 0)
+		[args addObjectsFromArray:@[ @"-a",
+		    [NSString stringWithFormat:@"%d", spring] ]];
+
 	t.executableURL = [NSURL fileURLWithPath:[self daemonPath]];
-	t.arguments = @[ @"-v", @"-w" ];
+	t.arguments = args;
 	t.standardOutput = p;
 	t.standardError = p;
 
@@ -360,6 +550,22 @@
 	    AGENT_LABEL]];
 }
 
+/* The login item has to carry the same settings the menu does. */
+- (NSArray *)loginArguments
+{
+	NSMutableArray *a = [@[ [self daemonPath], @"-w" ] mutableCopy];
+	int deg = [self storedRotation], spring = [self storedSpring];
+
+	if (deg > 0)
+		[a addObjectsFromArray:@[ @"-r",
+		    [NSString stringWithFormat:@"%d", deg] ]];
+	if (spring > 0)
+		[a addObjectsFromArray:@[ @"-a",
+		    [NSString stringWithFormat:@"%d", spring] ]];
+
+	return a;
+}
+
 - (BOOL)loginEnabled
 {
 	return [[NSFileManager defaultManager]
@@ -381,7 +587,7 @@
 
 	NSDictionary *plist = @{
 		@"Label" : AGENT_LABEL,
-		@"ProgramArguments" : @[ [self daemonPath], @"-w" ],
+		@"ProgramArguments" : [self loginArguments],
 		@"RunAtLoad" : @YES,
 		/*
 		 * Restarted if it dies, which is what makes this worth

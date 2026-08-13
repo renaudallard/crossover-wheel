@@ -88,6 +88,14 @@ struct hid_be {
 	int		 last_boot;
 	long		 vid;
 	long		 pid;
+	/*
+	 * What to leave the wheel's own centring spring at on every acquire.
+	 * Zero, the default, releases it, which is what a game wants: its own
+	 * forces do the centring and the firmware's spring only fights them.
+	 * A game that sends no forces at all wants the opposite, and has no
+	 * way to ask for it, so a person does. See -a.
+	 */
+	uint32_t	 autocenter;
 	unsigned int	 gap_ms;
 	int		 verbose;
 	int		 opened;
@@ -387,12 +395,14 @@ acquire(struct hid_be *h)
 	 * wheel that was already going away. That is three faults with one
 	 * silence between them.
 	 */
-	if ((len = t150_enc_autocenter_force(pkt, sizeof(pkt), 0)) > 0) {
+	if ((len = t150_enc_autocenter_force(pkt, sizeof(pkt),
+	    h->autocenter)) > 0) {
 		IOReturn ar = raw_write(h, pkt, len);
 
 		if (h->verbose)
-			fprintf(stderr, "t150d: wheel autocentre released: "
-			    "%s\n", ar == kIOReturnSuccess ? "sent" :
+			fprintf(stderr, "t150d: wheel autocentre %s: %s\n",
+			    h->autocenter == 0 ? "released" : "set",
+			    ar == kIOReturnSuccess ? "sent" :
 			    "the write failed");
 	}
 	nap_ms(h->gap_ms);
@@ -734,7 +744,7 @@ hid_close(void *priv)
 
 int
 t150_backend_hid(struct t150_backend *be, long vid, long pid,
-    unsigned int gap_ms, int verbose, int threaded)
+    unsigned int gap_ms, int verbose, int threaded, uint32_t autocenter)
 {
 	struct hid_be *h;
 
@@ -750,6 +760,7 @@ t150_backend_hid(struct t150_backend *be, long vid, long pid,
 	 */
 	h->last_boot = -1;
 	h->gap_ms = gap_ms;
+	h->autocenter = autocenter;
 	h->verbose = verbose;
 	/* Wired before the first acquire, which bumps the epoch itself. */
 	h->be = be;

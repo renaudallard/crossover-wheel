@@ -96,6 +96,20 @@ pulling on it, and switch on **Start at login** to never think about it again.
 | filled hub | the daemon holds the wheel |
 | full hub | a game is streaming force feedback |
 
+**Two settings the wheel keeps for itself** are in that menu too, because no
+game can ask for either: DirectInput has no property for a wheel's rotation or
+its centring spring, so on Windows they live in the vendor's control panel.
+
+- **Rotation** sets lock to lock, from 270 to 1080 degrees. Set it to whatever
+  your game's own steering setting says, or leave the wheel's own.
+- **Centring spring** is for games that send **no** force feedback at all,
+  where the wheel would otherwise stay limp. Off by default, because a game
+  that does send forces has the spring fighting them.
+
+Both are written straight to the wheel and remembered, because the wheel
+forgets them when it is unplugged and the daemon is the only thing that
+notices a replug.
+
 **Made a new bottle since?** *Install into a bottle…* in that menu puts the
 proxy into it, and that is the only thing the application ever installs. The
 list is re-read every time it opens, so a bottle made five minutes ago is in

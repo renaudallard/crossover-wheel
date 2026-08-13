@@ -378,6 +378,25 @@ parse_range(const char *s, unsigned int *out)
 	return 0;
 }
 
+/*
+ * The wheel's own centring spring, in the same 0 to 10000 a game would use
+ * for a force. Zero releases it, which is the default and what a game wants.
+ */
+static int
+parse_level(const char *s, unsigned int *out)
+{
+	char *end;
+	unsigned long v;
+
+	errno = 0;
+	v = strtoul(s, &end, 10);
+	if (errno != 0 || end == s || *end != '\0' || v > T150_DI_MAX)
+		return -1;
+	*out = (unsigned int)v;
+
+	return 0;
+}
+
 /* Milliseconds, refusing anything that is not a number or is absurd. */
 static int
 parse_ms(const char *s, unsigned int *out)
@@ -398,8 +417,14 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: t150d [-ntvw] [-e endpoint] [-g ms] [-r degrees]\n"
+	    "usage: t150d [-ntvw] [-a force] [-e endpoint] [-g ms] [-r degrees]\n"
 	    "\n"
+	    "  -a force     leave the wheel's own centring spring at this, 0 to\n"
+	    "               %u, on every acquire. 0 releases it and is the\n"
+	    "               default: a game's own forces do the centring and\n"
+	    "               the firmware's spring only fights them. For a game\n"
+	    "               that sends no forces at all, which cannot ask for\n"
+	    "               this itself, a person can\n"
 	    "  -e endpoint  where to publish the port and token\n"
 	    "               (default $HOME%s)\n"
 	    "  -g ms        pause this long after each packet, 0 to 50. Off\n"
@@ -418,7 +443,7 @@ usage(void)
 	    "  -w           write to the wheel from a thread of its own, so a\n"
 	    "               game is never waiting for a USB transfer. macOS\n"
 	    "               only, and new: compare it against a run without\n",
-	    ENDPOINT_REL, T150_RANGE_MIN, T150_RANGE_MAX);
+	    T150_DI_MAX, ENDPOINT_REL, T150_RANGE_MIN, T150_RANGE_MAX);
 	exit(2);
 }
 
@@ -435,12 +460,16 @@ main(int argc, char *argv[])
 	uint64_t pend_deadline = 0;
 	size_t have = 0, phave = 0;
 	unsigned short port;
-	unsigned int gap_ms = 0, range_deg = 0;
+	unsigned int gap_ms = 0, range_deg = 0, autocenter = 0;
 	int always_triple = 0, writer = 0;
 	int ch, lfd, cfd = -1, pfd_pend = -1, verbose = 0, fake = 0;
 
-	while ((ch = getopt(argc, argv, "e:g:nr:tvw")) != -1) {
+	while ((ch = getopt(argc, argv, "a:e:g:nr:tvw")) != -1) {
 		switch (ch) {
+		case 'a':
+			if (parse_level(optarg, &autocenter) != 0)
+				usage();
+			break;
 		case 'e':
 			epopt = optarg;
 			break;
@@ -494,7 +523,7 @@ main(int argc, char *argv[])
 #ifdef __APPLE__
 	if (!fake) {
 		if (t150_backend_hid(&be, T150_VID, T150_PID_FIRMWARE, gap_ms,
-		    verbose, writer) != 0)
+		    verbose, writer, autocenter) != 0)
 			errx(1, "cannot open the wheel backend");
 	} else if (t150_backend_fake(&be, stdout) != 0) {
 		errx(1, "cannot open the logging backend");
@@ -507,6 +536,7 @@ main(int argc, char *argv[])
 	if (t150_backend_fake(&be, stdout) != 0)
 		errx(1, "cannot open the logging backend");
 	(void)gap_ms;
+	(void)autocenter;
 	(void)writer;
 #endif
 	if ((lfd = listen_loopback(&port)) == -1)

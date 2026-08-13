@@ -69,7 +69,8 @@ int	t150_backend_fake(struct t150_backend *be, FILE *fp);
  * when it appears.
  */
 int	t150_backend_hid(struct t150_backend *be, long vid, long pid,
-	    unsigned int gap_ms, int verbose, int threaded);
+	    unsigned int gap_ms, int verbose, int threaded,
+	    uint32_t autocenter);
 #endif
 
 /*
