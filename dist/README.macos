@@ -103,6 +103,14 @@ These binaries are unsigned and not notarized, so a browser download is
 quarantined and macOS refuses to run it. install.sh clears that flag on
 everything it installs.
 
+AFTER UNPLUGGING AND REPLUGGING
+
+Give it a few seconds. The daemon has to notice the wheel went, find it again
+in its startup mode, switch it, and wait for it to come back, and the wheel
+does its own calibration sweep before it will answer anything. Most of that
+wait is the wheel rather than the software. You do not have to restart
+anything: the menu bar icon fills in again once it has the wheel.
+
 IF THE WHEEL EVER MOVES ON ITS OWN
 
 Start and stop t150d. It stops every effect and closes the wheel's input the

@@ -510,6 +510,14 @@ displace the first and that would throw a game off the wheel.
 `probe_setreport` prints, so the two can be compared directly. That is the
 only behaviour anywhere but macOS.
 
+**A replug takes a few seconds, and most of that is the wheel.** The daemon
+notices it has gone, finds it at the boot id, sends the switch and picks it up
+again, each step on a half-second scan, so roughly a second and a half is
+this software. The rest is the T150: a switched wheel leaves the bus,
+enumerates again under its firmware id and runs its own calibration sweep
+before it answers anything. Scanning faster would shave a fraction off the
+smaller half and burn CPU waiting on the larger one.
+
 **A wheel unplugged mid game comes back on its own.** It returns at the boot
 product id, which is where sleep, wake and every replug leave it, so the
 daemon switches it the same way `t150boot` does and picks it up on the next

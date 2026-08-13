@@ -217,6 +217,16 @@ IOKit rather than one of IOKit's own. Any status from outside IOKit's domain
 is treated as the device having gone: the reference is released and the scan
 for a wheel starts again.
 .Pp
+.Sy "A replug takes a few seconds to come back, and that is the wheel."
+Four things happen in order, each on the daemon's half-second scan: it
+notices the wheel has gone, finds it at the boot id, sends the switch, and
+picks it up once it returns. Three of those are bounded by that scan and add
+up to about a second and a half. The rest is the wheel: a switched T150
+leaves the bus, enumerates again under its firmware id and runs its own
+calibration sweep before it will answer anything, and nothing here can hurry
+that. Scanning faster would shave a fraction off the smaller half and spend
+CPU on the larger half doing nothing.
+.Pp
 That only covers a wheel somebody is still writing to. A replug is usually
 not: the watchdog has fired, the session has dropped every effect, and a
 keepalive writes nothing. With

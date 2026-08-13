@@ -1711,6 +1711,25 @@ running game. Everything above was measured with the wheel left at its own
 > nothing, because the wheel already powers up at its maximum. What remains
 > untested is a range *shorter* than the wheel's own under a running game.
 
+**A50. A replug recovers unattended, and takes a few seconds because the
+wheel does.** Reported on hardware: "you need to wait a few seconds for
+everything to work again".
+
+That is the whole of the remaining cost and it is worth writing down, because
+"it did not work" and "it had not finished yet" look identical to somebody
+holding a wheel.
+
+Four steps, each gated on the daemon's half-second scan: notice the wheel has
+gone, find it at the boot id, send the switch, pick it up when it returns.
+Three of those are bounded by `RESCAN_MS` and total about 1.5 seconds. The
+remainder is the wheel: a switched T150 leaves the bus, enumerates again under
+`0xb677` and runs its own calibration sweep before it answers anything.
+
+**Do not shorten `RESCAN_MS` to chase this.** It would shave a fraction off
+the software half and spend CPU polling IOKit through the hardware half, which
+is the larger one and cannot be hurried. The same reasoning as the emitter's
+4 ms floor: the bound that matters is the device's, not the loop's.
+
 **A48. Dakar Desert Rally does not use DirectInput, and the daemon's own log
 is the cheapest way to find that out.** Measured on hardware, closing a
 question that had been open and guessed at since 0.1.19.
