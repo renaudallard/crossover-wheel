@@ -42,6 +42,11 @@ Afterwards it lives in your menu bar as a small steering wheel:
 Start and stop the daemon there, and switch on "Start at login" if you would
 rather never think about it.
 
+"Check for updates..." in that menu installs new versions by itself: it
+downloads, checks the file against its published checksum, replaces the app
+and starts it again. You do not have to drag anything or answer any macOS
+dialog for an update, only for the very first install.
+
 If you make another CrossOver bottle later, "Install into a bottle..." in that
 menu adds the proxy to it. That is the only thing the app ever installs: it
 carries its own copy of the daemon and runs that, so nothing has to be put on

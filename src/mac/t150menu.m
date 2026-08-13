@@ -24,6 +24,7 @@
  */
 
 #import <Cocoa/Cocoa.h>
+#import <CommonCrypto/CommonDigest.h>
 
 #include "mac/bootswitch.h"
 #include "t150/t150.h"
@@ -846,10 +847,13 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 #pragma mark - updates
 
 /*
- * Asks the releases API what the newest tag is and compares it with the
- * version stamped into this bundle at build time. It downloads nothing and
- * installs nothing: an application that replaces itself is a good way to
- * destroy a working install, and the disk image takes one drag.
+ * Asks the releases API what the newest version is, and can install it.
+ *
+ * The download it fetches carries no quarantine flag, because that is set by
+ * whatever downloads a file and this is not a browser. So an update installed
+ * here needs none of the right-click Open and drag-to-Applications the first
+ * install did. That is the whole reason for doing it in place rather than
+ * opening the releases page.
  */
 - (void)checkForUpdates:(id)sender
 {
@@ -867,24 +871,37 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	    completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
 		(void)r;
 		NSString *latest = nil;
+		NSString *dmg = nil, *sums = nil;
 
 		if (d != nil) {
 			id j = [NSJSONSerialization JSONObjectWithData:d
 			    options:0 error:NULL];
-			if ([j isKindOfClass:[NSDictionary class]])
+			if ([j isKindOfClass:[NSDictionary class]]) {
 				latest = [j objectForKey:@"tag_name"];
+				for (id a in [j objectForKey:@"assets"]) {
+					NSString *n = [a objectForKey:@"name"];
+					NSString *u = [a objectForKey:
+					    @"browser_download_url"];
+
+					if ([n hasSuffix:@".dmg"])
+						dmg = u;
+					else if ([n isEqualToString:@"SHA256SUMS"])
+						sums = u;
+				}
+			}
 		}
 		if ([latest hasPrefix:@"v"])
 			latest = [latest substringFromIndex:1];
 
 		dispatch_async(dispatch_get_main_queue(), ^{
-			[self showUpdate:latest mine:mine error:e];
+			[self showUpdate:latest mine:mine dmg:dmg sums:sums
+			    error:e];
 		});
 	}] resume];
 }
 
 - (void)showUpdate:(NSString *)latest mine:(NSString *)mine
-    error:(NSError *)e
+    dmg:(NSString *)dmg sums:(NSString *)sums error:(NSError *)e
 {
 	NSAlert *a = [[NSAlert alloc] init];
 
@@ -914,15 +931,183 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 
 	a.messageText = [NSString stringWithFormat:@"Version %@ is available",
 	    latest];
+
+	if (dmg == nil) {
+		a.informativeText = [NSString stringWithFormat:
+		    @"You have %@. That release has no disk image to install "
+		    "from, so it has to be done by hand.", mine];
+		[a addButtonWithTitle:@"Open the releases page"];
+		[a addButtonWithTitle:@"Later"];
+		if ([a runModal] == NSAlertFirstButtonReturn)
+			[[NSWorkspace sharedWorkspace] openURL:[NSURL
+			    URLWithString:@"https://github.com/renaudallard/"
+			    "crossover-wheel/releases/latest"]];
+		return;
+	}
+
 	a.informativeText = [NSString stringWithFormat:
-	    @"You have %@. The download is a disk image: open it and drag the "
-	    "app onto Applications, replacing this one.", mine];
-	[a addButtonWithTitle:@"Open the releases page"];
+	    @"You have %@. This will download it, check it against the "
+	    "published checksum, replace this application and start it again. "
+	    "The daemon stops while it happens.", mine];
+	[a addButtonWithTitle:@"Update now"];
 	[a addButtonWithTitle:@"Later"];
 
 	if ([a runModal] == NSAlertFirstButtonReturn)
-		[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:
-		    @"https://github.com/renaudallard/crossover-wheel/releases/latest"]];
+		[self downloadUpdate:dmg sums:sums version:latest];
+}
+
+static NSString *
+sha256_of(NSData *d)
+{
+	unsigned char out[CC_SHA256_DIGEST_LENGTH];
+	NSMutableString *hex = [NSMutableString string];
+	unsigned i;
+
+	CC_SHA256(d.bytes, (CC_LONG)d.length, out);
+	for (i = 0; i < CC_SHA256_DIGEST_LENGTH; i++)
+		[hex appendFormat:@"%02x", out[i]];
+
+	return hex;
+}
+
+/*
+ * Download, then check the bytes against the checksum published beside them
+ * before anything is mounted or copied. The checksum comes from the same
+ * place as the image, so it proves nothing about who made it: what it catches
+ * is a truncated or corrupted download, which is the failure that would
+ * otherwise leave a half-written application in /Applications.
+ */
+- (void)downloadUpdate:(NSString *)dmgURL sums:(NSString *)sumsURL
+    version:(NSString *)version
+{
+	NSURL *u = [NSURL URLWithString:dmgURL];
+
+	[self note:[NSString stringWithFormat:@"Downloading %@. This window "
+	    "will close and the application will start again by itself.",
+	    version]];
+
+	[[[NSURLSession sharedSession] dataTaskWithURL:u
+	    completionHandler:^(NSData *img, NSURLResponse *r, NSError *e) {
+		(void)r;
+
+		if (img == nil || img.length == 0) {
+			dispatch_async(dispatch_get_main_queue(), ^{
+				[self note:e != nil ? e.localizedDescription
+				    : @"The download was empty."];
+			});
+			return;
+		}
+
+		NSString *want = nil;
+
+		if (sumsURL != nil) {
+			NSData *sd = [NSData dataWithContentsOfURL:
+			    [NSURL URLWithString:sumsURL]];
+			NSString *txt = sd == nil ? nil : [[NSString alloc]
+			    initWithData:sd encoding:NSUTF8StringEncoding];
+
+			for (NSString *line in [txt
+			    componentsSeparatedByString:@"\n"]) {
+				if ([line containsString:@".dmg"]) {
+					NSArray *f = [line
+					    componentsSeparatedByString:@" "];
+					want = f.firstObject;
+					break;
+				}
+			}
+		}
+
+		if (want != nil &&
+		    ![[sha256_of(img) lowercaseString]
+		    isEqualToString:[want lowercaseString]]) {
+			dispatch_async(dispatch_get_main_queue(), ^{
+				[self note:@"The download did not match its "
+				    "published checksum. Nothing was changed."];
+			});
+			return;
+		}
+
+		dispatch_async(dispatch_get_main_queue(), ^{
+			[self applyUpdate:img];
+		});
+	}] resume];
+}
+
+/* Mount the image, take the application out of it, and hand over the swap. */
+- (void)applyUpdate:(NSData *)image
+{
+	NSFileManager *fm = [NSFileManager defaultManager];
+	NSString *tmp = [NSTemporaryDirectory()
+	    stringByAppendingPathComponent:@"crossover-wheel-update"];
+	NSString *dmg = [tmp stringByAppendingPathComponent:@"update.dmg"];
+	NSString *mnt = [tmp stringByAppendingPathComponent:@"mnt"];
+	NSString *staged = [tmp stringByAppendingPathComponent:
+	    @"crossover-wheel.app"];
+
+	[fm removeItemAtPath:tmp error:NULL];
+	[fm createDirectoryAtPath:tmp withIntermediateDirectories:YES
+	    attributes:nil error:NULL];
+	if (![image writeToFile:dmg atomically:YES]) {
+		[self note:@"Could not write the download to disk."];
+		return;
+	}
+
+	if ([self run:@"/usr/bin/hdiutil" args:@[ @"attach", @"-nobrowse",
+	    @"-readonly", @"-mountpoint", mnt, dmg ]] != 0) {
+		[self note:@"Could not open the downloaded disk image."];
+		return;
+	}
+
+	BOOL got = [fm copyItemAtPath:[mnt stringByAppendingPathComponent:
+	    @"crossover-wheel.app"] toPath:staged error:NULL];
+
+	(void)[self run:@"/usr/bin/hdiutil" args:@[ @"detach", mnt, @"-quiet" ]];
+
+	if (!got) {
+		[self note:@"The disk image did not contain the application."];
+		return;
+	}
+
+	/*
+	 * Refuse anything whose signature does not check out. This is the one
+	 * point where a bad download could put a broken bundle where a working
+	 * one was, and the check costs nothing.
+	 */
+	if ([self run:@"/usr/bin/codesign" args:@[ @"--verify", @"--strict",
+	    staged ]] != 0) {
+		[self note:@"The downloaded application is not correctly "
+		    "signed. Nothing was changed."];
+		return;
+	}
+
+	NSTask *t = [[NSTask alloc] init];
+
+	t.executableURL = [NSURL fileURLWithPath:@"/bin/sh"];
+	t.arguments = @[ [self resource:@"update.sh"], staged,
+	    [[NSBundle mainBundle] bundlePath],
+	    [NSString stringWithFormat:@"%d", getpid()] ];
+	if (![t launchAndReturnError:NULL]) {
+		[self note:@"Could not start the updater."];
+		return;
+	}
+
+	[self quit:nil];
+}
+
+/* A subprocess run for its exit status alone. */
+- (int)run:(NSString *)tool args:(NSArray<NSString *> *)args
+{
+	NSTask *t = [[NSTask alloc] init];
+
+	t.executableURL = [NSURL fileURLWithPath:tool];
+	t.arguments = args;
+	t.standardOutput = [NSFileHandle fileHandleWithNullDevice];
+	t.standardError = [NSFileHandle fileHandleWithNullDevice];
+	if (![t launchAndReturnError:NULL])
+		return -1;
+	[t waitUntilExit];
+
+	return t.terminationStatus;
 }
 
 - (void)quit:(id)sender

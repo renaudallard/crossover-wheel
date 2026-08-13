@@ -96,6 +96,14 @@ pulling on it, and switch on **Start at login** to never think about it again.
 | filled hub | the daemon holds the wheel |
 | full hub | a game is streaming force feedback |
 
+**Check for updates** is in that menu, and it installs them. It downloads the
+new disk image, checks it against the checksum published beside it, verifies
+the signature, replaces itself and starts again. Nothing it downloads carries
+the quarantine flag a browser sets, so an update needs none of the right-click
+Open and dragging the first install did. The old copy is moved aside and only
+removed once the new one is in place, so a failure leaves the version you had
+rather than nothing at all.
+
 **Two settings the wheel keeps for itself** are in that menu too, because no
 game can ask for either: DirectInput has no property for a wheel's rotation or
 its centring spring, so on Windows they live in the vendor's control panel.

@@ -279,7 +279,7 @@ $(APP): src/mac/t150menu.m dist/Info.plist $(TOOL_BINS) $(PROBE_BINS) \
 	$(CC) $(APP_CFLAGS) -o $(APP)/Contents/MacOS/t150menu \
 	    src/mac/t150menu.m src/mac/bootswitch.c \
 	    -framework Cocoa -framework IOKit
-	cp install.sh $(APP_RES)/
+	cp install.sh dist/update.sh $(APP_RES)/
 	cp $(DAEMON_BIN) $(TOOL_BINS) $(PROBE_BINS) $(APP_RES)/
 	cp man/*.1 man/*.7 man/*.8 $(APP_RES)/
 	@if [ -f $(DLL_BIN) ]; then cp $(DLL_BIN) $(APP_RES)/; \
