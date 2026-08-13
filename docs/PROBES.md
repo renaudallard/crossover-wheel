@@ -128,9 +128,12 @@ most of a session re-proving what was already proven.
    cannot be forgotten. RESEARCH.md A35, B10 and B11 if it regresses.
 4. **Question 7**, the daemon on its own backend. Half answered, and the
    precondition for question 8.
-5. **Question 8**, a game reaching the wheel. The end to end path, the one
-   nobody has run, and now nothing gates it except starting the daemon
-   before the game.
+5. **Question 8**, a game reaching the wheel. **Answered: Assetto Corsa
+   drives the wheel through the whole chain.** Kept as the procedure for
+   any other game, and the cheapest form of it is now the daemon's own log
+   rather than the probe: `t150d -v` prints `client connected from port N`
+   when a proxy reaches it, which needs no bottle setup and cannot be
+   spoiled by a launcher.
 6. **Question 6**, the buttons on the wire, if the input cleanup work
    needs it reproduced.
 
@@ -506,11 +509,13 @@ LaunchAgent firing on every plug-in will mostly see.
 unprivileged, printed all three lines below, and on Ctrl-C its shutdown
 stopped a runaway effect the probes had left playing, which proves its
 packets reach the wheel. It has since rendered effects a client asked for, a
-constant force and a damper that were both felt, which is the first half of
-question 8. What no game has done yet is ask. RESEARCH.md A31 and A43.
+constant force and a damper that were both felt, and then the same for a real
+game: Assetto Corsa asks and the wheel answers. RESEARCH.md A31 and A43.
 
-The daemon also scrubs on acquire now: it stops every slot, releases the
-autocenter and closes the input the moment it takes the wheel, so a wheel
+The daemon also scrubs on acquire now: it stops every slot and closes the
+input the moment it takes the wheel, then opens the input again and holds it,
+because with it shut the firmware rests both pedals at maximum and a game
+reads them as pressed. So a wheel
 inherited mid-runaway goes quiet at startup rather than at shutdown. The
 autocenter release is not optional there, since closing the input re-arms
 the wheel's own centring spring and leaves it stiff (A42).
@@ -602,11 +607,17 @@ attributed without the terminal it came from.
 Adding `--dll dinput8=b` to any of those forces CrossOver's builtin instead
 of the proxy, so running a pair measures exactly what the proxy changes.
 
-The end to end path, and the one nobody has run. Its first rung is climbed:
-test 14 proved the proxy loads in a real bottle and chain-loads CrossOver's
-builtin (A33), so what remains starts at the game. It needs the proxy
-installed in a bottle, which is the procedure in the README under testing it
-today.
+The end to end path, and it has been run: **Assetto Corsa drives the wheel
+through it**, and this question is now the procedure for asking the same of
+any other game. Installing the proxy is `crossover-wheel.app` or `install.sh`
+rather than the hand procedure this used to point at.
+
+**Ask the daemon before reaching for the probe.** `t150d -v` prints
+`client connected from port N` the moment a proxy reaches it. That needs no
+environment variable, no file path and nothing from a game launcher, so
+nothing about a launcher's configuration can spoil it, and it is what settled
+Dakar Desert Rally: the wheel steers the car and the daemon never sees a
+client, so the game does not use DirectInput at all (A48).
 
 **The gate opened in test 16.** With `SDL_JOYSTICK_HIDAPI=0` in the
 bottle's environment the wheel is back (A35), and the proxy loaded inside

@@ -96,6 +96,11 @@ pulling on it, and switch on **Start at login** to never think about it again.
 | filled hub | the daemon holds the wheel |
 | full hub | a game is streaming force feedback |
 
+**Copy the log** puts everything the daemon has printed on the clipboard,
+whether or not a window is open to show it. That log is how nearly every fault
+in this project was found, so if something looks wrong it is the thing worth
+sending.
+
 **Updates install themselves.** The application looks for a new release every
 time it starts, and says nothing unless there is one; *Check for updates* in
 the menu asks on demand and does answer when there is nothing new. Installing

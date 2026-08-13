@@ -96,6 +96,14 @@ RESEARCH.md.
 
 ## 5. Current state
 
+**The goal is met.** A game drives the wheel: Assetto Corsa, on hardware, with
+force feedback its tester compares to the same wheel on Windows under
+Thrustmaster's own drivers. Nothing is installed system wide, nothing needs
+root, and `crossover-wheel.app` does the whole install from one download.
+
+What is left is short and is listed in the README under "What is left". This
+section is the map of the parts.
+
 Implemented and working:
 
 - `src/probe/` : four macOS measurement tools, see section 6. `probe_intr`
@@ -110,14 +118,22 @@ Implemented and working:
   ramp slicing and the watchdog. Driven by `tests/daemon_check.c` in
   simulated time and by `tests/socket_check.c` over a real socket.
 - `src/dll/` : M4, the proxy. Cross builds to an x86_64 PE with the right
-  exports and no import of `dinput8` to recurse into. **Never executed.**
-  See section 7's M4 for what is and is not checked.
+  exports and no import of `dinput8` to recurse into. It loads in a real
+  bottle, wraps the wheel, and a game drives force feedback through it.
+- `src/mac/t150menu.m` : `crossover-wheel.app`, the menu bar item and
+  installer. Deliberately thin: it runs `install.sh` rather than
+  reimplementing it, and runs the daemon as a child rather than speaking its
+  protocol, which would displace a running game. **Compiled by CI and never
+  clicked** — nothing on a build machine can press a menu bar item, so every
+  fault in it so far was found by the person using it.
+- `install.sh`, `dist/update.sh` : the install and the self-update, both
+  shell because both can destroy a working setup, and both tested against
+  synthetic trees and fake bundles.
 - `Makefile`, CI, `README.md`, man pages, docs.
 
-Written but never run against a wheel: the daemon's macOS HID backend,
-`t150ctl` and `t150boot`. All three compile on macOS and none has touched
-hardware. `t150d -n` still logs its packets rather than sending them, which
-is what every test drives and the only behaviour off macOS.
+The daemon's macOS HID backend, `t150ctl` and `t150boot` have all run against
+hardware. `t150d -n` still logs its packets rather than sending them, which is
+what every test drives and the only behaviour off macOS.
 
 The probe tools compile clean on `macos-latest` with `-Werror` against the
 real CoreFoundation and IOKit headers, and they have now been run against a
@@ -181,10 +197,11 @@ false for this wheel.
 So there is no ownership conflict for settings, `t150ctl` needs no
 privilege, and section 8's fallbacks are not needed for that half.
 
-**What is still open is force feedback.** With the autocenter cleared and the
-gain set, an effect upload moves nothing on either pipe, for a constant force
-or a periodic. Since both transports are proven, that is a question about the
-layout in PROTOCOL.md. RESEARCH.md A20 has the untried combinations.
+**Force feedback works.** That paragraph used to say it did not: with the
+autocenter cleared and the gain set, an effect moved nothing on either pipe.
+The missing piece was one two-byte packet, `42 04`, which opens the wheel's
+input; the firmware renders nothing until something does. RESEARCH.md A26 and
+A28. Everything after that is history rather than an open question.
 
 Two traps, and the second one cost this project six sessions:
 
@@ -291,13 +308,14 @@ And the chain-load in a real bottle is now verified too: test 14 loaded the
 proxy as `native` in a CrossOver 26 bottle, chain-loaded the builtin from
 `dinput8_orig.dll`, and forwarded `DllRegisterServer` into it, with the
 builtin's imports visibly resolving (RESEARCH.md A33). The force feedback
-path has since run end to end: an effect crossed the loopback and was felt
-on the wheel, played by the in-bottle probe (A43). What has never run is a
-game doing it: no game has created a device through the proxy.
+path has since run end to end, first from the in-bottle probe (A43) and then
+from a game: **Assetto Corsa creates its effects through the proxy and the
+wheel renders them.**
 
-**M5. First force feedback in a real game.** An installer that finds the
-bottle under `~/Library/Application Support/CrossOver/Bottles`, honouring the
-`BottleDir` preference, copies the DLL into `system32` and sets the override
+**M5. Done: force feedback in a real game, and an installer.** The installer
+exists twice over, as `install.sh` and as the application that runs it, and it
+finds the bottle under `~/Library/Application Support/CrossOver/Bottles`,
+copies the DLL into `system32` and sets the override
 with `wine --bottle <name> --cx-app reg.exe`. Scope the override to
 `AppDefaults\<game>.exe` when the bottle holds more than the target game.
 The `dinput8_orig.dll` it puts beside the proxy has to come from

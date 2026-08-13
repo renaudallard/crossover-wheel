@@ -140,25 +140,32 @@ right small enough to read.
 
 ## Status
 
-Implemented: the three probe tools, the shared headers, the encoders, the
-protocol codec, the daemon's logic, the proxy, the build and CI.
+**The architecture above is what runs.** Assetto Corsa drives a T150 through
+it on real hardware: the proxy loads in the bottle, wraps the wheel, forwards
+its effects over loopback, and the daemon writes them with
+`IOHIDDeviceSetReport` while CrossOver keeps reading the wheel as an ordinary
+joystick. Nothing is installed system wide and nothing needs root.
 
-Written and compiling against the real frameworks, but never run against a
-wheel: the daemon's macOS HID backend, `t150ctl` and `t150boot`. No game has
-reached a wheel through any of it. Until
-the backend exists the daemon writes its packets to a log, which is enough to
-drive the whole stack from a test without a Mac.
+Everything in the diagram is implemented and has run against a wheel: the
+probes, the shared headers, the encoders, the protocol codec, the daemon
+including its macOS HID backend, `t150ctl`, `t150boot`, and the proxy. The
+logging backend is still there and is what lets the whole stack be driven from
+a test on a machine with no Mac and no wheel.
 
-The proxy has never been executed. It cross builds and CI loads it on
-Windows, but there is no Wine on the development machine, so whether a bottle
-resolves its chain-load is unverified.
+`crossover-wheel.app` sits above all of it: a menu bar item that installs the
+proxy into a bottle, runs the daemon and updates itself. It is deliberately
+thin, because it calls `install.sh` rather than reimplementing it, and it runs
+the daemon as a child rather than speaking its protocol, which would displace
+a running game.
+
+**What has not been exercised is the application itself.** Nothing on a build
+machine can click a menu bar item, so every fault found in it so far was found
+by the person using it. That is the one part of this with no automated
+coverage, and it is why the risky work stays in the shell script and the
+daemon, which do have it.
 
 The build order was Phase 0 first (see [PROBES.md](PROBES.md)), because a
 single measurement decided whether any of the rest was worth writing: whether
 an unprivileged `IOHIDDeviceSetReport` physically moves the wheel. **It does**,
-so the architecture above stands as drawn, and the daemon never has to take
-the wheel away from CrossOver. RESEARCH.md A19.
-
-What Phase 0 has not produced is a force feedback effect. Settings work on
-both transports; no effect has yet moved the wheel on either, and RESEARCH.md
-A20 explains why neither attempt so far could have.
+so the architecture stands as drawn and the daemon never has to take the wheel
+away from CrossOver. RESEARCH.md A19.
