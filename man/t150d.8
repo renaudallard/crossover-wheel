@@ -219,7 +219,13 @@ for a wheel starts again.
 .Pp
 That only covers a wheel somebody is still writing to. A replug is usually
 not: the watchdog has fired, the session has dropped every effect, and a
-keepalive writes nothing. So twice a second
+keepalive writes nothing. With
+.Fl w
+the writer thread makes the same check on its own clock, because it owns the
+device and the poll thread must not touch it; without that a replugged wheel
+sat at the boot id until the daemon was restarted, which is the fault
+.Fl w
+reintroduced and this restores. So twice a second
 .Nm
 also asks the registry whether the wheel it believes it holds is still on the
 bus, and lets go if it is not. Without that it kept a reference to a wheel

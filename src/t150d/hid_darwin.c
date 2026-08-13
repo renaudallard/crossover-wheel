@@ -525,6 +525,36 @@ writer_main(void *arg)
 		pthread_mutex_unlock(&h->mtx);
 
 		/*
+		 * Ask whether the wheel we believe we hold is still on the
+		 * bus, which is the job hid_tick does when there is no writer
+		 * and which nothing was doing when there is one.
+		 *
+		 * Without this the daemon keeps a dead device reference for
+		 * ever. h->dev is cleared only by a write that fails with a
+		 * removal status, and a replug is exactly when nothing is
+		 * writing: no game is connected, the emitter has nothing to
+		 * send, and this thread sits on its condition variable. So
+		 * the wheel comes back at the boot id, nobody switches it,
+		 * and it stays locked until the daemon is restarted. That was
+		 * the whole of 0.1.17's replug fix, undone for -w by a tick
+		 * that returns early when threaded.
+		 */
+		if (h->dev != NULL && mono_ms() >= h->next_scan_ms) {
+			io_service_t svc;
+
+			h->next_scan_ms = mono_ms() + RESCAN_MS;
+			if ((svc = t150_usb_find(h->vid, h->pid)) !=
+			    IO_OBJECT_NULL) {
+				IOObjectRelease(svc);
+			} else {
+				drop_device(h);
+				if (h->verbose)
+					fprintf(stderr, "t150d: the wheel "
+					    "left the bus\n");
+			}
+		}
+
+		/*
 		 * Look for the wheel on this thread too, for the same reason
 		 * the poll thread used to: a replug leaves it at the boot id
 		 * and nothing else will go looking.
@@ -685,7 +715,13 @@ hid_tick(void *priv, uint64_t now_ms)
 
 	(void)now_ms;	/* the backend keeps its own monotonic clock */
 
-	/* The writer scans on its own account, and owns the device. */
+	/*
+	 * The writer owns the device when there is one, and does this same
+	 * presence check itself on its own clock. Two threads asking IOKit
+	 * about the same device is harmless; two threads acquiring and
+	 * dropping it is not, and this file's rule is that the writer is the
+	 * only one that touches it.
+	 */
 	if (h->threaded)
 		return;
 
