@@ -383,9 +383,16 @@ acquire(struct hid_be *h)
 	 * and that spring is felt as a stiffness about a point that does not
 	 * return the wheel to centre (A17). Without this the daemon idling on
 	 * its real backend leaves a wheel that is hard to turn and never
-	 * recentres, which is exactly what a tester reported. The enable flag
-	 * is not sent with it: it is a no-op on macOS, and only the force
-	 * decides the strength.
+	 * recentres, which is exactly what a tester reported.
+	 *
+	 * The flag goes with the force, as t150ctl has always sent it. A15
+	 * found 0x04 to be a no-op and gave the reason: it decides whether the
+	 * autocenter survives an application opening the wheel's input, and
+	 * nothing on macOS opened it. This daemon does now, and has since it
+	 * began holding the input open so the pedals read correctly, so the
+	 * condition that made the flag decorative is gone. Sending the force
+	 * without it leaves the daemon asking for a spring the firmware is
+	 * entitled to discard.
 	 *
 	 * Reported rather than sent in silence, for the reason the gain and
 	 * the range are: a wheel that vibrates about a point is what A17 says
@@ -405,6 +412,12 @@ acquire(struct hid_be *h)
 			    ar == kIOReturnSuccess ? "sent" :
 			    "the write failed");
 	}
+	nap_ms(h->gap_ms);
+
+	/* The force, then the flag, which is the order t150ctl uses. */
+	if ((len = t150_enc_autocenter_enable(pkt, sizeof(pkt),
+	    h->autocenter > 0)) > 0)
+		(void)raw_write(h, pkt, len);
 	nap_ms(h->gap_ms);
 
 	/*

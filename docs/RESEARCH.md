@@ -370,6 +370,24 @@ way a Linux application does, so the autocenter is permanently active and
 `0x04` changes nothing observable. Every `-A` sent in every session was a
 no-op by design. **Only the force, `0x03`, releases the wheel.**
 
+> **The precondition stopped being true.** "Nothing on macOS opens the input"
+> was correct when measured and is not any more: since 0.1.37 the daemon holds
+> the wheel's input open for as long as it holds the wheel, because with it
+> shut the firmware rests the pedals at maximum. So `0x04` is no longer
+> decorative, it is the flag that decides whether a requested centring spring
+> survives at all, and the daemon now sends it with the force as `t150ctl`
+> always has.
+>
+> **Unresolved, and the reason this note exists rather than a claim:** with
+> the daemon running, a spring set to 25, 50, 75 or 100 all feel the same to
+> the person testing it, where A17 measured 10 and 100 as clearly different
+> with no daemon at all. Either the flag is not enough to make it survive an
+> open input, in which case a centring spring and correct pedals cannot both
+> be had this way, or the response saturates so early that everything above
+> about 25 feels alike. **The test that separates them is one line: set a
+> spring with the daemon stopped, and see whether the levels differ then.**
+> Nobody should build anything on either answer until that has been run.
+
 That retires the whole "the wheel is locked" line of investigation. The wheel
 was never locked, never faulty, and never ignoring us once the initialisation
 was right: it was holding a maximum autocenter that the command we kept
