@@ -503,13 +503,25 @@ writer_main(void *arg)
 		struct timespec ts;
 
 		pthread_mutex_lock(&h->mtx);
-		while (t150_wq_depth(&h->q) == 0 && !h->stop) {
-			/*
-			 * Woken by work or by the timeout, whichever comes
-			 * first. The timeout is what drives the scan for a
-			 * wheel that is not there, since nothing will signal
-			 * on its account.
-			 */
+		/*
+		 * Wait once, not until there is work. A condition variable is
+		 * normally waited on in a loop, because a wakeup does not
+		 * promise the condition holds; here the opposite is wanted.
+		 * The timeout is the clock that drives everything this thread
+		 * does when no game is connected: noticing the wheel has gone,
+		 * switching a replugged one out of boot mode, picking it up
+		 * again. A loop that goes straight back to waiting whenever
+		 * the queue is empty never reaches any of it, and the queue is
+		 * empty exactly when no game is sending.
+		 *
+		 * That is what happened. The comment here used to claim the
+		 * timeout drove the scan while the loop around it made sure it
+		 * could not, so a wheel unplugged and replugged with no game
+		 * running sat at the boot id until the daemon was restarted.
+		 * A spurious wakeup now costs one early pass over an empty
+		 * queue, which is nothing.
+		 */
+		if (t150_wq_depth(&h->q) == 0 && !h->stop) {
 			(void)clock_gettime(CLOCK_REALTIME, &ts);
 			ts.tv_nsec += (long)RESCAN_MS * 1000000L;
 			if (ts.tv_nsec >= 1000000000L) {

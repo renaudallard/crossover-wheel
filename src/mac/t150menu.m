@@ -39,6 +39,7 @@
 @property (strong) NSPopUpButton *bottles;
 @property (strong) NSButton *install;
 @property (strong) NSTextView *out;
+@property (strong) NSMutableString *logBuf;
 @property (strong) NSMenuItem *statusLine;
 @property (strong) NSMenuItem *runItem;
 @property (strong) NSMenuItem *loginItem;
@@ -151,6 +152,11 @@
 	    action:@selector(openSetup:) keyEquivalent:@""];
 	s.target = self;
 	[m addItem:s];
+
+	NSMenuItem *lg = [[NSMenuItem alloc] initWithTitle:@"Copy the log"
+	    action:@selector(copyLog:) keyEquivalent:@""];
+	lg.target = self;
+	[m addItem:lg];
 
 	NSMenuItem *u = [[NSMenuItem alloc] initWithTitle:@"Check for updates…"
 	    action:@selector(checkForUpdates:) keyEquivalent:@""];
@@ -719,6 +725,13 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	[NSApp activateIgnoringOtherApps:YES];
 	[w makeKeyAndOrderFront:nil];
 
+	if (self.logBuf.length > 0)
+		[self.out.textStorage appendAttributedString:
+		    [[NSAttributedString alloc] initWithString:self.logBuf
+		    attributes:@{
+			NSForegroundColorAttributeName : [NSColor labelColor],
+			NSFontAttributeName : self.out.font }]];
+
 	if ([self findBottles].count == 0) {
 		/*
 		 * Say where it looked. An empty list means either there are no
@@ -824,7 +837,27 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 
 - (void)say:(NSString *)s
 {
-	if (self.out == nil || s.length == 0)
+	if (s.length == 0)
+		return;
+
+	/*
+	 * Kept whether or not a window is open to show it. Everything the
+	 * daemon prints used to go straight into the setup window's text view,
+	 * which does not exist once that window is closed, so a person running
+	 * from the menu bar had no log at all and no way to send one. Every
+	 * real diagnosis in this project came out of a log somebody mailed.
+	 *
+	 * Bounded, because this runs for as long as the application does and
+	 * the daemon is talkative under -v. The oldest half goes.
+	 */
+	if (self.logBuf == nil)
+		self.logBuf = [NSMutableString string];
+	[self.logBuf appendString:s];
+	if (self.logBuf.length > 400000)
+		[self.logBuf deleteCharactersInRange:
+		    NSMakeRange(0, self.logBuf.length - 200000)];
+
+	if (self.out == nil)
 		return;
 
 	/*
@@ -848,6 +881,29 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	(void)n;
 	self.setup = nil;
 	self.out = nil;
+}
+
+/*
+ * Onto the clipboard rather than into a window, because the useful thing to do
+ * with this log is paste it into a mail to somebody who can read it.
+ */
+- (void)copyLog:(id)sender
+{
+	(void)sender;
+	NSPasteboard *pb = [NSPasteboard generalPasteboard];
+	NSString *log = self.logBuf;
+
+	if (log.length == 0) {
+		[self note:@"There is nothing in the log yet. It fills up "
+		    "while the daemon is running."];
+		return;
+	}
+
+	[pb clearContents];
+	[pb setString:log forType:NSPasteboardTypeString];
+	[self note:[NSString stringWithFormat:@"%lu lines copied. Paste them "
+	    "into a mail.", (unsigned long)[[log
+	    componentsSeparatedByString:@"\n"] count] - 1]];
 }
 
 #pragma mark - updates
