@@ -1,0 +1,75 @@
+crossover-wheel, the in-bottle probe.
+
+probe_dinput.exe is a diagnostic, not part of the software. You do not need it
+to use a wheel: the disk image on the releases page installs everything, and
+this is for when something looks wrong and you want to know what DirectInput
+itself sees inside the bottle.
+
+It is separate from that image on purpose, because almost nobody needs it.
+
+WHAT IT ANSWERS
+
+Run it in the bottle with no arguments and it prints what DirectInput says the
+device is: every axis and button with its offset, the axle number a game's
+configuration records, the declared range, and whether any axis is marked as a
+force feedback actuator. It then prints where each control sits in the state
+struct a game reads, which is a different number from the enumeration offset
+beside it and is the one that decides which value a game gets.
+
+  wine --bottle "<name>" --no-gui --cx-app probe_dinput.exe
+
+Give the name of the executable rather than a path to it. The wrapper then
+searches the bottle for it and says so plainly if it is not there, instead of
+handing an unchecked path to the loader. --no-gui puts any error from the
+wrapper in the terminal rather than in a dialog box.
+
+You will need to copy probe_dinput.exe into the bottle first, anywhere the
+wrapper can find it, such as drive_c.
+
+WHAT IT IS NOT FOR
+
+"Does my game reach the wheel at all" has a cheaper answer that needs none of
+this. Start the daemon with t150d -v, launch the game, and watch for:
+
+  t150d: client connected from port 55437
+
+No environment variable, no file path, nothing from a game launcher, so
+nothing about a launcher's configuration can spoil it. That is what settled
+Dakar Desert Rally: it steers the car and never connects, so it does not use
+DirectInput at all. See docs/RESEARCH.md A48.
+
+TWO EXTRA MODES
+
+Add -i and it works through every control by name, one at a time: the wheel,
+each pedal, both paddles, all thirteen buttons and the four hat directions.
+For each it says which DirectInput object moved, and for a pedal it records
+where it rests and how far it travels, so an inverted pedal is three numbers
+rather than an impression. It asks you to confirm each identification, Enter
+for yes, n if it named the wrong thing, s to skip a control this wheel does
+not have, and it ends with a table of the whole wheel. Anything you disputed
+is flagged in that table, and that is the line worth sending.
+
+Add -f and it creates a real constant force and a real damper and plays them,
+with no game involved, so a game that asks wrongly can be told apart from a
+chain that does not deliver. Hold the wheel when you use -f.
+
+WHERE THE OUTPUT GOES
+
+Every run writes itself to a file under Z:\tmp, which is /tmp seen from macOS,
+as well as to the screen: probe_dinput-dump.log for the plain run,
+-controls.log for -i, -ffb.log for -f and -controls-ffb.log if you pass both
+at once, so running all three leaves all three rather than each overwriting
+the last. Send those files rather than a copied terminal: they are complete,
+they survive the window being closed, and -o puts a run somewhere else if you
+prefer.
+
+MEASURING THE PROXY ITSELF
+
+Run it again with --dll dinput8=b added to the wine command and it measures
+CrossOver's builtin instead of the proxy. The difference between the two runs
+is exactly what the proxy does.
+
+It serves 64-bit bottles only: a 32-bit process is redirected to syswow64 and
+never sees any of this.
+
+docs/PROBES.md in the repository is the procedure and what each outcome means.

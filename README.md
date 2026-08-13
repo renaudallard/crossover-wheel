@@ -316,18 +316,24 @@ built by CI from the tagged commit. Two archives:
 | File | For |
 | --- | --- |
 | `crossover-wheel-<v>.dmg` | **everyone.** The application and a shortcut to Applications. The application carries the daemon, the man pages, the proxy and `install.sh` inside its own bundle |
-| `crossover-wheel-<v>-windows-x86_64.zip` | nobody, unless you want the proxy on its own or `probe_dinput.exe` to question a bottle without a game |
+| `crossover-wheel-<v>-bottle-probe.zip` | almost nobody: `probe_dinput.exe`, a diagnostic for when something looks wrong inside a bottle |
 
 **The `.dmg` is the only thing to download.** Everything is inside it,
 including the proxy that goes into the bottle, because that bottle is on the
 same Mac. Nothing needs to be kept afterwards, and nothing asks for a
 password: the application is the only thing installed, into Applications, by
-you dragging it there. The Windows zip is there for anyone who wants
-the proxy on its own, or who wants `probe_dinput.exe` to test a bottle
-without a game.
+you dragging it there.
+
+The probe is published separately because it is a measurement instrument
+rather than part of the software, and because the question it used to be the
+answer to now has a cheaper one: `t150d -v` prints `client connected from
+port N` when a game reaches the daemon, which needs no bottle setup at all.
+What the probe still does that nothing else can is show what DirectInput
+itself sees: every axis and button with the offset a game reads it at, and
+effects played with no game running.
 
 Each archive carries a short README; those are `dist/README.macos` and
-`dist/README.windows` in this repository, packaged verbatim at release time
+`dist/README.probe` in this repository, packaged verbatim at release time
 so they cannot drift from what is written here.
 
 Apple Silicon only, and there is no Intel build. Verify what you downloaded
