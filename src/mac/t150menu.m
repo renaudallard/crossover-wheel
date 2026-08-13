@@ -533,12 +533,20 @@
 			if (st == 0)
 				[[NSUserDefaults standardUserDefaults]
 				    setBool:YES forKey:@"installedOnce"];
+			/*
+			 * The commonest failure is macOS refusing this app
+			 * access to CrossOver.app, which the script explains
+			 * in its own output. Repeating it here would be
+			 * noise; what this adds is that nothing was left half
+			 * done, which is the thing somebody looking at an
+			 * error most wants to know.
+			 */
 			[weak say:st == 0 ?
 			    @"\nDone. Start the daemon from the menu bar, then "
 			    "start your game.\n" :
-			    @"\nThat did not work. Nothing was half done: the "
-			    "installer checks as it goes and stops at the "
-			    "first thing it cannot verify.\n"];
+			    @"\nThat did not work, and nothing was left half "
+			    "done: the installer checks as it goes and stops "
+			    "at the first thing it cannot verify.\n"];
 			[weak refresh];
 		});
 	};

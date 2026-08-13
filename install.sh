@@ -54,6 +54,23 @@ EOF
 }
 
 say()   { printf '%s\n' "$*"; }
+
+# macOS gates an application reaching inside another application's bundle, and
+# CrossOver's builtin dinput8.dll is inside CrossOver.app. Blocked, it does not
+# announce itself: the file simply cannot be read, which looks exactly like it
+# not being there. Saying this is the difference between a person granting one
+# permission and a person concluding the installer is broken.
+app_management_hint()
+{
+	warn ""
+	warn "If this was run from the crossover-wheel application, macOS has"
+	warn "most likely blocked it from reaching inside CrossOver.app."
+	warn "Open System Settings, Privacy and Security, App Management, turn"
+	warn "on crossover-wheel, and try again."
+	warn ""
+	warn "Running this script from a terminal instead is the other way"
+	warn "round it, since a terminal already has that permission."
+}
 step()  { printf '\n==> %s\n' "$*"; }
 warn()  { printf '%s: %s\n' "$SELF" "$*" >&2; }
 die()   { warn "$*"; exit 1; }
@@ -309,8 +326,12 @@ install_proxy()
 	[ -d "$sys32" ] ||
 	    die "no system32 in bottle '$BOTTLE', is it a 64-bit bottle?"
 
-	builtin=$(find_builtin "$bdir") ||
-	    die "cannot find CrossOver's builtin dinput8.dll under $CX_ROOT"
+	if ! builtin=$(find_builtin "$bdir"); then
+		warn "cannot find CrossOver's builtin dinput8.dll under"
+		warn "  $CX_ROOT"
+		app_management_hint
+		die "nothing was changed in the bottle"
+	fi
 	say "  builtin: $builtin"
 
 	# The one mistake worth refusing outright. Copying the proxy, or the
@@ -362,7 +383,20 @@ install_proxy()
 		fi
 	fi
 
-	run cp "$builtin" "$sys32/dinput8_orig.dll"
+	# Reading this file means reaching inside CrossOver.app, and macOS
+	# gates that: an application which touches another application's
+	# bundle is refused until it is allowed under App Management, and the
+	# refusal arrives as an ordinary permission error. Saying so here is
+	# the difference between a person granting one permission and a person
+	# concluding the installer is broken.
+	if [ "$DRYRUN" -eq 0 ] &&
+	    ! cp "$builtin" "$sys32/dinput8_orig.dll" 2>/dev/null; then
+		warn "could not read CrossOver's builtin:"
+		warn "  $builtin"
+		app_management_hint
+		die "nothing was changed in the bottle"
+	fi
+	[ "$DRYRUN" -eq 1 ] && run cp "$builtin" "$sys32/dinput8_orig.dll"
 	say "  dinput8_orig.dll  <- CrossOver's builtin"
 	run cp "$DLL" "$sys32/dinput8.dll"
 	say "  dinput8.dll       <- the proxy"

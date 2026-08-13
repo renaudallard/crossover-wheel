@@ -23,6 +23,16 @@ The app then asks which CrossOver bottle your game is in and puts the proxy
 there. That is the only thing it installs: it carries its own copy of the
 daemon and runs that.
 
+IF IT SAYS IT WAS PREVENTED FROM MODIFYING APPS
+
+Turn on crossover-wheel in System Settings, Privacy and Security, App
+Management, then press Install again.
+
+It does not modify any application. What it needs is to READ one file that
+belongs to CrossOver, its own copy of dinput8.dll, which lives inside
+CrossOver.app, and macOS puts reaching inside another app's bundle behind that
+switch whether you are reading or writing.
+
 Afterwards it lives in your menu bar as a small steering wheel:
 
   thin centre    nothing running, or no wheel plugged in

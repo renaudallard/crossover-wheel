@@ -107,6 +107,14 @@ built against and runs that one, so the two always match. `t150ctl`,
 source tree puts them in `~/.local/bin`, and nothing in the menu bar route
 depends on that having happened.
 
+**If it says it was "prevented from modifying apps on your Mac"**, turn on
+crossover-wheel under System Settings, Privacy and Security, **App
+Management**, and press Install again. Nothing here modifies an application:
+what it needs is to *read* CrossOver's own `dinput8.dll`, which lives inside
+`CrossOver.app`, and macOS gates reaching into another app's bundle behind
+that same switch. Running `install.sh` from a terminal is the other way round
+it, because a terminal already holds that permission.
+
 **If macOS says the app is damaged**, the copy you have is older than 0.1.34.
 That message means the bundle carried no signature at all, and it is a dead
 end: no button, and right-click Open does nothing for it. The bundle is
