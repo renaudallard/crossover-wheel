@@ -310,12 +310,19 @@ static const int springs[] = { 0, 2500, 5000, 7500, 10000 };
 static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
     @"Firm", @"Full" };
 
+/*
+ * The wheel's default is its widest, which A49 measured: setting 1080
+ * explicitly changed nothing, because that is where it powers up. So there is
+ * no separate "leave it alone" to offer. A row that did nothing was worse
+ * than none, since picking it moved the tick while the wheel stayed where it
+ * was, and a wheel keeps a range until it is unplugged.
+ */
 - (int)storedRotation
 {
 	NSInteger v = [[NSUserDefaults standardUserDefaults]
 	    integerForKey:@"rotation"];
 
-	return v > 0 ? (int)v : 0;		/* 0 means leave the wheel's own */
+	return v > 0 ? (int)v : T150_RANGE_MAX;
 }
 
 - (int)storedSpring
@@ -329,19 +336,12 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	NSMenu *sub = [[NSMenu alloc] init];
 	unsigned i;
 
-	NSMenuItem *none = [[NSMenuItem alloc] initWithTitle:
-	    @"The wheel's own, full travel" action:@selector(pickRotation:)
-	    keyEquivalent:@""];
-	none.target = self;
-	none.tag = 0;
-	none.state = [self storedRotation] == 0 ? NSControlStateValueOn
-	    : NSControlStateValueOff;
-	[sub addItem:none];
-	[sub addItem:[NSMenuItem separatorItem]];
-
 	for (i = 0; i < sizeof(rotations) / sizeof(rotations[0]); i++) {
-		NSMenuItem *it = [[NSMenuItem alloc] initWithTitle:
-		    [NSString stringWithFormat:@"%d degrees", rotations[i]]
+		NSString *title = rotations[i] == (int)T150_RANGE_MAX ?
+		    [NSString stringWithFormat:@"%d degrees, the wheel's own",
+		    rotations[i]] :
+		    [NSString stringWithFormat:@"%d degrees", rotations[i]];
+		NSMenuItem *it = [[NSMenuItem alloc] initWithTitle:title
 		    action:@selector(pickRotation:) keyEquivalent:@""];
 		it.target = self;
 		it.tag = rotations[i];
@@ -401,21 +401,8 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	[[NSUserDefaults standardUserDefaults] setInteger:deg
 	    forKey:@"rotation"];
 
-	/*
-	 * "The wheel's own" has to send something, and this is where that was
-	 * wrong. The wheel keeps a range until it is unplugged, so choosing
-	 * this after setting 540 left it at 540: there is no packet meaning
-	 * "forget what I told you", and doing nothing meant keeping the last
-	 * choice while the tick moved to a row that claimed otherwise.
-	 *
-	 * Its own range is its widest. A49 measured that: setting 1080
-	 * explicitly changes nothing because that is where it powers up. So
-	 * this asks for the maximum, which restores full travel now, and
-	 * stores zero, which stops the daemon reapplying any range after a
-	 * replug.
-	 */
-	if (![self wheelSetting:@"range"
-	    value:deg > 0 ? deg : T150_RANGE_MAX])
+	/* Every row sends its number, including the wheel's own maximum. */
+	if (![self wheelSetting:@"range" value:deg])
 		[self note:@"The wheel did not take that rotation. Is it "
 		    "plugged in and out of boot mode?"];
 
@@ -494,9 +481,8 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	NSMutableArray *args = [@[ @"-v", @"-w" ] mutableCopy];
 	int deg = [self storedRotation], spring = [self storedSpring];
 
-	if (deg > 0)
-		[args addObjectsFromArray:@[ @"-r",
-		    [NSString stringWithFormat:@"%d", deg] ]];
+	[args addObjectsFromArray:@[ @"-r",
+	    [NSString stringWithFormat:@"%d", deg] ]];
 	if (spring > 0)
 		[args addObjectsFromArray:@[ @"-a",
 		    [NSString stringWithFormat:@"%d", spring] ]];
@@ -578,9 +564,8 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	NSMutableArray *a = [@[ [self daemonPath], @"-w" ] mutableCopy];
 	int deg = [self storedRotation], spring = [self storedSpring];
 
-	if (deg > 0)
-		[a addObjectsFromArray:@[ @"-r",
-		    [NSString stringWithFormat:@"%d", deg] ]];
+	[a addObjectsFromArray:@[ @"-r",
+	    [NSString stringWithFormat:@"%d", deg] ]];
 	if (spring > 0)
 		[a addObjectsFromArray:@[ @"-a",
 		    [NSString stringWithFormat:@"%d", spring] ]];
