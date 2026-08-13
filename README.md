@@ -1,43 +1,66 @@
-![Force feedback for the Thrustmaster T150 in games running under CrossOver on
-macOS: no kext, no DriverKit extension, no SIP change, no root. A game in the
-bottle reaches the t150-dinput8.dll proxy over DirectInput 8, which forwards
-everything but force feedback to the t150d daemon on 127.0.0.1, which writes
-to the wheel with SetReport.](docs/banner.svg)
+<p align="center">
+  <img src="docs/banner.svg" width="880"
+       alt="crossover-wheel. Force feedback for the Thrustmaster T150 in games
+            running under CrossOver on macOS: no kext, no DriverKit extension,
+            no SIP change, no root. A game in the bottle reaches the
+            t150-dinput8.dll proxy over DirectInput 8, which forwards
+            everything but force feedback to the t150d daemon on 127.0.0.1,
+            which writes to the wheel with SetReport."/>
+</p>
 
-# crossover-wheel
+<p align="center">
+  <a href="https://github.com/renaudallard/crossover-wheel/releases/latest">
+    <img src="https://img.shields.io/github/v/release/renaudallard/crossover-wheel?label=version&style=flat-square&sort=semver" alt="Latest release"/>
+  </a>
+  <a href="https://github.com/renaudallard/crossover-wheel/releases">
+    <img src="https://img.shields.io/github/downloads/renaudallard/crossover-wheel/total?style=flat-square&label=downloads" alt="Downloads"/>
+  </a>
+  <a href="https://github.com/renaudallard/crossover-wheel/actions/workflows/build.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/renaudallard/crossover-wheel/build.yml?style=flat-square&label=build" alt="Build"/>
+  </a>
+  <a href="https://github.com/renaudallard/crossover-wheel/releases/latest">
+    <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-000000?logo=apple&logoColor=white&style=flat-square" alt="macOS, Apple Silicon"/>
+  </a>
+  <a href="https://www.codeweavers.com/crossover">
+    <img src="https://img.shields.io/badge/CrossOver-26%2B-5c8a3c?style=flat-square" alt="CrossOver 26 or newer"/>
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/github/license/renaudallard/crossover-wheel?style=flat-square" alt="License"/>
+  </a>
+  <a href="https://www.paypal.me/RenaudAllard">
+    <img src="https://img.shields.io/badge/PayPal-Donate-blue.svg?logo=paypal&style=flat-square" alt="PayPal"/>
+  </a>
+</p>
 
-Force feedback for the **Thrustmaster T150** in games running under
-**CrossOver** on macOS, with nothing installed system wide: no kext, no
-DriverKit system extension, no SIP change, no AMFI change, no system
-extension approval.
+<p align="center">
+  <b>Force feedback for the Thrustmaster T150 in games running under CrossOver
+  on macOS.</b><br/>
+  No kext, no DriverKit system extension, no SIP change, no AMFI change, no
+  system extension approval, and no password.
+</p>
 
-> **Status: it works, in a game, on real hardware.** Assetto Corsa drives a
-> T150 through this, with force feedback the tester describes as *"similar to
-> the normal T150 in Assetto Corsa on windows with the official drivers"* —
-> the vendor's own setup as the benchmark. Nothing is installed system wide
-> and nothing needs root.
->
-> The path is a proxy `dinput8.dll` inside the CrossOver bottle, forwarding
-> DirectInput force feedback over loopback to a macOS daemon that writes the
-> wheel's own packets with `IOHIDDeviceSetReport`. CrossOver keeps reading the
-> wheel as an ordinary joystick throughout, so input comes down the normal
-> path and only the forces come down this one.
->
-> **What works:** force feedback in a game, unplug and replug mid race,
-> restarting the daemon under a running game, the pedals, the steering range,
-> and the effect set the wheel actually implements.
->
-> **Getting it:** double-click `crossover-wheel.app`, answer one question, and
-> it lives in the menu bar afterwards. `./install.sh` does the same work from
-> a terminal, and the app runs that very script from inside itself.
->
-> **What is imperfect:** the wheel gives a small knock when it is left
-> standing at four evenly spaced positions, which is the wheel's own damper
-> loop and not this software — see [`docs/RESEARCH.md`](docs/RESEARCH.md) A46,
-> where it is measured with no game, no daemon and no proxy running. And the
-> application has been compiled but never clicked: nothing on a build machine
-> can press a menu bar item, so it is the one part of this that reached a user
-> untested.
+---
+
+## Status
+
+**It works, in a game, on real hardware.** Assetto Corsa drives a T150 through
+this, with force feedback the tester describes as *"similar to the normal T150
+in Assetto Corsa on Windows with the official drivers"* — the vendor's own
+setup as the benchmark.
+
+|  |  |
+| --- | --- |
+| Force feedback in a game | **works** |
+| Unplug and replug mid race | **works** |
+| Restarting the daemon under a running game | **works** |
+| Pedals, steering range, boot mode, sleep and wake | **works** |
+| A small knock when the wheel is left standing at four positions | the wheel's own damper loop, [A46](docs/RESEARCH.md) |
+| The application and its installer | **compiled, never clicked** |
+
+That last line is meant literally. Nothing on a build machine can press a menu
+bar item, so the application is the one part of this that reaches a user
+untested. Everything it does to a bottle happens through `install.sh`, which
+is checked against a synthetic CrossOver tree on every build.
 
 **Picking this up?** [`docs/RESEARCH.md`](docs/RESEARCH.md) is the evidence
 behind every claim here, including the routes that were investigated and are
@@ -787,6 +810,18 @@ downgraded rather than refused, because a game that gets a refusal from
 
 Work on other wheels, including the commercial product that ships this same
 architecture, is in [`docs/RESEARCH.md`](docs/RESEARCH.md) section F.
+
+## Support
+
+This is unpaid work on hardware nobody else supports on this platform, and it
+exists because one person kept plugging a wheel in and reporting what happened.
+If it saved you an evening:
+
+<a href="https://www.paypal.me/RenaudAllard">
+  <img src="https://img.shields.io/badge/PayPal-Donate-blue.svg?logo=paypal&style=for-the-badge" alt="Donate with PayPal"/>
+</a>
+
+A bug report with a log in it is worth just as much.
 
 ## License
 
