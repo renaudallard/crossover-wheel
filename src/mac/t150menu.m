@@ -25,6 +25,9 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "mac/bootswitch.h"
+#include "t150/t150.h"
+
 #define AGENT_LABEL	@"it.allard.t150d"
 
 @interface T150Menu : NSObject <NSApplicationDelegate, NSWindowDelegate,
@@ -229,26 +232,32 @@
 }
 
 /*
- * Asking IOKit whether the wheel is on the bus, which needs no device open
- * and no root. Either product id counts: the boot one means it is plugged in
- * but not yet switched, which the daemon does by itself once it runs.
+ * Whether the wheel is on the bus, asked the same way the daemon asks: by
+ * vendor and product id, through the IOKit helper t150boot and the daemon
+ * already share. It needs no device open and no root.
+ *
+ * This used to run ioreg and look for a registry entry named T150, which was
+ * a guess and was wrong. The menu said no wheel found while a game was being
+ * driven by that very wheel, which is worse than saying nothing: it invites
+ * somebody to go hunting for a fault that is not there.
+ *
+ * Both product ids count. The boot one means it is plugged in but not yet
+ * switched, which the daemon does by itself once it runs.
  */
 - (BOOL)wheelPresent
 {
-	NSTask *t = [[NSTask alloc] init];
-	NSPipe *p = [NSPipe pipe];
+	io_service_t s;
 
-	t.executableURL = [NSURL fileURLWithPath:@"/usr/sbin/ioreg"];
-	t.arguments = @[ @"-r", @"-n", @"T150", @"-l" ];
-	t.standardOutput = p;
-	t.standardError = [NSFileHandle fileHandleWithNullDevice];
-	if (![t launchAndReturnError:NULL])
-		return NO;
+	if ((s = t150_usb_find(T150_VID, T150_PID_FIRMWARE)) != IO_OBJECT_NULL) {
+		IOObjectRelease(s);
+		return YES;
+	}
+	if ((s = t150_usb_find(T150_VID, T150_PID_BOOT)) != IO_OBJECT_NULL) {
+		IOObjectRelease(s);
+		return YES;
+	}
 
-	NSData *d = [p.fileHandleForReading readDataToEndOfFile];
-	[t waitUntilExit];
-
-	return d.length > 0;
+	return NO;
 }
 
 #pragma mark - the daemon
@@ -407,47 +416,68 @@
 	}
 
 	NSWindow *w = [[NSWindow alloc]
-	    initWithContentRect:NSMakeRect(0, 0, 560, 420)
-	    styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable)
+	    initWithContentRect:NSMakeRect(0, 0, 620, 460)
+	    styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+	    NSWindowStyleMaskResizable)
 	    backing:NSBackingStoreBuffered defer:NO];
-	w.title = @"crossover-wheel setup";
+	w.title = @"crossover-wheel";
 	w.delegate = self;
 	w.releasedWhenClosed = NO;
+	w.titlebarAppearsTransparent = NO;
+	w.minSize = NSMakeSize(520, 380);
 
 	NSView *v = w.contentView;
 
+	/*
+	 * Every colour here is a semantic one rather than a literal. The log
+	 * view was left at its default, which is black on white, and on a
+	 * machine in dark mode that is black text the reader cannot see. A
+	 * system colour is two values, and macOS picks the right one.
+	 */
 	NSTextField *l1 = [NSTextField labelWithString:
 	    @"Which CrossOver bottle is the game in?"];
-	l1.frame = NSMakeRect(20, 372, 400, 20);
+	l1.font = [NSFont systemFontOfSize:[NSFont systemFontSize]
+	    weight:NSFontWeightSemibold];
+	l1.frame = NSMakeRect(24, 408, 420, 22);
 	[v addSubview:l1];
 
 	self.bottles = [[NSPopUpButton alloc]
-	    initWithFrame:NSMakeRect(20, 342, 300, 26) pullsDown:NO];
+	    initWithFrame:NSMakeRect(24, 372, 340, 26) pullsDown:NO];
 	[self.bottles addItemsWithTitles:[self findBottles]];
 	[v addSubview:self.bottles];
 
-	NSTextField *l2 = [NSTextField labelWithString:
-	    @"The proxy goes into that bottle. Nothing else is touched."];
-	l2.frame = NSMakeRect(20, 306, 460, 20);
-	l2.textColor = [NSColor secondaryLabelColor];
-	[v addSubview:l2];
-
 	self.install = [NSButton buttonWithTitle:@"Install"
 	    target:self action:@selector(runInstall:)];
-	self.install.frame = NSMakeRect(440, 338, 100, 32);
+	self.install.frame = NSMakeRect(486, 370, 110, 32);
+	self.install.bezelStyle = NSBezelStyleRounded;
 	self.install.keyEquivalent = @"\r";
 	[v addSubview:self.install];
 
-	NSScrollView *sc = [[NSScrollView alloc]
-	    initWithFrame:NSMakeRect(20, 20, 520, 268)];
-	sc.hasVerticalScroller = YES;
-	sc.borderType = NSBezelBorder;
+	NSTextField *l2 = [NSTextField labelWithString:
+	    @"The proxy goes into that bottle. Nothing else is touched."];
+	l2.frame = NSMakeRect(24, 344, 520, 18);
+	l2.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
+	l2.textColor = [NSColor secondaryLabelColor];
+	[v addSubview:l2];
 
-	self.out = [[NSTextView alloc]
-	    initWithFrame:sc.contentView.bounds];
+	NSScrollView *sc = [[NSScrollView alloc]
+	    initWithFrame:NSMakeRect(24, 24, 572, 300)];
+	sc.hasVerticalScroller = YES;
+	sc.borderType = NSNoBorder;
+	sc.drawsBackground = YES;
+	sc.backgroundColor = [NSColor textBackgroundColor];
+	sc.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+	sc.wantsLayer = YES;
+	sc.layer.cornerRadius = 8;
+
+	self.out = [[NSTextView alloc] initWithFrame:sc.contentView.bounds];
 	self.out.editable = NO;
+	self.out.drawsBackground = YES;
+	self.out.backgroundColor = [NSColor textBackgroundColor];
+	self.out.textColor = [NSColor labelColor];
 	self.out.font = [NSFont monospacedSystemFontOfSize:11
 	    weight:NSFontWeightRegular];
+	self.out.textContainerInset = NSMakeSize(8, 8);
 	self.out.autoresizingMask = NSViewWidthSizable;
 	sc.documentView = self.out;
 	[v addSubview:sc];
@@ -565,7 +595,18 @@
 	if (self.out == nil || s.length == 0)
 		return;
 
-	[self.out.textStorage.mutableString appendString:s];
+	/*
+	 * Appending through the storage keeps the view's typing attributes,
+	 * which do not include a colour, so anything added this way falls
+	 * back to black. Say the colour with the text.
+	 */
+	NSDictionary *attrs = @{
+		NSForegroundColorAttributeName : [NSColor labelColor],
+		NSFontAttributeName : self.out.font,
+	};
+
+	[self.out.textStorage appendAttributedString:
+	    [[NSAttributedString alloc] initWithString:s attributes:attrs]];
 	[self.out scrollRangeToVisible:
 	    NSMakeRange(self.out.string.length, 0)];
 }

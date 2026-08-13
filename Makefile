@@ -261,7 +261,7 @@ APP_RES	   = $(APP)/Contents/Resources
 # directory there: both ship to users as debris in an application nobody can
 # attach a debugger to anyway. It includes nothing but Cocoa, so it needs no
 # include path either.
-APP_CFLAGS = -O2 -fobjc-arc $(WARNINGS)
+APP_CFLAGS = -O2 -fobjc-arc -Iinclude -Isrc $(WARNINGS)
 
 ifeq ($(UNAME_S),Darwin)
 app: $(APP)
@@ -274,7 +274,8 @@ $(APP): src/mac/t150menu.m dist/Info.plist $(TOOL_BINS) $(PROBE_BINS) \
 	iconutil -c icns dist/icons/AppIcon.iconset -o $(APP_RES)/AppIcon.icns
 	cp dist/icons/menubar/*.png $(APP_RES)/
 	$(CC) $(APP_CFLAGS) -o $(APP)/Contents/MacOS/t150menu \
-	    src/mac/t150menu.m -framework Cocoa
+	    src/mac/t150menu.m src/mac/bootswitch.c \
+	    -framework Cocoa -framework IOKit
 	cp install.sh $(APP_RES)/
 	cp $(DAEMON_BIN) $(TOOL_BINS) $(PROBE_BINS) $(APP_RES)/
 	cp man/*.1 man/*.7 man/*.8 $(APP_RES)/
