@@ -376,6 +376,7 @@ main(void)
 	 */
 	{
 		int bad = connect_to(port);
+		size_t mark;
 		uint8_t g[4];
 		struct timespec nap = { 0, 200 * 1000 * 1000 };
 
@@ -388,15 +389,27 @@ main(void)
 		 */
 		(void)nanosleep(&nap, NULL);
 
+		/*
+		 * From here rather than from the start of the log. Both of
+		 * these packets have already been written once by this run,
+		 * the half gain by the first SET_GAIN and the full one by the
+		 * hello, so searching from offset 0 returned at once without
+		 * reading a byte and the two checks below asserted nothing.
+		 * The file says so at wait_for_after, and these were the two
+		 * places that fell into it.
+		 */
+		mark = loghave;
+
 		/* Say nothing at all, then check the first client still works. */
 		put_u32(g, 5000);
 		if (send_frame(fd, T150_OP_SET_GAIN, g, 4) != 0)
 			fail("the original client lost its socket");
 		expect_ok(fd, "the original client was displaced by a silent peer");
-		if (wait_for(pipefd[0], "write 2: 43 40\n") != 0)
+		if (wait_for_after(pipefd[0], "write 2: 43 40\n", mark) != 0)
 			fail("the original client's gain did not reach the wheel");
 
 		/* A wrong token is refused and buys nothing either. */
+		mark = loghave;
 		if (send_frame(bad, T150_OP_HELLO, (const uint8_t *)
 		    "ffffffffffffffffffffffffffffffff", T150_TOKEN_LEN) != 0)
 			fail("cannot send a bad token");
@@ -404,7 +417,7 @@ main(void)
 		if (send_frame(fd, T150_OP_SET_GAIN, g, 4) != 0)
 			fail("the original client lost its socket");
 		expect_ok(fd, "a bad token displaced the original client");
-		if (wait_for(pipefd[0], "write 2: 43 80\n") != 0)
+		if (wait_for_after(pipefd[0], "write 2: 43 80\n", mark) != 0)
 			fail("the original client stopped reaching the wheel");
 
 		(void)close(bad);
