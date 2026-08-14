@@ -538,6 +538,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		[self note:@"The wheel did not take that rotation. Is it "
 		    "plugged in and out of boot mode?"];
 
+	[self daemonSettingsChanged];
 	[self tick:sender.menu tag:deg];
 	[self refresh];
 }
@@ -553,6 +554,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		[self note:@"The wheel did not take that. Is it plugged in "
 		    "and out of boot mode?"];
 
+	[self daemonSettingsChanged];
 	[self tick:sender.menu tag:v];
 	[self refresh];
 }
@@ -724,6 +726,22 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		return;
 	}
 
+	if ([self writeLoginAgent])
+		[self say:@"start at login turned on, from the next login\n"];
+	else
+		[self say:@"could not write the login item\n"];
+
+	[self refresh];
+}
+
+/*
+ * The login item, which carries the rotation and the spring on its command
+ * line. Written again whenever either of those changes, or the next login
+ * would start a daemon that restates the value the user has just replaced.
+ */
+- (BOOL)writeLoginAgent
+{
+	NSString *path = [self agentPath];
 	NSDictionary *plist = @{
 		@"Label" : AGENT_LABEL,
 		@"ProgramArguments" : [self loginArguments],
@@ -742,12 +760,41 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	    [path stringByDeletingLastPathComponent]
 	    withIntermediateDirectories:YES attributes:nil error:NULL];
 
-	if ([plist writeToFile:path atomically:YES])
-		[self say:@"start at login turned on, from the next login\n"];
-	else
-		[self say:@"could not write the login item\n"];
+	return [plist writeToFile:path atomically:YES];
+}
 
-	[self refresh];
+/*
+ * The rotation and the spring reach the wheel through t150ctl the moment they
+ * are picked, and that is not the whole job: the daemon takes both on its
+ * command line and restates them on every hello and every re-acquire, so the
+ * value it was started with would overwrite the new one as soon as a game
+ * connected or the wheel was replugged. The menu went on showing the tick
+ * against a number the wheel was no longer at.
+ *
+ * So the login item is rewritten, and our own daemon is restarted to pick the
+ * change up. Restarting is only done while nothing is being driven: taking the
+ * wheel from a running game to tidy up a setting is worse than the setting
+ * being restated after the next replug, so with a game connected the change
+ * stands on the wheel now and is said to be temporary.
+ */
+- (void)daemonSettingsChanged
+{
+	if ([self loginEnabled])
+		(void)[self writeLoginAgent];
+
+	if (self.daemon == nil || !self.daemon.isRunning)
+		return;
+
+	if (self.clientConnected) {
+		[self say:@"the wheel has the new setting; the daemon will "
+		    "restate the old one after a replug until it is "
+		    "restarted\n"];
+		return;
+	}
+
+	[self.daemon terminate];
+	[self.daemon waitUntilExit];
+	[self startDaemon];
 }
 
 #pragma mark - the setup window
