@@ -405,8 +405,15 @@ stop_asking(void)
  * Wait until the person says they are ready. This is also the moment the
  * tool learns whether stdin can answer at all, before the first watch
  * rather than six seconds into it.
+ *
+ * Returns 1 when a person was actually reached, 0 when there is nobody there.
+ * The identification walk can carry on unattended and record every row as
+ * never answered, which is the point of it. Driving the wheel cannot: the
+ * force feedback test asks somebody to hold the wheel and then pulls it at
+ * eighty percent, and doing that after establishing that no warning can reach
+ * anyone is the one thing here that could hurt.
  */
-static void
+static int
 ready(const char *what)
 {
 	char text[300];
@@ -420,17 +427,21 @@ ready(const char *what)
 		while (c != '\n' && c != EOF)
 			c = getchar();
 		if (c == '\n')
-			return;
+			return 1;
 		ask_by_box = 1;
 		out("stdin cannot answer; asking on screen instead\n");
 	}
 
 	if (nobody_to_ask)
-		return;
+		return 0;
 
 	(void)snprintf(text, sizeof(text), "%s\n\nOK starts.", what);
-	if (ask_box(text, MB_OK) <= 0)
+	if (ask_box(text, MB_OK) <= 0) {
 		stop_asking();
+		return 0;
+	}
+
+	return 1;
 }
 
 /*
@@ -789,7 +800,7 @@ identify(void)
 	unsigned skipped = 0, disputed = 0, unanswered = 0;
 
 	out("\n--- identification ---\n");
-	ready("One control at a time. Let go of everything else, and press\n"
+	(void)ready("One control at a time. Let go of everything else, and press\n"
 	    "each one fully so its whole travel is recorded.");
 
 	for (i = 0; i < n; i++) {
@@ -868,7 +879,11 @@ ffb_test(void)
 	char text[200];
 
 	out("\n--- force feedback self test ---\n");
-	ready("HOLD THE WHEEL. Two effects, a few seconds each.");
+	if (!ready("HOLD THE WHEEL. Two effects, a few seconds each.")) {
+		out("  nobody could be warned, so no force was commanded.\n"
+		    "  Run this where a person can answer.\n");
+		return -1;
+	}
 
 	memset(&cf, 0, sizeof(cf));
 	cf.lMagnitude = 8000;		/* 80 percent, one direction */
@@ -936,7 +951,7 @@ ffb_test(void)
 		return -1;
 	}
 
-	ready("Now the damper. Turn the wheel while it runs.");
+	(void)ready("Now the damper. Turn the wheel while it runs.");
 
 	hr = IDirectInputEffect_Start(e, 1, 0);
 	out("  damper: Start %s (0x%08lx)\n",
