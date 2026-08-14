@@ -46,9 +46,9 @@ both were felt on the wheel.
 swaps the backend for a log, which is how the rest of the stack is exercised
 without hardware.
 .It Nm t150-dinput8.dll
-The in-bottle proxy. It loads in a real bottle and chain-loads CrossOver's
-builtin, proven with regsvr32 under loaddll tracing; its force feedback
-surface has never been exercised by a game. It is installed
+The in-bottle proxy. It loads in a real bottle, chain-loads CrossOver's
+builtin, and carries a game's force feedback: Assetto Corsa creates its
+effects through it and the wheel renders them. It is installed
 as
 .Pa dinput8.dll
 in the bottle's
@@ -114,10 +114,11 @@ switched a wheel,
 .Nm t150ctl
 talked to one, the daemon opened one unprivileged and stopped a runaway
 effect on its way out, and the proxy loaded in a CrossOver bottle and
-chain-loaded the builtin behind it. An effect has since crossed the loopback
-and been felt on the wheel, played by the in-bottle probe with no game
-involved. What has not happened is a game reaching the wheel: no game has
-created a device through the proxy and asked for a force.
+chain-loaded the builtin behind it. Effects have since crossed the loopback
+and been felt on the wheel, first from the in-bottle probe with no game
+involved and then from a game: Assetto Corsa creates its effects through the
+proxy and drives a T150 through the whole stack, which is what the project was
+built to do.
 .Pp
 The measurement the project was gated on has been made and it succeeded: an
 unprivileged
