@@ -144,9 +144,14 @@ endpoint_path(char *out, size_t outlen)
 	 * guess is checked against the filesystem, and when it misses, every
 	 * home under Z:\Users is tried, because the one running the daemon
 	 * has the endpoint file and the others have nothing.
+	 *
+	 * Bounded the same way as the read above, and for the same reason: a
+	 * variable that did not fit returns the size it needed and leaves the
+	 * buffer untouched, so testing only for non-zero would hand an
+	 * uninitialised path on to snprintf.
 	 */
-	if (GetEnvironmentVariableA("USERNAME", user, sizeof(user)) > 0 &&
-	    endpoint_under(user, out, outlen) == 0)
+	n = GetEnvironmentVariableA("USERNAME", user, (DWORD)sizeof(user));
+	if (n > 0 && n < sizeof(user) && endpoint_under(user, out, outlen) == 0)
 		return 0;
 
 	if ((h = FindFirstFileA("Z:\\Users\\*", &fd)) == INVALID_HANDLE_VALUE)
