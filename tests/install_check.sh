@@ -60,12 +60,29 @@ build_tree()
 	cp "$root/install.sh" "$work/stage/"
 
 	for b in "$@"; do
-		# A 64-bit prefix has both; a 32-bit one has system32 alone.
 		mkdir -p "$work/bottles/$b/drive_c/windows/system32" \
 		    "$work/bottles/$b/drive_c/windows/syswow64"
+		# What the installer reads to tell an x86_64 bottle from an
+		# i386 one, so every run here exercises that question.
+		make_pe "$work/bottles/$b/drive_c/windows/system32/kernel32.dll" \
+		    '\144\206'
 		printf '[Bottle]\n"Template" = "win10_64"\n' \
 		    > "$work/bottles/$b/cxbottle.conf"
 	done
+}
+
+# A file with just enough PE about it to carry a machine type: the signature
+# offset at byte 60, the signature at 128, and the machine word after it.
+make_pe()
+{
+	{
+		printf 'MZ'
+		dd if=/dev/zero bs=1 count=58 2>/dev/null
+		printf '\200\000\000\000'
+		dd if=/dev/zero bs=1 count=64 2>/dev/null
+		printf 'PE\000\000'
+		printf "$2"
+	} > "$1"
 }
 
 # Run install.sh with the synthetic tree, feeding it $1 on stdin.
@@ -250,18 +267,33 @@ test_a_third_party_wrapper_is_never_lost()
 }
 
 # The proxy and the builtin copied beside it are both x86_64, so a 32-bit
-# bottle cannot use either. system32 exists in one too, which is why the test
-# that carried this message could never fail.
+# bottle cannot use either. What says which it is, is the architecture of what
+# is already in system32.
 test_a_32_bit_bottle_is_refused()
+{
+	build_tree alpha
+	make_pe "$work/bottles/alpha/drive_c/windows/system32/kernel32.dll" \
+	    '\114\001'
+
+	run_install "" --no-binaries --no-app &&
+	    fail "a 32-bit bottle was installed into"
+	grep -q 'is 32-bit' "$work/out" ||
+	    fail "it did not say why"
+	installed_in alpha && fail "a 32-bit bottle was written to anyway"
+}
+
+# And the absence of syswow64 says nothing: it is where a prefix keeps its
+# 32-bit DLLs, and a bottle that needs none has none. Refusing on that blocked
+# the install outright for every bottle built without 32-bit support.
+test_a_bottle_without_syswow64_is_still_installed_into()
 {
 	build_tree alpha
 	rmdir "$work/bottles/alpha/drive_c/windows/syswow64"
 
-	run_install "" --no-binaries --no-app &&
-	    fail "a 32-bit bottle was installed into"
-	grep -q 'not 64-bit' "$work/out" ||
-	    fail "it did not say why"
-	installed_in alpha && fail "a 32-bit bottle was written to anyway"
+	run_install "" --no-binaries --no-app ||
+	    fail "a 64-bit bottle with no syswow64 was refused"
+	installed_in alpha ||
+	    fail "nothing was installed into it"
 }
 
 # The bundle is built into build/bin, and this looked for it beside the script
@@ -305,6 +337,7 @@ test_the_builtin_is_what_lands_beside_the_proxy
 test_the_hidapi_setting_is_matched_by_value
 test_a_third_party_wrapper_is_never_lost
 test_a_32_bit_bottle_is_refused
+test_a_bottle_without_syswow64_is_still_installed_into
 test_the_application_is_installed_when_it_is_there
 test_dry_run_changes_nothing
 

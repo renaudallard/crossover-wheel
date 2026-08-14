@@ -92,6 +92,20 @@ is_wine_builtin()
 	head -c 128 "$1" 2>/dev/null | LC_ALL=C grep -a -q 'Wine builtin DLL'
 }
 
+# The machine a PE was built for, as four hex digits, or nothing when the file
+# cannot be read as one. The DOS header carries the offset of the PE signature
+# at byte 60, and the machine word is the first field after that signature.
+pe_machine()
+{
+	off=$(od -An -tu4 -j60 -N4 "$1" 2>/dev/null | tr -d ' ')
+	case ${off:-x} in
+	''|*[!0-9]*)	return 1 ;;
+	esac
+	[ "$off" -gt 0 ] || return 1
+
+	od -An -tx2 -j$((off + 4)) -N2 "$1" 2>/dev/null | tr -d ' \n'
+}
+
 # Our proxy is a PE, and carries strings no builtin has. Both halves matter:
 # this repository's own README mentions T150_ENDPOINT, so the marker alone
 # says yes to a text file, and -d pointed at the wrong thing should fail here
@@ -347,14 +361,30 @@ install_proxy()
 	sys32=$bdir/drive_c/windows/system32
 	[ -d "$sys32" ] || die "no system32 in bottle '$BOTTLE'"
 
-	# system32 exists in a 32-bit prefix too: there it is where the i386
-	# DLLs live, and there is no syswow64 at all. So the directory that
-	# tells the two apart is syswow64, and the test that used to carry
-	# this message could not fail for either. The proxy is an x86_64 PE
-	# and so is the builtin copied beside it, and a 32-bit bottle would
-	# have taken both and reported "both files verified".
-	[ -d "$bdir/drive_c/windows/syswow64" ] ||
-	    die "bottle '$BOTTLE' is not 64-bit, and the proxy is an x86_64 DLL"
+	# The proxy is an x86_64 PE and so is the builtin copied beside it, so a
+	# 32-bit bottle takes both without complaint and can load neither.
+	#
+	# Asked of what is already in system32, rather than of whether syswow64
+	# is there. syswow64 is where a prefix keeps its 32-bit DLLs, and this
+	# refused any bottle that had none: CrossOver 27 has no 32-bit bottles
+	# at all, so a directory that exists to support them is not the thing
+	# that says whether an x86_64 DLL can go in. Refusing on the absence of
+	# something optional blocks the install outright; refusing on the
+	# presence of an i386 PE is the same answer with nothing inferred.
+	# The list is a list because a candidate may be there and still not
+	# answer: truncated, replaced by something that is not a PE, or a
+	# broken link. Stopping at the first that merely exists made the other
+	# two dead in the one case they are for, so the loop ends on an answer
+	# rather than on a file. No answer at all leaves the bottle accepted,
+	# which is the safe way to be wrong here.
+	for c in kernel32.dll ntdll.dll user32.dll; do
+		machine=$(pe_machine "$sys32/$c") || continue
+		[ -n "$machine" ] || continue
+		if [ "$machine" = "014c" ]; then
+			die "bottle '$BOTTLE' is 32-bit, and the proxy is an x86_64 DLL"
+		fi
+		break
+	done
 
 	if ! builtin=$(find_builtin "$bdir"); then
 		warn "cannot find CrossOver's builtin dinput8.dll under"
