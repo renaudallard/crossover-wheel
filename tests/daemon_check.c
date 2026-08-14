@@ -157,6 +157,14 @@ static void
 reset_session(void)
 {
 	t150_session_init(&sess, &be, TOKEN);
+	/*
+	 * Agreeing with the backend to start with, which is what a session
+	 * opened against a daemon that has just acquired the wheel does. Tests
+	 * that want a re-acquire bump be.epoch themselves; without this, every
+	 * test placed after one of those inherited the mismatch and saw an
+	 * extra settings restatement on its first tick.
+	 */
+	sess.epoch = be.epoch;
 	(void)fflush(logfp);
 	consumed = loglen;
 }
@@ -1086,6 +1094,257 @@ test_reset_reports_a_stop_the_wheel_refused(void)
 }
 
 /*
+ * DESTROY is the one opcode that erases a slot the wheel may still be
+ * playing, and no test sent it. The proxy sends it on the last Release of an
+ * effect and on Unload, without a Stop first, so a game releasing a running
+ * effect goes straight down this path: the stop inside it is the only thing
+ * in the daemon that can ever stop that effect.
+ */
+static void
+test_destroy_stops_the_effect_and_releases_the_slot(void)
+{
+	uint8_t slot = 0;
+	uint8_t start[2];
+
+	reset_session();
+	hello(0);
+	load_and_play(0, 0);
+	(void)tick(0);
+	drain_log();
+
+	frame(T150_OP_EFFECT_DESTROY, &slot, 1, 10, T150_OP_OK, T150_ERR_NONE);
+	expect_log("destroying a playing effect stops it first",
+	    "write 4: 41 00 00 01\n");
+
+	/* The slot is gone, so nothing can be started in it. */
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 20, T150_OP_ERROR,
+	    T150_ERR_BAD_SLOT);
+
+	/* And the watchdog has nothing left to stop. */
+	(void)tick(T150_WATCHDOG_MS + 20);
+	expect_log("a destroyed slot leaves the watchdog only the autocenter",
+	    "write 4: 40 03 00 00\n"
+	    "write 4: 40 04 00 00\n");
+}
+
+/*
+ * A per-effect gain scales the envelope with the force it rides on. Left
+ * alone, a halved effect kept a full strength attack and fade and pushed
+ * harder at the ends than in the middle. The word envelope did not appear in
+ * this file, so the fix had no test.
+ */
+static void
+test_gain_scales_the_envelope(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+
+	reset_session();
+	hello(0);
+
+	constant(&ef, 0, 10000);
+	ef.gain = T150_DI_MAX / 2;
+	ef.envelope.present = 1;
+	ef.envelope.attack_time = 1000000;
+	ef.envelope.attack_level = 10000;
+	ef.envelope.fade_time = 1000000;
+	ef.envelope.fade_level = 10000;
+
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
+	    T150_ERR_NONE);
+	(void)tick(0);
+
+	/*
+	 * Half of the envelope's full scale 0x7f is 0x40, and the levels are
+	 * bytes 5 and 8 of ff_first. The times are unscaled: gain is a
+	 * strength, not a duration.
+	 */
+	expect_log("the envelope levels are halved with the force",
+	    "write 9: 02 1c 00 e8 03 40 e8 03 40\n"
+	    "write 4: 03 0e 00 20\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+}
+
+/*
+ * A ramp is the one effect the daemon recomputes on its own clock, so its
+ * gain is folded in twice: once at upload and once on every slide. test_ramp
+ * runs at full gain, where both calls are no-ops.
+ */
+static void
+test_a_ramp_is_scaled_by_its_gain(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+	uint8_t start[2];
+
+	reset_session();
+	hello(0);
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_RAMP;
+	ef.slot = 2;
+	ef.duration = 1000000;
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX / 2;
+	ef.u.ramp.start = 0;
+	ef.u.ramp.end = 10000;
+
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
+	    T150_ERR_NONE);
+	(void)tick(0);
+	drain_log();
+
+	start[0] = 2;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 1000, T150_OP_OK, T150_ERR_NONE);
+	drain_log();
+
+	/* Halfway along at half gain: a quarter of full scale, 0x40 -> 0x10. */
+	frame(T150_OP_KEEPALIVE, NULL, 0, 1500, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(1500);
+	expect_log("a ramp at half gain slides to a quarter",
+	    "write 4: 03 46 00 10\n"
+	    "write 4: 41 02 41 01\n");
+}
+
+/*
+ * The emitter writes at most four slots a pass and resumes where it stopped,
+ * which is what keeps a storm on the low slots from starving the high ones.
+ * No test made more than two slots dirty, so neither the cap nor the cursor
+ * was ever reached.
+ */
+static void
+test_the_pass_is_capped_and_resumes(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+	int i;
+
+	reset_session();
+	hello(0);
+
+	for (i = 0; i < 6; i++) {
+		constant(&ef, (uint8_t)i, 10000);
+		frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0,
+		    T150_OP_OK, T150_ERR_NONE);
+	}
+	drain_log();
+
+	/*
+	 * Four slots, identified by their parameter keys: slot 0 is 0x1c and
+	 * 0x0e, and each slot after it is 0x1c further on.
+	 */
+	(void)tick(0);
+	expect_log("the first pass carries four slots and stops",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 40\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n"
+	    "write 9: 02 38 00 00 00 00 00 00 00\n"
+	    "write 4: 03 2a 00 40\n"
+	    "write 15: 01 01 00 40 ff ff 00 00 00 2a 00 38 00 00 00\n"
+	    "write 9: 02 54 00 00 00 00 00 00 00\n"
+	    "write 4: 03 46 00 40\n"
+	    "write 15: 01 02 00 40 ff ff 00 00 00 46 00 54 00 00 00\n"
+	    "write 9: 02 70 00 00 00 00 00 00 00\n"
+	    "write 4: 03 62 00 40\n"
+	    "write 15: 01 03 00 40 ff ff 00 00 00 62 00 70 00 00 00\n");
+
+	(void)tick(T150_EMIT_MS);
+	expect_log("and the next resumes where it left off",
+	    "write 9: 02 8c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 7e 00 40\n"
+	    "write 15: 01 04 00 40 ff ff 00 00 00 7e 00 8c 00 00 00\n"
+	    "write 9: 02 a8 00 00 00 00 00 00 00\n"
+	    "write 4: 03 9a 00 40\n"
+	    "write 15: 01 05 00 40 ff ff 00 00 00 9a 00 a8 00 00 00\n");
+}
+
+/*
+ * flush_slot records each packet only once its own write has succeeded, so
+ * that a burst which fails part way through leaves the slot believing exactly
+ * what reached the wheel. Refusing every write or none cannot reach that: the
+ * coalescer suppresses any packet whose bytes match what it believes was
+ * sent, so a slot that recorded bytes the wheel never got would drop that
+ * packet for good.
+ */
+static void
+test_a_burst_that_fails_part_way_is_finished_later(void)
+{
+	struct t150_effect ef;
+
+	reset_session();
+	hello(0);
+
+	/* The upload is three packets; refuse the third. */
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	fail_write_number(3);
+	(void)tick(0);
+	fail_write_number(0);
+	drain_log();
+
+	frame(T150_OP_KEEPALIVE, NULL, 0, 10, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(10);
+
+	/*
+	 * The whole set, because a commit that is not on the wheel means the
+	 * effect is being defined rather than moved. What matters is that
+	 * anything goes at all: had flush_slot recorded all three before
+	 * writing them, the bytes would have matched on this pass and the
+	 * effect would have sat on the wheel for ever without its commit.
+	 */
+	expect_log("a burst that failed part way is finished on the next pass",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 40\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+}
+
+/*
+ * The re-acquire guard holds the replayed starts until the parameters are on
+ * the wheel. Every existing test has the emission pass run in the same tick
+ * as the epoch change, so the slots are clean by the time the guard is
+ * evaluated and it never decides anything.
+ */
+static void
+test_the_replay_waits_for_the_parameters(void)
+{
+	struct t150_effect ef;
+
+	reset_session();
+	hello(0);
+	load_and_play(0, 0);
+
+	/*
+	 * A pass at t=0 puts the emit floor in front of the tick below, which
+	 * is what makes the guard decide anything: with the pass free to run
+	 * in the same tick as the epoch change, the slots are clean by the
+	 * time it is evaluated whichever way it is written.
+	 */
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+	drain_log();
+
+	frame(T150_OP_KEEPALIVE, NULL, 0, 1, T150_OP_OK, T150_ERR_NONE);
+	be.epoch++;
+	(void)tick(1);
+	if (log_contains("41 00 41"))
+		fail("the start was replayed before the parameters went");
+
+	/* The tick after the floor carries the parameters, then the start. */
+	frame(T150_OP_KEEPALIVE, NULL, 0, 1 + T150_EMIT_MS, T150_OP_OK,
+	    T150_ERR_NONE);
+	(void)tick(1 + T150_EMIT_MS);
+	expect_log("the parameters go first and the start follows them",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 40\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n"
+	    "write 4: 41 00 41 01\n");
+}
+
+/*
  * The write happens after the frame that caused it has been answered, so a
  * device error has nowhere to go but the next upload. It is reported there
  * and on nothing else: the proxy drops its socket on an error reply to a
@@ -1773,6 +2032,12 @@ main(void)
 	test_a_refused_stop_is_not_replayed_as_a_start();
 	test_stop_all_tries_every_slot_before_reporting();
 	test_reset_reports_a_stop_the_wheel_refused();
+	test_destroy_stops_the_effect_and_releases_the_slot();
+	test_gain_scales_the_envelope();
+	test_a_ramp_is_scaled_by_its_gain();
+	test_the_pass_is_capped_and_resumes();
+	test_a_burst_that_fails_part_way_is_finished_later();
+	test_the_replay_waits_for_the_parameters();
 	test_device_error_is_reported_on_the_next_upload();
 	test_backend_epoch_reuploads_everything();
 	test_a_re_acquire_restores_the_clients_gain();
