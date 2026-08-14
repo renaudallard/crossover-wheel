@@ -143,10 +143,12 @@ write returns success, **and the wheel physically obeys them**. Section 6 has
 the measurement.
 
 The protocol record was corrected against `scarburato/t150_driver` before any
-encoder was written. Three of PROTOCOL.md's force feedback values did not
-exist in the driver it cites, and square and triangle were recorded as native
-effects the wheel has no type code for. If you are holding notes older than
-that, discard them.
+encoder was written: three of PROTOCOL.md's force feedback values did not
+exist in the driver it cites. Square and triangle were then recorded as
+effects the wheel has no type code for, which RESEARCH.md A40 falsified by
+taking both codes, 0x4020 and 0x4021, from Thrustmaster's own effect type
+table. Both are native and neither is downgraded. If you are holding notes
+older than that, discard them.
 
 ## 6. The gate, and its answer
 
@@ -227,9 +229,12 @@ refuses. All DirectInput to wire conversion lives here and nowhere else,
 which is what keeps the DLL free of wheel knowledge and the daemon free of
 DirectInput knowledge.
 
-Read the three flagged conversions in [PROTOCOL.md](PROTOCOL.md) before
-trusting the output: the constant level ceiling, the envelope level scaling
-and the 256ms delay unit are derived or guessed rather than transcribed.
+Read the flagged conversion in [PROTOCOL.md](PROTOCOL.md) before trusting the
+output: the constant level ceiling is derived rather than transcribed. The
+envelope level scaling and the start delay unit were on that list and are not
+any more, both settled by A40 against the vendor's descriptor: the envelope
+levels are 0 to 127, and the delay is a whole 16-bit millisecond field rather
+than a byte counting 256s.
 `t150_effect_downgrade()` is here too, so M2 does not have to invent it.
 *Done:* `make test` is green with golden vectors for every packet, derived
 from PROTOCOL.md independently of the encoder, including the `0x43` gain
@@ -281,8 +286,9 @@ never has to be told to start it.
 and `t150ctl autocenter 0` releases the spring, with no password prompt,
 while CrossOver still reads the wheel.
 
-**M4. Proxy DLL. Written, not yet run.** `src/dll/`, cross built with
-mingw-w64 to an x86_64 PE. `make dll` builds it and its test.
+**M4. Proxy DLL. Done.** `src/dll/`, cross built with mingw-w64 to an x86_64
+PE. `make dll` builds it and its test. Assetto Corsa creates its effects
+through it on real hardware and the wheel renders them.
 
 It wraps `IDirectInput8`, `IDirectInputDevice8` and `IDirectInputEffect`, and
 only for the one device whose product id is the wheel's: everything else is
