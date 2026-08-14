@@ -109,7 +109,8 @@ sending.
 time it starts, and says nothing unless there is one; *Check for updates* in
 the menu asks on demand and does answer when there is nothing new. Installing
 one downloads the disk image, checks it against the checksum published beside
-it, verifies its signature and that it identifies itself as this application,
+it and refuses to go on without one, verifies its signature and that it
+identifies itself as this application,
 then replaces itself and starts again. Nothing it downloads carries
 the quarantine flag a browser sets, so an update needs none of the right-click
 Open and dragging the first install did. The old copy is moved aside and only

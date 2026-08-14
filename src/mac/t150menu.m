@@ -1336,8 +1336,34 @@ sha256_of(NSData *d)
 			}
 		}
 
-		if (want != nil &&
-		    ![[sha256_of(img) lowercaseString]
+		/*
+		 * No checksum is a refusal, not a pass.
+		 *
+		 * The gate used to be "if we have one and it does not match",
+		 * so a release without a SHA256SUMS asset, a fetch of it that
+		 * failed, or a file with no .dmg line in it, all installed the
+		 * image with nothing checked. The assets are assembled by hand
+		 * at release time, so a missing one is an ordinary mistake
+		 * rather than an attack, and it must not be the difference
+		 * between checking and not checking.
+		 *
+		 * The signature check further on does not cover this: it says
+		 * the bundle arrived whole and calls itself this application,
+		 * and an ad-hoc signature carries no authority to say who
+		 * built it.
+		 */
+		if (want == nil) {
+			dispatch_async(dispatch_get_main_queue(), ^{
+				[self note:@"That release publishes no "
+				    "checksum, so the download was not "
+				    "verified and nothing was changed. "
+				    "Download it yourself from the releases "
+				    "page if you want it."];
+			});
+			return;
+		}
+
+		if (![[sha256_of(img) lowercaseString]
 		    isEqualToString:[want lowercaseString]]) {
 			dispatch_async(dispatch_get_main_queue(), ^{
 				[self note:@"The download did not match its "
