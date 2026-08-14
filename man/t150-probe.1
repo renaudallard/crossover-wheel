@@ -89,7 +89,11 @@ Which matching HID node to write to. The default is 0.
 HID report id. The default is 0, meaning unnumbered. The payload never
 includes the report id itself.
 .It Fl P
-Zero-pad the payload to the node's declared MaxOutputReportSize.
+Zero-pad the payload to the report's payload length, which is the node's
+declared
+.Li MaxOutputReportSize
+less the report id byte that property counts and the payload does not. On this
+wheel that is fourteen bytes against a declared fifteen.
 .It Fl a Ar force
 Set the autocenter spring to
 .Ar force ,

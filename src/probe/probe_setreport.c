@@ -105,7 +105,9 @@ usage(void)
 	    "  -n node      which matching HID node to write to (default 0)\n"
 	    "  -i id        HID report id (default 0, meaning unnumbered)\n"
 	    "               the payload never includes the report id itself\n"
-	    "  -P           zero-pad the payload to MaxOutputReportSize\n"
+	    "  -P           zero-pad the payload to the report's payload\n"
+	    "               length, which is MaxOutputReportSize less the\n"
+	    "               report id byte that property counts\n"
 	    "\n"
 	    "  -a force     set autocenter spring to force (0..100) and enable\n"
 	    "               it, the default action with force 100\n"
@@ -285,15 +287,26 @@ main(int argc, char *argv[])
 	(void)probe_get_long(dev, CFSTR(kIOHIDMaxOutputReportSizeKey),
 	    &maxout);
 
+	/*
+	 * MaxOutputReportSize counts the report id and the payload does not.
+	 * On this wheel the only output report is id 0x0A with fourteen bytes,
+	 * and the property is fifteen: padding to it overshot the report by
+	 * exactly one byte, which is the opposite of what the -P arm of the
+	 * framing matrix is asking about. The fallback below already pads to
+	 * the payload length, so the two disagreed with each other.
+	 */
+	if (maxout > 0)
+		maxout--;
+
 	if (pad) {
 		if (maxout <= 0) {
-			warnx("node %lu declares no MaxOutputReportSize, "
-			    "padding to %u instead", node, T150_OUT_REPORT_LEN);
+			warnx("node %lu declares no usable "
+			    "MaxOutputReportSize, padding to %u instead", node,
+			    T150_OUT_REPORT_LEN);
 			padto = T150_OUT_REPORT_LEN;
 		} else if ((size_t)maxout > sizeof(pkt[0].bytes)) {
-			warnx("MaxOutputReportSize %ld exceeds this tool's "
-			    "buffer, padding to %zu", maxout,
-			    sizeof(pkt[0].bytes));
+			warnx("a payload of %ld exceeds this tool's buffer, "
+			    "padding to %zu", maxout, sizeof(pkt[0].bytes));
 			padto = sizeof(pkt[0].bytes);
 		} else {
 			padto = (size_t)maxout;
