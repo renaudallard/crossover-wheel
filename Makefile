@@ -208,8 +208,6 @@ $(DAEMONOBJ)/%.o: src/t150d/%.c | $(DAEMONOBJ)
 $(MACOBJ)/%.o: src/mac/%.c | $(MACOBJ)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
-# probe_intr builds its packets with the shared encoders, so the probes link
-# the portable library too.
 $(OBJ)/%.o: src/tools/%.c | $(OBJ)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
@@ -217,7 +215,11 @@ $(BIN)/t150ctl $(BIN)/t150boot: $(BIN)/%: $(OBJ)/%.o $(PROBE_COMMON) \
     $(LIB_OBJS) $(MAC_OBJS) | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(FRAMEWORKS)
 
-$(BIN)/probe_%: $(OBJ)/probe_%.o $(PROBE_COMMON) $(LIB_OBJS) | $(BIN)
+# probe_intr builds its packets with the shared encoders and probe_ep0 sends
+# the mode switch, so the probes link the portable library and the macOS half
+# beside it, which is the same set the tools link.
+$(BIN)/probe_%: $(OBJ)/probe_%.o $(PROBE_COMMON) $(LIB_OBJS) $(MAC_OBJS) \
+    | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(FRAMEWORKS)
 
 $(DAEMON_BIN): $(DAEMONOBJ)/main.o $(DAEMON_LIB_OBJS) $(DAEMON_EXTRA_OBJS) \

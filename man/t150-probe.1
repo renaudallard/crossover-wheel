@@ -234,6 +234,15 @@ For
 a zero exit is necessary but not sufficient: macOS can accept a report the
 firmware then ignores, so what settles the run is whether the wheel
 physically moved.
+.Pp
+The mode switch is the exception to the rule above. The wheel leaves the bus
+before the transfer can complete, so the failures that mean it went, a stall
+among them, are counted as success by
+.Nm probe_ep0 Fl w
+and
+.Nm probe_intr Fl I
+alike. Whether it worked is a question for
+.Nm probe_hid .
 .Sh EXAMPLES
 Record the wheel's identity and descriptors:
 .Pp

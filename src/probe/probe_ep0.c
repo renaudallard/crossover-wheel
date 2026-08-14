@@ -23,12 +23,6 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#include <CoreFoundation/CoreFoundation.h>
-#include <IOKit/IOCFPlugIn.h>
-#include <IOKit/IOKitLib.h>
-#include <IOKit/usb/IOUSBLib.h>
-#include <IOKit/usb/USBSpec.h>
-
 #include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,51 +32,7 @@
 #include "common.h"
 #include "t150/t150.h"
 
-static IOReturn
-model_query(IOUSBDeviceInterface500 **dev, uint8_t *buf, size_t buflen,
-    UInt32 *done)
-{
-	IOUSBDevRequestTO req;
-
-	memset(&req, 0, sizeof(req));
-	memset(buf, 0, buflen);
-
-	req.bmRequestType = T150_RQ_MODEL_TYPE;
-	req.bRequest = T150_RQ_MODEL;
-	req.wValue = 0;
-	req.wIndex = 0;
-	req.wLength = (UInt16)buflen;
-	req.pData = buf;
-	req.noDataTimeout = 1000;
-	req.completionTimeout = 1000;
-
-	*done = 0;
-	{
-		IOReturn r = (*dev)->DeviceRequestTO(dev, &req);
-
-		*done = req.wLenDone;
-		return r;
-	}
-}
-
-static IOReturn
-mode_switch(IOUSBDeviceInterface500 **dev, uint16_t value)
-{
-	IOUSBDevRequestTO req;
-
-	memset(&req, 0, sizeof(req));
-
-	req.bmRequestType = T150_RQ_SWITCH_TYPE;
-	req.bRequest = T150_RQ_SWITCH;
-	req.wValue = value;
-	req.wIndex = 0;
-	req.wLength = 0;
-	req.pData = NULL;
-	req.noDataTimeout = 1000;
-	req.completionTimeout = 1000;
-
-	return (*dev)->DeviceRequestTO(dev, &req);
-}
+#include "mac/bootswitch.h"
 
 static void
 report_model(const uint8_t *buf, size_t len, UInt32 done)
@@ -107,37 +57,6 @@ report_model(const uint8_t *buf, size_t len, UInt32 done)
 		    "-V)\n");
 }
 
-static CFMutableDictionaryRef
-make_match(long vid, long pid)
-{
-	CFMutableDictionaryRef d;
-	CFNumberRef n;
-	SInt32 v;
-
-	if ((d = IOServiceMatching(kIOUSBDeviceClassName)) == NULL)
-		return NULL;
-
-	v = (SInt32)vid;
-	if ((n = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type,
-	    &v)) == NULL) {
-		CFRelease(d);
-		return NULL;
-	}
-	CFDictionarySetValue(d, CFSTR(kUSBVendorID), n);
-	CFRelease(n);
-
-	v = (SInt32)pid;
-	if ((n = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type,
-	    &v)) == NULL) {
-		CFRelease(d);
-		return NULL;
-	}
-	CFDictionarySetValue(d, CFSTR(kUSBProductID), n);
-	CFRelease(n);
-
-	return d;
-}
-
 static void
 usage(void)
 {
@@ -158,14 +77,9 @@ usage(void)
 int
 main(int argc, char *argv[])
 {
-	CFMutableDictionaryRef match;
-	io_iterator_t iter = IO_OBJECT_NULL;
 	io_service_t service;
-	IOCFPlugInInterface **plugin = NULL;
-	IOUSBDeviceInterface500 **dev = NULL;
-	kern_return_t kr;
+	IOUSBDeviceInterface500 **dev;
 	IOReturn r;
-	SInt32 score = 0;
 	UInt32 done = 0;
 	unsigned long parsed;
 	long vid = T150_VID, pid = T150_PID_BOOT;
@@ -205,43 +119,27 @@ main(int argc, char *argv[])
 
 	printf("running as uid %u\n\n", (unsigned int)geteuid());
 
-	if ((match = make_match(vid, pid)) == NULL)
-		errx(1, "cannot build the matching dictionary");
-
-	kr = IOServiceGetMatchingServices(kIOMainPortDefault, match, &iter);
-	if (kr != KERN_SUCCESS)
-		errx(1, "IOServiceGetMatchingServices: 0x%08x",
-		    (unsigned int)kr);
-
-	if ((service = IOIteratorNext(iter)) == IO_OBJECT_NULL) {
-		IOObjectRelease(iter);
+	/*
+	 * The lookup and both transfers are src/mac/bootswitch.c's, which is
+	 * where t150boot and the daemon get them. This tool had its own copies
+	 * and they drifted: the switch below called a stalled transfer a
+	 * failure where the shared test calls it the wheel leaving the bus.
+	 */
+	if ((service = t150_usb_find(vid, pid)) == IO_OBJECT_NULL)
 		errx(1, "no USB device matches %04lx:%04lx", vid, pid);
-	}
 
-	kr = IOCreatePlugInInterfaceForService(service,
-	    kIOUSBDeviceUserClientTypeID, kIOCFPlugInInterfaceID, &plugin,
-	    &score);
+	dev = t150_usb_open(service);
 	IOObjectRelease(service);
-	if (kr != KERN_SUCCESS || plugin == NULL) {
-		IOObjectRelease(iter);
-		errx(1, "IOCreatePlugInInterfaceForService: 0x%08x",
-		    (unsigned int)kr);
-	}
-
-	if ((*plugin)->QueryInterface(plugin,
-	    CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID500),
-	    (LPVOID *)&dev) != S_OK || dev == NULL) {
-		IODestroyPlugInInterface(plugin);
-		IOObjectRelease(iter);
-		errx(1, "QueryInterface for IOUSBDeviceInterface500 failed");
-	}
+	if (dev == NULL)
+		errx(1, "cannot get a device interface for %04lx:%04lx", vid,
+		    pid);
 
 	/*
 	 * Step 1: the request without opening. libusb issues some control
 	 * requests on an unopened device, so this may just work.
 	 */
 	printf("step 1: model query with the device unopened\n");
-	r = model_query(dev, buf, sizeof(buf), &done);
+	r = t150_usb_model(dev, buf, sizeof(buf), &done);
 	printf("  DeviceRequestTO              %s\n", probe_ioreturn_str(r));
 	if (r == kIOReturnSuccess) {
 		report_model(buf, sizeof(buf), done);
@@ -257,7 +155,7 @@ main(int argc, char *argv[])
 		    probe_ioreturn_str(r));
 		if (r == kIOReturnSuccess) {
 			opened = 1;
-			r = model_query(dev, buf, sizeof(buf), &done);
+			r = t150_usb_model(dev, buf, sizeof(buf), &done);
 			printf("  DeviceRequestTO              %s\n",
 			    probe_ioreturn_str(r));
 			if (r == kIOReturnSuccess) {
@@ -292,7 +190,7 @@ main(int argc, char *argv[])
 		    probe_ioreturn_str(r));
 		if (r == kIOReturnSuccess) {
 			opened = 1;
-			r = model_query(dev, buf, sizeof(buf), &done);
+			r = t150_usb_model(dev, buf, sizeof(buf), &done);
 			printf("  DeviceRequestTO              %s\n",
 			    probe_ioreturn_str(r));
 			if (r == kIOReturnSuccess) {
@@ -306,24 +204,29 @@ main(int argc, char *argv[])
 	if (queried && do_switch) {
 		printf("\nsending the mode switch, value 0x%04x\n",
 		    switch_value);
-		r = mode_switch(dev, switch_value);
+		r = t150_usb_switch(dev, switch_value);
 		printf("  DeviceRequestTO              %s\n",
 		    probe_ioreturn_str(r));
 		/*
-		 * kIOReturnNotResponding is the expected answer, not a
-		 * failure. The wheel detaches the moment it accepts the
-		 * switch, so it is gone before the completion can come back.
-		 * Only probe_hid can say whether it worked.
+		 * A failing status is the expected answer rather than a
+		 * failure. The wheel detaches the moment it accepts the switch,
+		 * so it is gone before the completion can come back, and which
+		 * error that surfaces as depends on how far the request had
+		 * got. t150_usb_left_the_bus holds that set, and a stall is the
+		 * one measured on a T150 for a switch that worked: this used to
+		 * accept only kIOReturnNotResponding, so it reported a failure
+		 * and exited non-zero for a switch that had done its job. Only
+		 * probe_hid can say whether it did.
 		 */
-		if (r == kIOReturnSuccess || r == kIOReturnNotResponding)
+		if (r == kIOReturnSuccess || t150_usb_left_the_bus(r))
 			printf("  the wheel should now detach and come back "
 			    "at 0x%04x, check with probe_hid.\n"
 			    "  %s\n", T150_PID_FIRMWARE,
-			    r == kIOReturnNotResponding ?
-			    "not responding is expected here: it left before "
-			    "it could answer." :
+			    r == kIOReturnSuccess ?
 			    "it answered before leaving, which is unusual but "
-			    "fine.");
+			    "fine." :
+			    "that status is the wheel leaving the bus before it "
+			    "could answer, which is expected here.");
 		else
 			rc = 1;
 	}
@@ -336,8 +239,6 @@ main(int argc, char *argv[])
 	if (opened)
 		(void)(*dev)->USBDeviceClose(dev);
 	(void)(*dev)->Release(dev);
-	IODestroyPlugInInterface(plugin);
-	IOObjectRelease(iter);
 
 	return rc;
 }
