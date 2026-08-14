@@ -713,23 +713,62 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	    fileExistsAtPath:[self agentPath]];
 }
 
+/*
+ * The launchd domain the login item lives in. Everything a user's own agents
+ * do happens in the gui domain for their uid.
+ */
+- (NSString *)agentDomain
+{
+	return [NSString stringWithFormat:@"gui/%u", (unsigned)getuid()];
+}
+
 - (void)toggleLogin:(id)sender
 {
 	(void)sender;
 	NSString *path = [self agentPath];
 
+	/*
+	 * launchd does not watch the file. A job loaded at login stays loaded
+	 * until it is booted out or the session ends, and this one carries
+	 * KeepAlive, so deleting the plist used to change nothing at all about
+	 * the daemon that was running: the menu said the feature was off, the
+	 * daemon kept the wheel, the application could not stop it because it
+	 * only manages its own child, and killing it by hand had launchd start
+	 * it again.
+	 */
 	if ([self loginEnabled]) {
+		[self say:@"start at login turned off\n"];
+		(void)[self run:@"/bin/launchctl" args:@[ @"bootout",
+		    [[self agentDomain] stringByAppendingPathComponent:
+		    AGENT_LABEL] ]];
 		[[NSFileManager defaultManager] removeItemAtPath:path
 		    error:NULL];
-		[self say:@"start at login turned off\n"];
 		[self refresh];
 		return;
 	}
 
-	if ([self writeLoginAgent])
-		[self say:@"start at login turned on, from the next login\n"];
-	else
+	if (![self writeLoginAgent]) {
 		[self say:@"could not write the login item\n"];
+		[self refresh];
+		return;
+	}
+
+	/*
+	 * Hand the daemon over rather than starting a second one. t150d
+	 * refuses to run beside another on the same endpoint, and this job
+	 * carries KeepAlive, so leaving our own child in place would have
+	 * launchd restart a daemon that exits immediately, for ever.
+	 */
+	if (self.daemon != nil && self.daemon.isRunning) {
+		[self.daemon terminate];
+		[self.daemon waitUntilExit];
+	}
+
+	if ([self run:@"/bin/launchctl" args:@[ @"bootstrap",
+	    [self agentDomain], path ]] == 0)
+		[self say:@"start at login turned on, and started\n"];
+	else
+		[self say:@"start at login turned on, from the next login\n"];
 
 	[self refresh];
 }

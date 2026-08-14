@@ -89,6 +89,10 @@ installs.
 Afterwards it lives in the menu bar as a small steering wheel. Start and stop
 the daemon there, see whether the wheel is connected and whether a game is
 pulling on it, and switch on **Start at login** to never think about it again.
+That switch takes effect at once in both directions: turning it on hands the
+daemon to launchd and starts it now, turning it off stops the one that is
+running. Only one daemon runs at a time, so if one was started some other way
+the menu says so and leaves it alone rather than starting a second beside it.
 
 | icon | meaning |
 | --- | --- |
