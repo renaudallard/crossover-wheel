@@ -39,6 +39,7 @@
     NSMenuDelegate>
 @property (strong) NSStatusItem *item;
 @property (strong) NSTask *daemon;
+@property (strong) NSArray *daemonArgs;
 @property (strong) NSWindow *setup;
 @property (strong) NSPopUpButton *bottles;
 @property (strong) NSButton *install;
@@ -647,6 +648,29 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 }
 
 /*
+ * What our own daemon is run with.
+ *
+ * Both settings go to the daemon as well as to the wheel. The wheel forgets
+ * them when it is unplugged, and the daemon is the only thing that notices a
+ * replug and can put them back. Kept as one list so that the question "would
+ * restarting it change anything" has an answer, which is what stops a pick
+ * that changes nothing from taking the wheel away for the length of a restart.
+ */
+- (NSArray *)daemonArguments
+{
+	NSMutableArray *args = [@[ @"-v", @"-w" ] mutableCopy];
+	int deg = [self storedRotation], spring = [self storedSpring];
+
+	[args addObjectsFromArray:@[ @"-r",
+	    [NSString stringWithFormat:@"%d", deg] ]];
+	if (spring > 0)
+		[args addObjectsFromArray:@[ @"-a",
+		    [NSString stringWithFormat:@"%d", spring] ]];
+
+	return args;
+}
+
+/*
  * Started as a child so its -v output belongs to this process. That is where
  * the status line comes from, and it is why this never has to connect to the
  * daemon and risk displacing a game.
@@ -656,20 +680,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	NSTask *t = [[NSTask alloc] init];
 	NSPipe *p = [NSPipe pipe];
 	NSError *err = nil;
-
-	/*
-	 * Both settings go to the daemon as well as to the wheel. The wheel
-	 * forgets them when it is unplugged, and the daemon is the only thing
-	 * that notices a replug and can put them back.
-	 */
-	NSMutableArray *args = [@[ @"-v", @"-w" ] mutableCopy];
-	int deg = [self storedRotation], spring = [self storedSpring];
-
-	[args addObjectsFromArray:@[ @"-r",
-	    [NSString stringWithFormat:@"%d", deg] ]];
-	if (spring > 0)
-		[args addObjectsFromArray:@[ @"-a",
-		    [NSString stringWithFormat:@"%d", spring] ]];
+	NSArray *args = [self daemonArguments];
 
 	t.executableURL = [NSURL fileURLWithPath:[self daemonPath]];
 	t.arguments = args;
@@ -713,6 +724,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 			if (weak.daemon != task)
 				return;
 			weak.daemon = nil;
+			weak.daemonArgs = nil;
 			weak.clientConnected = NO;
 			[weak refresh];
 		});
@@ -725,6 +737,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	}
 
 	self.daemon = t;
+	self.daemonArgs = args;
 	self.clientConnected = NO;
 	[self refresh];
 }
@@ -754,17 +767,20 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	    AGENT_LABEL]];
 }
 
-/* The login item has to carry the same settings the menu does. */
+/*
+ * The login item has to carry the same settings the menu does. The same list
+ * as our own child's, less the -v that only exists so this application can
+ * read the daemon's own words, and with the daemon named first because
+ * launchd wants the program in the arguments.
+ */
 - (NSArray *)loginArguments
 {
-	NSMutableArray *a = [@[ [self daemonPath], @"-w" ] mutableCopy];
-	int deg = [self storedRotation], spring = [self storedSpring];
+	NSMutableArray *a = [@[ [self daemonPath] ] mutableCopy];
 
-	[a addObjectsFromArray:@[ @"-r",
-	    [NSString stringWithFormat:@"%d", deg] ]];
-	if (spring > 0)
-		[a addObjectsFromArray:@[ @"-a",
-		    [NSString stringWithFormat:@"%d", spring] ]];
+	for (NSString *arg in [self daemonArguments]) {
+		if (![arg isEqualToString:@"-v"])
+			[a addObject:arg];
+	}
 
 	return a;
 }
@@ -884,6 +900,17 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		(void)[self writeLoginAgent];
 
 	if (self.daemon == nil || !self.daemon.isRunning)
+		return;
+
+	/*
+	 * A restart costs the wheel its input for as long as it takes: the
+	 * outgoing daemon closes it on the way out and the incoming one opens
+	 * it again on its first acquire, and with it shut the firmware rests
+	 * both pedals at maximum. So it is worth doing only when it would
+	 * change what the daemon restates, which picking the row that is
+	 * already ticked does not.
+	 */
+	if ([[self daemonArguments] isEqualToArray:self.daemonArgs])
 		return;
 
 	if (self.clientConnected) {
