@@ -698,13 +698,15 @@ dev_EnumEffects(IDirectInputDevice8W *self, LPDIENUMEFFECTSCALLBACKW cb,
 		return E_POINTER;
 
 	/*
-	 * Mask before comparing, the way Wine does. This tested type against
-	 * DIEFT_ALL first and only then reduced it, so a caller asking for
-	 * DIEFT_ALL with any flag bit set, DIEFT_FFATTACK say, failed the
-	 * first test and then matched nothing: an empty enumeration returned
-	 * as DI_OK. SDL treats no supported effects as a fatal error and
-	 * abandons force feedback for the device, so this was a silent way to
-	 * lose everything. No caller is known to pass that combination today.
+	 * Mask before comparing, the way Wine does, and compare the masked
+	 * value: the reduction was added but the test below still used the
+	 * raw type, so a caller asking for DIEFT_ALL with any flag bit set,
+	 * DIEFT_FFATTACK say, failed "not DIEFT_ALL" and then matched
+	 * nothing, because no entry has a type nibble of zero. That is an
+	 * empty enumeration returned as DI_OK. SDL treats no supported
+	 * effects as a fatal error and abandons force feedback for the
+	 * device, so it was a silent way to lose everything. No caller is
+	 * known to pass that combination today.
 	 */
 	want = DIEFT_GETTYPE(type);
 	t150_log("EnumEffects type 0x%08lx\n", (unsigned long)type);
@@ -715,7 +717,7 @@ dev_EnumEffects(IDirectInputDevice8W *self, LPDIENUMEFFECTSCALLBACKW cb,
 			DIEFFECTINFOA a;
 		} info;
 
-		if (type != DIEFT_ALL && DIEFT_GETTYPE(effects[i].type) != want)
+		if (want != DIEFT_ALL && DIEFT_GETTYPE(effects[i].type) != want)
 			continue;
 
 		memset(&info, 0, sizeof(info));
