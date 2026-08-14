@@ -496,17 +496,21 @@ test_gain_reaches_conditions(void)
  * game asked for.
  */
 static void
-test_session_end_closes_the_input(void)
+test_session_end_leaves_the_input_open(void)
 {
 	reset_session();
 	hello(0);
 	drain_log();
 
+	/*
+	 * The daemon still holds the wheel, so it still holds its input open.
+	 * Closing it here rested the pedals at firmware maximum, and the next
+	 * game to enumerate the wheel calibrated them fully pressed.
+	 */
 	t150_session_end(&sess, "test");
-	expect_log("ending a session releases the wheel and closes its input",
+	expect_log("ending a session releases the wheel but not its input",
 	    "write 4: 40 03 00 00\n"
-	    "write 4: 40 04 00 00\n"
-	    "write 2: 42 00\n");
+	    "write 4: 40 04 00 00\n");
 
 	/* The watchdog does not: a quiet client may yet come back. */
 	reset_session();
@@ -517,18 +521,26 @@ test_session_end_closes_the_input(void)
 	    "write 4: 40 03 00 00\n"
 	    "write 4: 40 04 00 00\n");
 
-	/*
-	 * A goodbye is the graceful way out, and it has to close the input
-	 * like any other. The client clears its own hello on the way, so
-	 * anything that decides by asking whether it is still there skips
-	 * the close and leaves the wheel's input open for good.
-	 */
+	/* A goodbye is the graceful way out and ends the same way. */
 	reset_session();
 	hello(0);
 	frame(T150_OP_BYE, NULL, 0, 0, T150_OP_OK, T150_ERR_NONE);
 	drain_log();
 	t150_session_end(&sess, "test");
-	expect_log("a goodbye still closes the wheel's input",
+	expect_log("a goodbye releases the wheel and leaves the input open",
+	    "write 4: 40 03 00 00\n"
+	    "write 4: 40 04 00 00\n");
+
+	/*
+	 * The daemon leaving is the one moment the input is closed, and it is
+	 * closed unconditionally: the backend opens it on its own account too,
+	 * so the last thing said is the safe state outright.
+	 */
+	reset_session();
+	hello(0);
+	drain_log();
+	t150_session_shutdown(&sess, "test");
+	expect_log("shutting down closes the wheel's input",
 	    "write 4: 40 03 00 00\n"
 	    "write 4: 40 04 00 00\n"
 	    "write 2: 42 00\n");
@@ -1743,7 +1755,7 @@ main(void)
 	test_watchdog();
 	test_reupload_keeps_playing();
 	test_stop_all_keeps_slots();
-	test_session_end_closes_the_input();
+	test_session_end_leaves_the_input_open();
 	test_gain_reaches_conditions();
 	test_panic_paths();
 	test_subwire_change_is_silent();

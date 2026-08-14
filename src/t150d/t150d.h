@@ -165,7 +165,7 @@ struct t150_session {
 	uint8_t			 pending;
 	uint8_t			 settings_owed;
 	int			 armed;		/* the wheel may be holding a force */
-	int			 input_open;	/* we opened the wheel's input and owe it a close */
+	int			 input_open;	/* the wheel's input is open on our account */
 	int			 verbose;
 	unsigned int		 range_deg;	/* 0 leaves the wheel's own */
 	/*
@@ -239,9 +239,10 @@ unsigned int t150_session_tick(struct t150_session *s, uint64_t now_ms);
 void	t150_session_panic(struct t150_session *s, const char *why);
 
 /*
- * The client has gone for good rather than gone quiet: panic, then close the
- * wheel's input so it returns to its own autocenter. The wheel renders no
- * effect while no input is open, so whatever opens one has to close it.
+ * The client has gone for good rather than gone quiet: make the wheel safe
+ * and let the session go. The wheel's input stays open, because the daemon
+ * still holds the wheel and the firmware rests both pedals at maximum while
+ * no input is open, which would leave the next game calibrating them pressed.
  *
  * Both of these do nothing for a session that never reached the wheel, which
  * is any connection that did not get past hello. Undoing what such a client

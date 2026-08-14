@@ -411,9 +411,16 @@ session_safe_state(struct t150_session *s, const char *why)
 }
 
 /*
- * Everything the watchdog does, and then close the wheel's input so it goes
- * back to holding its own autocenter rather than waiting for effects nobody
- * will send.
+ * Everything the watchdog does, and then let the session go.
+ *
+ * The wheel's input is closed only when the daemon itself is leaving, which
+ * is what force means here. It used to be closed on every client disconnect
+ * as well, on the reasoning that a client which opened it owed the close, and
+ * that contradicted the rule the backend states and this page documents: the
+ * daemon holds the input open for as long as it holds the wheel. With the
+ * input shut the firmware rests both pedals at maximum, so the next game to
+ * enumerate the wheel calibrates them fully pressed and reads every press
+ * backwards. Quitting one game should not do that to the next one.
  */
 static void
 session_release(struct t150_session *s, const char *why, int force)
@@ -423,11 +430,11 @@ session_release(struct t150_session *s, const char *why, int force)
 
 	session_safe_state(s, why);
 
-	if (force || s->input_open) {
+	if (force) {
 		n = t150_enc_input_close(pkt, sizeof(pkt));
 		(void)s->be->write(s->be->priv, pkt, n);
+		s->input_open = 0;
 	}
-	s->input_open = 0;
 	s->hello = 0;
 }
 

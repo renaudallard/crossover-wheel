@@ -686,10 +686,13 @@ only the top of the range is flattened. The tester's verdict on the difference
 at full request: *"about the same, maybe a little less hard"*. See
 [`docs/RESEARCH.md`](docs/RESEARCH.md) A46.
 
-**A client connecting opens the wheel's input and disconnecting closes it.**
-The firmware renders no effect while no input is open, which is what
-[`docs/RESEARCH.md`](docs/RESEARCH.md) A28 established, so the daemon sends
-`42 04` on hello and `42 00` when the client goes. The open also outlives the
+**A client connecting opens the wheel's input; the daemon holds it open for as
+long as it holds the wheel.** The firmware renders no effect while no input is
+open, which is what [`docs/RESEARCH.md`](docs/RESEARCH.md) A28 established, so
+the daemon sends `42 04` on hello. It sends `42 00` only on its own way out,
+not when a client goes: with the input shut the firmware rests both pedals at
+maximum, so closing it after every game left the next one calibrating them
+fully pressed and reading every press backwards. The open also outlives the
 process that sent it (A30), so the daemon stops every slot, releases the
 autocenter and closes the input the moment it takes the wheel: one inherited
 from a crashed daemon, or from a probe that never cleaned up, arrives still
