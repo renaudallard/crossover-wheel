@@ -298,8 +298,17 @@ install:
 # published tag as out of date, so a build from a source tarball nagged about
 # an update on every launch. DLL_VERSION above has the same intent and no
 # pipe, which is why it was right.
-REL_VERSION := $(shell { git describe --tags --always 2>/dev/null || echo 0; } \
-	         | sed 's/^v//')
+#
+# The tag exactly, never a description of how far past one this is. With
+# --always a build three commits along called itself 0.2.0-3-g126100c, which is
+# not a release and is not equal to one either, so the update check treated it
+# as out of date and offered the tag it had been built from on every launch.
+# Anything that is not a release now says 0, which is what the application
+# already reads as a source build and declines to compare. DLL_VERSION keeps
+# --always on purpose: it names the build in a log rather than being compared
+# against anything.
+REL_VERSION := $(shell { git describe --tags --exact-match 2>/dev/null || \
+	         echo 0; } | sed 's/^v//')
 APP	   = $(BIN)/crossover-wheel.app
 APP_RES	   = $(APP)/Contents/Resources
 
