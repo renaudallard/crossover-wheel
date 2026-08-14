@@ -396,8 +396,10 @@ tshark -r windows_constant0.pcapng -Y usb.capdata -T fields -e usb.capdata
 waveform and by feel not a square; `0x4025` renders nothing, measured the
 strong way, by being uploaded over a playing effect and stopping it. What
 remains is telling `0x4020` and `0x4021` apart, which needs the two played
-back to back and compared by feel; until someone does, square and triangle
-stay downgrades. RESEARCH.md A34.
+back to back and compared by feel. Neither is a downgrade any more: A40 took
+both codes from Thrustmaster's own effect type table, which is also what
+settled `0x4025` as being off the end of that table rather than a waveform.
+RESEARCH.md A34 and A40.
 
 The type code lives in the commit packet, the fifteen-byte one starting
 `01 00`. Its third and fourth bytes are the code, little endian: `20 40` is
@@ -656,9 +658,9 @@ Struck through where the wheel has already answered.
 | The switch works without `sudo` | The finished tool never needs a password. | **measured**, and `t150boot` is that tool |
 | It moves on an idle desktop but not with a game running | Something in the bottle is seizing the device. Find out what before writing anything. | still untested |
 | Settings work but the force feedback packets do nothing | The transport is fine and the packet layout is wrong. | superseded: it was the missing `42 04`, not the layout (A28) |
-| A contiguous type code plays a waveform | Square or triangle stops being a downgrade. Record which code. | `0x4020` oscillates (A29); `0x4021` and `0x4025` untried |
+| A contiguous type code plays a waveform | Square or triangle stops being a downgrade. Record which code. | **answered**: `0x4020` square and `0x4021` triangle, both from the vendor's own type table, neither downgraded (A29, A34, A40); `0x4025` is off the end of that table and renders nothing |
 | Buttons change on the IN pipe but CrossOver sees none | An input path problem above USB, in macOS HID, SDL or winebus. Not a force feedback problem. | **measured** |
-| The daemon opens the wheel and CrossOver keeps it | The non-seizing open holds, which is the assumption the whole design rests on. | half: the daemon's open is measured (A31), CrossOver alongside it is not |
-| A game's effects reach the wheel and it moves | The project does what it was built for. | untested, and the only thing left |
+| The daemon opens the wheel and CrossOver keeps it | The non-seizing open holds, which is the assumption the whole design rests on. | **measured**: a game reads the wheel through CrossOver while the daemon drives it (A43) |
+| A game's effects reach the wheel and it moves | The project does what it was built for. | **measured**: Assetto Corsa, on a T150 (A43) |
 | the switch needs root | One `sudo` per plug-in, and sleep, wake or a replug drops the wheel back to boot mode, so it is a mid-race failure too. | not needed |
 | the switch needs `-s` | Reconsider the design before writing more code. | not needed |
