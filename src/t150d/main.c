@@ -193,6 +193,10 @@ write_endpoint(const char *path, unsigned short port, const char *token,
  * however it ends. Running two daemons on purpose still works: the lock is per
  * endpoint, so -e gives each its own.
  *
+ * Taken before the wheel is opened, which is the whole point of it. Asking
+ * afterwards still refused the second daemon, but only once it had already
+ * acquired the wheel and scrubbed it.
+ *
  * Returns the descriptor, which must stay open, or -1 if somebody has it.
  */
 static int
@@ -568,6 +572,18 @@ main(int argc, char *argv[])
 	}
 
 	/*
+	 * Before the backend, because opening the wheel is what does the
+	 * damage this refusal exists to prevent: acquiring it scrubs every
+	 * slot and closes and reopens its input, so a second daemon took a
+	 * running game's force feedback away and only then discovered it was
+	 * not wanted. The first daemon has no way to learn its slots were
+	 * emptied, so the game was left with none for the rest of its run.
+	 */
+	if (lock_endpoint(endpoint) == -1)
+		errx(1, "another t150d already has %s. Stop it first, or "
+		    "give this one its own with -e", endpoint);
+
+	/*
 	 * Zeroed before either backend fills it in, so an optional hook a
 	 * backend does not set is NULL rather than whatever was on the stack.
 	 */
@@ -593,9 +609,6 @@ main(int argc, char *argv[])
 	(void)gap_ms;
 	(void)writer;
 #endif
-	if (lock_endpoint(endpoint) == -1)
-		errx(1, "another t150d already has %s. Stop it first, or "
-		    "give this one its own with -e", endpoint);
 	if ((lfd = listen_loopback(&port)) == -1)
 		err(1, "cannot listen on loopback");
 	if (write_endpoint(endpoint, port, token, &epstat) != 0)
