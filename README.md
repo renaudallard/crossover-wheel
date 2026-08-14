@@ -289,10 +289,12 @@ only code that knows both DirectInput units and wheel units. They do no I/O,
 so `make test` checks every byte they produce against vectors derived from
 `docs/PROTOCOL.md`, on any machine.
 
-The daemon is complete except for the part that touches a wheel. It listens,
-speaks the protocol, keeps the slot table, downgrades the effects the wheel
-cannot render, slides ramps, and runs the watchdog; the packets go to a log
-rather than to hardware. A frame sets what a slot should hold and a
+The daemon listens, speaks the protocol, keeps the slot table, downgrades the
+effects the wheel cannot render, slides ramps, and runs the watchdog. On macOS
+its packets go to the wheel through `IOHIDDeviceSetReport`; `-n` swaps in the
+logging backend instead, which is the only behaviour anywhere else and is what
+lets the whole stack be driven from a test with no Mac and no wheel. A frame
+sets what a slot should hold and a
 rate-limited pass puts on the wheel whatever actually changed, so a game
 re-sending an effect it has not touched costs a comparison rather than three
 writes. That is enough to drive the whole stack from a test
