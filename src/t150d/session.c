@@ -1090,10 +1090,11 @@ session_forget_wheel(struct t150_session *s)
  * told to play them, so this runs after the emission pass rather than with
  * the invalidation above.
  */
-static void
+static int
 session_replay_starts(struct t150_session *s)
 {
 	size_t i;
+	int failed = 0;
 
 	for (i = 0; i < T150_SLOT_MAX; i++) {
 		struct t150_slot *sl = &s->slots[i];
@@ -1103,8 +1104,11 @@ session_replay_starts(struct t150_session *s)
 		if (s->verbose)
 			fprintf(stderr, "t150d: slot %u was playing before the "
 			    "wheel went, starting it again\n", (unsigned)i);
-		(void)control(s, (uint8_t)i, 1, sl->iterations);
+		if (control(s, (uint8_t)i, 1, sl->iterations) != 0)
+			failed = 1;
 	}
+
+	return failed;
 }
 
 static int
@@ -1294,10 +1298,16 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 	 * A slot whose emission failed stays dirty and is skipped, so a
 	 * wheel that is still going away is not told to play anything.
 	 */
-	if (s->replay_starts && !slots_dirty(s)) {
+	/*
+	 * The flag is only cleared once the wheel has taken the starts. It
+	 * carries the one piece of knowledge nothing else holds - that the
+	 * game believes effects are running which the wheel no longer has -
+	 * and clearing it before the write threw that away on the first
+	 * refusal. do_start records the same intent before its own write, for
+	 * the same reason and citing the same hardware session.
+	 */
+	if (s->replay_starts && !slots_dirty(s) && !session_replay_starts(s))
 		s->replay_starts = 0;
-		session_replay_starts(s);
-	}
 
 	/*
 	 * The timeout is the soonest thing that has to happen. Work that is
