@@ -483,15 +483,30 @@ install_proxy()
 # which is why it is worth doing from here.
 install_app()
 {
-	src=$here/crossover-wheel.app
 	dst=$HOME/Applications/crossover-wheel.app
 
-	[ -d "$src" ] || return 0
+	# Where the binaries come from, then beside this script. Only the
+	# second was looked at, and no route puts a bundle there: make builds
+	# it into build/bin, and the disk image carries install.sh inside the
+	# application rather than next to it. So this returned immediately
+	# every time and --no-app switched off something that never ran.
+	for src in "$SRC/crossover-wheel.app" "$here/crossover-wheel.app"; do
+		[ -d "$src" ] && break
+		src=
+	done
+	[ -n "$src" ] || return 0
 
 	step "the application into ~/Applications"
 	run mkdir -p "$HOME/Applications"
+
+	# Into place beside the old one and then swapped, rather than removing
+	# the old one first: a copy that fails part way through must not be
+	# able to leave the person with neither. dist/update.sh takes the same
+	# care for the same reason.
+	run rm -rf "$dst.new"
+	run cp -R "$src" "$dst.new"
 	run rm -rf "$dst"
-	run cp -R "$src" "$dst"
+	run mv "$dst.new" "$dst"
 
 	if command -v xattr >/dev/null 2>&1; then
 		run xattr -dr com.apple.quarantine "$dst" 2>/dev/null || :

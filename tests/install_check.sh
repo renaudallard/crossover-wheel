@@ -49,9 +49,15 @@ make_proxy()
 build_tree()
 {
 	rm -rf "$work"
-	mkdir -p "$work/cx/lib/wine/x86_64-windows" "$work/bottles" "$work/src"
+	mkdir -p "$work/cx/lib/wine/x86_64-windows" "$work/bottles" "$work/src" \
+	    "$work/home" "$work/stage/build/bin"
 	make_builtin "$work/cx/lib/wine/x86_64-windows/dinput8.dll"
 	make_proxy "$work/src/t150-dinput8.dll"
+
+	# The script is run from a copy rather than from the repository, so
+	# that what it resolves relative to itself is under our control: it
+	# takes its binaries, its man pages and the application from there.
+	cp "$root/install.sh" "$work/stage/"
 
 	for b in "$@"; do
 		# A 64-bit prefix has both; a 32-bit one has system32 alone.
@@ -68,9 +74,11 @@ run_install()
 	reply=$1
 	shift
 
-	printf '%s\n' "$reply" | PREFIX=$work/prefix CX_ROOT=$work/cx \
-	    BOTTLE_ROOT=$work/bottles \
-	    sh "$root/install.sh" -d "$work/src/t150-dinput8.dll" "$@" \
+	# HOME too, so nothing here can reach the real one: install_app writes
+	# into $HOME/Applications.
+	printf '%s\n' "$reply" | HOME=$work/home PREFIX=$work/prefix \
+	    CX_ROOT=$work/cx BOTTLE_ROOT=$work/bottles \
+	    sh "$work/stage/install.sh" -d "$work/src/t150-dinput8.dll" "$@" \
 	    > "$work/out" 2>&1
 }
 
@@ -256,6 +264,28 @@ test_a_32_bit_bottle_is_refused()
 	installed_in alpha && fail "a 32-bit bottle was written to anyway"
 }
 
+# The bundle is built into build/bin, and this looked for it beside the script
+# instead, so it returned at once on every route that exists and --no-app
+# switched off something that never ran.
+test_the_application_is_installed_when_it_is_there()
+{
+	app=$work/home/Applications/crossover-wheel.app
+
+	build_tree alpha
+	mkdir -p "$work/stage/build/bin/crossover-wheel.app/Contents/MacOS"
+	printf 'menu bar item\n' > "$work/stage/build/bin/crossover-wheel.app\
+/Contents/MacOS/t150menu"
+
+	run_install "" --no-binaries || :
+	[ -f "$app/Contents/MacOS/t150menu" ] ||
+	    fail "the application was not installed"
+
+	# And --no-app has something to switch off.
+	rm -rf "$work/home/Applications"
+	run_install "" --no-binaries --no-app || :
+	[ -d "$app" ] && fail "--no-app installed it anyway"
+}
+
 # -n has to be honest: it says what it would do and writes nothing.
 test_dry_run_changes_nothing()
 {
@@ -275,6 +305,7 @@ test_the_builtin_is_what_lands_beside_the_proxy
 test_the_hidapi_setting_is_matched_by_value
 test_a_third_party_wrapper_is_never_lost
 test_a_32_bit_bottle_is_refused
+test_the_application_is_installed_when_it_is_there
 test_dry_run_changes_nothing
 
 if [ "$failures" -ne 0 ]; then
