@@ -376,7 +376,12 @@ with nothing anywhere reporting it.
 .Pp
 The rotation range is left alone unless
 .Fl r
-gave one, and is then applied at the same two moments.
+gave one, and is then applied at the same two moments. A client that sets one
+over the protocol replaces it for the rest of its session, and that is what a
+re-acquire puts back, on the same rule as the gain. No game does: DirectInput
+has no property for a rotation range, which is why
+.Fl r
+exists.
 .Sh THE ENDPOINT FILE
 .Nm
 binds an ephemeral port and writes two lines, the port and a per-run token:

@@ -908,6 +908,15 @@ do_setting(struct t150_session *s, uint8_t op, const uint8_t *payload,
 			reply_err(rep, T150_ERR_DEVICE_IO);
 			return;
 		}
+		/*
+		 * Remembered like the two beside it, so a wheel that has been
+		 * away comes back at what this client asked for rather than at
+		 * whatever -r started the daemon with. Nothing sends this
+		 * today, because DirectInput has no property for a rotation
+		 * range, but the op exists and dropping what it carried made it
+		 * the one device setting a re-acquire did not put back.
+		 */
+		s->range_deg = (unsigned int)v;
 		break;
 	case T150_OP_SET_AUTOCENTER:
 		/*

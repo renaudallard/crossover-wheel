@@ -1829,6 +1829,31 @@ test_a_re_acquire_restores_the_clients_gain(void)
 }
 
 /*
+ * And the rotation range, which was the one setting a re-acquire dropped: the
+ * daemon went on restating whatever -r was started with, so a client that had
+ * set its own lost it the moment the wheel was replugged.
+ */
+static void
+test_a_re_acquire_restores_the_clients_range(void)
+{
+	uint8_t arg[4];
+
+	reset_session();
+	hello(0);
+
+	put_u32(arg, 900);
+	frame(T150_OP_SET_RANGE, arg, 4, 0, T150_OP_OK, T150_ERR_NONE);
+	expect_log("900 degrees reaches the wheel", "write 4: 40 11 55 d5\n");
+
+	be.epoch++;
+	frame(T150_OP_KEEPALIVE, NULL, 0, 10, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(10);
+	expect_log("and the wheel gets that back after a re-acquire",
+	    "write 2: 43 80\n"
+	    "write 4: 40 11 55 d5\n");
+}
+
+/*
  * The client's centring spring is device state the wheel forgets, exactly
  * like the gain. The client sets it once and has no reason to say it again.
  */
@@ -2219,6 +2244,7 @@ main(void)
 	test_device_error_is_reported_on_the_next_upload();
 	test_backend_epoch_reuploads_everything();
 	test_a_re_acquire_restores_the_clients_gain();
+	test_a_re_acquire_restores_the_clients_range();
 	test_a_re_acquire_restores_the_clients_autocenter();
 	test_the_safe_state_restores_the_configured_spring();
 	test_the_safe_state_is_limp_without_a_spring();
