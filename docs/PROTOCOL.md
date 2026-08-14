@@ -96,8 +96,9 @@ with room to spare.
 
 That looked decisive for the transport question and was not: the settings
 packets are 2 to 4 bytes, fit either way, and were later measured to work on
-both. It remains a live objection to `ff_commit` specifically, and force
-feedback is the one thing that still does not work. Note macOS accepted a
+both. The objection to `ff_commit` specifically was settled the same way, by
+hardware: a 15-byte unnumbered payload is accepted and the effect it carries
+is felt, which is what A43 and everything since rest on. Note macOS accepted a
 15-byte unnumbered payload without complaint, so if the report length is the
 problem the firmware is where it is enforced, not the HID stack.
 
@@ -142,9 +143,12 @@ The newer T300 family was the reason to think this possible: `hid-tmff2`'s
 HID_REQ_SET_REPORT)`, so Thrustmaster firmware is capable of accepting HID
 output reports. The older T150 turns out to be as well.
 
-**Force feedback is a separate question and is still open.** The effect
-packets below have been sent on both pipes, with the autocenter cleared and
-the gain set, and the wheel does not move. See RESEARCH.md A20.
+**Force feedback was a separate question and is answered.** The effect packets
+below were sent on both pipes with the autocenter cleared and the gain set and
+the wheel did not move (RESEARCH.md A20), until A28 found what was missing:
+the firmware renders nothing at all while no application holds the wheel's
+input open, and nothing on macOS opens it. With the input opened first, the
+effects below drive a game's force feedback on real hardware.
 
 ## Opening and closing the wheel's input
 
@@ -250,8 +254,8 @@ source does not support and no measurement here has tested. The scaling in
 
 ## Force feedback upload
 
-Not yet implemented here. Recorded now so the work does not have to be
-re-derived. Every field below is transcribed from `t150_driver`'s
+This is what `src/lib/encode.c` emits and what a game's forces travel as. Every
+field below is transcribed from `t150_driver`'s
 `hid-t150/forcefeedback.h` structures and the functions in
 `hid-t150/forcefeedback.c` that fill them. All structures are `__packed` and
 every multi-byte field is little-endian.
@@ -259,11 +263,16 @@ every multi-byte field is little-endian.
 Each effect uploads as three packets, sent on the interrupt OUT endpoint in
 this order. `slot` below is the driver's `effect->id`.
 
-The three are always sent together. The second block's key depends only on
-the slot, so re-sending `ff_update` alone to change a level ought to work and
-would be cheaper, but no capture from either driver shows a wheel being given
-one, so `t150d` does not do it. What it does instead is send nothing when
-nothing changed, which needs no assumption about the wheel at all.
+The whole set goes whenever `ff_first` or `ff_commit` changes, because those
+carry the envelope, the duration and the effect's type: the effect is being
+redefined rather than moved. A change to `ff_update` alone is a level moving,
+and that goes on its own, which is what Thrustmaster's own driver does.
+`tmp/oldffb/directX_constforce.pcapng` uploads an effect once and then
+modulates it with twenty four bare `ff_update` packets, never re-stating the
+pair around them. A bare `ff_first` or a bare `ff_commit` is never sent: no
+wheel has been seen receiving one. `t150d -t` restores the old behaviour of
+sending all three on any change, and nothing at all is sent when nothing
+changed. See THE EMITTER in [`t150d(8)`](../man/t150d.8).
 
 **1. `ff_first`, 9 bytes, or 11 for a condition.** Envelope and the first slot
 key.
