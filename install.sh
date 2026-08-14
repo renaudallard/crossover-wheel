@@ -299,29 +299,44 @@ find_builtin()
 	printf '%s\n' "$found"
 }
 
+# Whether the bottle's own setting rules the install out, asked without
+# writing anything so that it can be asked before anything has been.
+#
+# The value is the whole point, so match the value. Grepping for the name alone
+# said "already set, left alone" for a line that says the opposite, and for
+# SDL_JOYSTICK_HIDAPI_PS3, and for a commented out one. RESEARCH.md B11: at
+# anything but 0 the wheel does not appear inside the bottle at all, so
+# reporting success there is reporting success for an install that cannot work.
+env_already_zero()
+{
+	grep -Eq '^[[:space:]]*"?SDL_JOYSTICK_HIDAPI"?[[:space:]]*=[[:space:]]*"?0"?[[:space:]]*$' \
+	    "$1" 2>/dev/null
+}
+
+check_bottle_env()
+{
+	conf=$1
+
+	env_already_zero "$conf" && return 0
+	grep -Eq '^[[:space:]]*"?SDL_JOYSTICK_HIDAPI"?[[:space:]]*=' \
+	    "$conf" 2>/dev/null || return 0
+
+	warn "SDL_JOYSTICK_HIDAPI is set to something other than 0 in"
+	warn "  $conf"
+	die "the wheel does not appear inside a bottle without it at 0. Change that line, or delete it and run this again"
+}
+
 # "SDL_JOYSTICK_HIDAPI" = "0" in [EnvironmentVariables], or the wheel never
-# appears inside the bottle at all.
+# appears inside the bottle at all. Runs last, with check_bottle_env having
+# already ruled out the one value this cannot put right: the writing has to
+# stay after the copies, or a run that stops at one of them would leave the
+# bottle's own configuration edited while saying nothing was changed in it.
 set_bottle_env()
 {
 	conf=$1
 
-	# The value is the whole point, so match the value. Grepping for the
-	# name alone said "already set, left alone" for a line that says the
-	# opposite, and for SDL_JOYSTICK_HIDAPI_PS3, and for a commented out
-	# one. RESEARCH.md B11: at anything but 0 the wheel does not appear
-	# inside the bottle at all, so reporting success there is reporting
-	# success for an install that cannot work.
-	if grep -Eq '^[[:space:]]*"?SDL_JOYSTICK_HIDAPI"?[[:space:]]*=[[:space:]]*"?0"?[[:space:]]*$' \
-	    "$conf" 2>/dev/null; then
+	if env_already_zero "$conf"; then
 		say "  SDL_JOYSTICK_HIDAPI is already 0, left alone"
-		return
-	fi
-	if grep -Eq '^[[:space:]]*"?SDL_JOYSTICK_HIDAPI"?[[:space:]]*=' \
-	    "$conf" 2>/dev/null; then
-		warn "SDL_JOYSTICK_HIDAPI is set to something other than 0 in"
-		warn "  $conf"
-		warn "The wheel does not appear inside a bottle without it at"
-		warn "0. Change that line, or delete it and run this again."
 		return
 	fi
 
@@ -385,6 +400,14 @@ install_proxy()
 		fi
 		break
 	done
+
+	# Asked before anything is copied, because a bottle whose own setting
+	# rules the wheel out cannot use it however well the rest of the
+	# install goes, and refusing after the copies would report failure for
+	# a run that had already changed the bottle. Only asked here: the
+	# writing waits until the end, so that the paths below which say
+	# nothing was changed are telling the truth when they say it.
+	check_bottle_env "$bdir/cxbottle.conf"
 
 	if ! builtin=$(find_builtin "$bdir"); then
 		warn "cannot find CrossOver's builtin dinput8.dll under"

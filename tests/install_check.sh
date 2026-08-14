@@ -233,13 +233,18 @@ test_the_hidapi_setting_is_matched_by_value()
 	grep -q '"SDL_JOYSTICK_HIDAPI" = "0"' "$conf" ||
 	    fail "the PS3 variable was mistaken for this one"
 
-	# Present with the wrong value: say so rather than claim success.
+	# Present with the wrong value: the bottle cannot see the wheel at all,
+	# so the install has to fail rather than report success for something
+	# that cannot work. Refused before anything is copied, so the promise
+	# that nothing was left half done still holds.
 	build_tree alpha
 	printf '[EnvironmentVariables]\n"SDL_JOYSTICK_HIDAPI" = "1"\n' \
 	    >> "$work/bottles/alpha/cxbottle.conf"
-	run_install "" --no-binaries --no-app || :
+	run_install "" --no-binaries --no-app &&
+	    fail "a bottle that cannot see the wheel was reported installed"
 	grep -q 'something other than 0' "$work/out" ||
 	    fail "a wrong value was not reported"
+	installed_in alpha && fail "it was written to anyway"
 }
 
 # Another tool's dinput8.dll is about to be overwritten, and the backup is the
