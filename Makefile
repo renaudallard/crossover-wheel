@@ -265,8 +265,16 @@ install:
 # is what lets the app be a front end over the shell script rather than a
 # second implementation of it: the part that can go wrong stays in the script
 # that is tested.
-REL_VERSION := $(shell git describe --tags --always 2>/dev/null | sed 's/^v//' \
-	         || echo 0)
+# The fallback has to be inside the pipeline, not after it. Written the other
+# way round the || bound to the whole pipeline, whose status is sed's, and sed
+# succeeds on empty input: echo never ran and the version became the empty
+# string. That is the DMG filename and CFBundleShortVersionString, and the
+# update check reads the latter back and treats anything unequal to the
+# published tag as out of date, so a build from a source tarball nagged about
+# an update on every launch. DLL_VERSION above has the same intent and no
+# pipe, which is why it was right.
+REL_VERSION := $(shell { git describe --tags --always 2>/dev/null || echo 0; } \
+	         | sed 's/^v//')
 APP	   = $(BIN)/crossover-wheel.app
 APP_RES	   = $(APP)/Contents/Resources
 
