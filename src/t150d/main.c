@@ -51,6 +51,14 @@
  */
 #define PEND_MS	2000
 
+/*
+ * How long to leave the listening socket out of the poll set after an accept
+ * failed for want of a resource. Long enough that a descriptor shortage does
+ * not become a busy loop, short enough that a game waiting to connect does
+ * not notice.
+ */
+#define ACCEPT_COOL_MS	200
+
 static volatile sig_atomic_t quit;
 
 static void
@@ -457,7 +465,7 @@ main(int argc, char *argv[])
 	struct pollfd pfd[3];
 	const char *epopt = NULL, *home;
 	uint8_t rx[RXBUF], prx[RXBUF];
-	uint64_t pend_deadline = 0;
+	uint64_t pend_deadline = 0, accept_cool_ms = 0;
 	size_t have = 0, phave = 0;
 	unsigned short port;
 	unsigned int gap_ms = 0, range_deg = 0, autocenter = 0;
@@ -580,10 +588,15 @@ main(int argc, char *argv[])
 		wait_ms = t150_session_tick(&sess, now_ms());
 		int nfd = 0, n, ilisten, iclient = -1, ipend = -1;
 
-		ilisten = nfd;
-		pfd[nfd].fd = lfd;
-		pfd[nfd].events = POLLIN;
-		nfd++;
+		ilisten = -1;
+		if (now_ms() >= accept_cool_ms) {
+			ilisten = nfd;
+			pfd[nfd].fd = lfd;
+			pfd[nfd].events = POLLIN;
+			nfd++;
+		} else if (wait_ms > ACCEPT_COOL_MS) {
+			wait_ms = ACCEPT_COOL_MS;
+		}
 		if (cfd != -1) {
 			iclient = nfd;
 			pfd[nfd].fd = cfd;
@@ -727,14 +740,36 @@ main(int argc, char *argv[])
 			}
 		}
 
-		if (pfd[ilisten].revents & POLLIN) {
+		if (ilisten != -1 && (pfd[ilisten].revents & POLLIN)) {
 			struct sockaddr_in peer;
 			socklen_t plen = sizeof(peer);
 			int nfd2 = accept(lfd, (struct sockaddr *)&peer, &plen);
 			unsigned peer_port;
 
-			if (nfd2 == -1)
+			/*
+			 * poll is level triggered on the listening socket, so
+			 * a failure that leaves the connection in the backlog
+			 * comes straight back: running out of descriptors used
+			 * to free-run this loop at full tilt for as long as the
+			 * shortage lasted. ECONNABORTED dequeues and is
+			 * harmless; EINTR and EAGAIN carry nothing to wait for.
+			 * The rest are resource exhaustion, and the only thing
+			 * to do about those is stop asking for a moment.
+			 */
+			if (nfd2 == -1) {
+				switch (errno) {
+				case EINTR:
+				case EAGAIN:
+				case ECONNABORTED:
+					break;
+				default:
+					accept_cool_ms = now_ms() + ACCEPT_COOL_MS;
+					if (verbose)
+						warn("accept");
+					break;
+				}
 				continue;
+			}
 			set_send_timeout(nfd2);
 
 			/*
