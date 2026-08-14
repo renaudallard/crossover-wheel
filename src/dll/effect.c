@@ -90,6 +90,31 @@ t150_effect_enum(struct t150_device *dev,
 	return DI_OK;
 }
 
+/*
+ * Every effect this device created is stopped, as far as the game is
+ * concerned.
+ *
+ * The device level commands stop everything on the wheel without naming a
+ * single effect, so nothing could clear the flag that says an object is
+ * playing: an effect stopped by DISFFC_RESET, DISFFC_STOPALL or an unacquire
+ * stayed marked as playing, and the replay that follows a reconnect then
+ * started it again. A game that had deliberately stopped its forces could be
+ * handed a pulling wheel by a daemon restart. It also had GetEffectStatus
+ * answer that a stopped effect was still running.
+ */
+void
+t150_effect_all_stopped(struct t150_device *dev)
+{
+	size_t i;
+
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		struct effect_obj *e = live[i];
+
+		if (e != NULL && e->dev == dev)
+			e->playing = 0;
+	}
+}
+
 uint8_t
 t150_kind_from_guid(REFGUID guid)
 {

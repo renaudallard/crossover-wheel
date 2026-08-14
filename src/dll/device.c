@@ -439,6 +439,7 @@ dev_Unacquire(IDirectInputDevice8W *self)
 	 * half a second of the wheel still pulling.
 	 */
 	(void)t150_client_call(T150_OP_RESET, NULL, 0);
+	t150_effect_all_stopped(from_iface(self));
 
 	return IDirectInputDevice8_Unacquire(INNER(self));
 }
@@ -804,8 +805,6 @@ dev_GetForceFeedbackState(IDirectInputDevice8W *self, LPDWORD out)
 static HRESULT WINAPI
 dev_SendForceFeedbackCommand(IDirectInputDevice8W *self, DWORD flags)
 {
-	(void)self;
-
 	/*
 	 * These mean different things and used to be sent as the same op.
 	 * RESET stops and releases every effect; STOPALL stops them and
@@ -838,6 +837,16 @@ dev_SendForceFeedbackCommand(IDirectInputDevice8W *self, DWORD flags)
 	if (flags & (DISFFC_PAUSE | DISFFC_SETACTUATORSOFF)) {
 		(void)t150_client_call(T150_OP_STOP_ALL, NULL, 0);
 	}
+
+	/*
+	 * Whatever went out, the game's effects are stopped now, and only the
+	 * device knows that: these commands name no effect, so the objects
+	 * would otherwise still believe they were playing and be started
+	 * again by the replay that follows a reconnect.
+	 */
+	if (flags & (DISFFC_RESET | DISFFC_STOPALL | DISFFC_PAUSE |
+	    DISFFC_SETACTUATORSOFF))
+		t150_effect_all_stopped(from_iface(self));
 
 	/* Continue and actuators-on need nothing: the slots are still there. */
 	return DI_OK;

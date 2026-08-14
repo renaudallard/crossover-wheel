@@ -100,6 +100,9 @@ HRESULT	t150_effect_create(struct t150_device *dev, REFGUID guid,
 HRESULT	t150_effect_enum(struct t150_device *dev,
 	    LPDIENUMCREATEDEFFECTOBJECTSCALLBACK cb, LPVOID ref);
 
+/* Mark every effect a device created as no longer playing. */
+void	t150_effect_all_stopped(struct t150_device *dev);
+
 /*
  * Fold a DIEFFECT into the normalized model, honouring only the fields the
  * flags name and leaving the rest of ef alone. Exposed rather than kept
