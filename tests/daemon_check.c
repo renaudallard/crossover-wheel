@@ -1001,12 +1001,53 @@ test_a_refused_stop_keeps_the_slot_and_retries(void)
 		fail("a refused stop is never tried again");
 
 	/*
-	 * And once it is taken the slot is released and the session disarms,
-	 * so the retry stops rather than running for the rest of the session.
+	 * And once it is taken the retry stops rather than running for the
+	 * rest of the session.
 	 */
 	drain_log();
 	(void)tick(T150_WATCHDOG_MS * 3);
 	expect_log("a stop the wheel took is not sent again", "");
+}
+
+/*
+ * A stop is a stop however many tries it took. The retry used to release the
+ * slot when it finally landed, so a refused write turned an EFFECT_STOP, which
+ * leaves an effect downloaded, into an EFFECT_DESTROY: a game that started it
+ * again without re-uploading, which DIES_NODOWNLOAD is exactly, asked for a
+ * slot that no longer existed.
+ */
+static void
+test_a_late_stop_leaves_the_slot_as_a_prompt_one_would(void)
+{
+	uint8_t slot = 0;
+
+	reset_session();
+	hello(0);
+	load_and_play(0, 0);
+	(void)tick(0);
+	drain_log();
+
+	/* Taken at once: the slot stays loaded, as do_stop intends. */
+	frame(T150_OP_EFFECT_STOP, &slot, 1, 10, T150_OP_OK, T150_ERR_NONE);
+	if (!sess.slots[0].used)
+		fail("a stop the wheel took released the slot");
+
+	reset_session();
+	hello(0);
+	load_and_play(0, 0);
+	(void)tick(0);
+	drain_log();
+
+	/* Refused once, then taken by the retry: the same slot, the same way. */
+	write_fails = 1;
+	frame(T150_OP_EFFECT_STOP, &slot, 1, 10, T150_OP_ERROR,
+	    T150_ERR_DEVICE_IO);
+	write_fails = 0;
+	(void)tick(20);
+	if (!sess.slots[0].used)
+		fail("a stop the wheel took late released the slot");
+	if (sess.slots[0].stop_owed)
+		fail("the debt outlived the stop that paid it");
 }
 
 /*
@@ -1103,6 +1144,7 @@ static void
 test_a_displaced_session_hands_over_what_it_could_not_stop(void)
 {
 	struct t150_session next;
+	struct t150_effect ef;
 
 	reset_session();
 	hello(0);
@@ -1121,9 +1163,33 @@ test_a_displaced_session_hands_over_what_it_could_not_stop(void)
 	t150_session_inherit_stops(&next, &sess);
 	sess = next;
 
+	/* The newcomer proved its token before it was promoted, as pend_hello
+	 * has it do, so the session that takes over has said hello already. */
+	frame(T150_OP_HELLO, (const uint8_t *)TOKEN, T150_TOKEN_LEN, 5,
+	    T150_OP_OK, T150_ERR_NONE);
+	drain_log();
+
 	(void)tick(10);
 	expect_log("the session taking over retries the stop",
 	    "write 4: 41 00 00 01\n");
+
+	/*
+	 * And the slot goes with the debt, because a slot inherited for one
+	 * holds no effect. Kept, it looks like any other used slot to the
+	 * re-acquire, which marks it dirty; the pass then cannot encode a kind
+	 * that was never set, and the write error that follows is answered to
+	 * the next upload, which had succeeded.
+	 */
+	if (sess.slots[0].used)
+		fail("a slot inherited for a debt outlived the debt");
+
+	be.epoch++;
+	frame(T150_OP_KEEPALIVE, NULL, 0, 20, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(20);
+	drain_log();
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 30);
 }
 
 /*
@@ -2228,6 +2294,7 @@ main(void)
 	test_updates_faster_than_the_emit_period_are_coalesced();
 	test_write_failure_does_not_pin_the_poll_loop();
 	test_a_refused_stop_keeps_the_slot_and_retries();
+	test_a_late_stop_leaves_the_slot_as_a_prompt_one_would();
 	test_a_refused_stop_survives_a_re_upload();
 	test_a_start_settles_a_stop_still_owed();
 	test_a_displaced_session_hands_over_what_it_could_not_stop();

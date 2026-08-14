@@ -425,6 +425,14 @@ effect to that slot, and a second client displacing the first. Both used to
 take the record with them and leave the wheel pulling with nothing able to stop
 it.
 .Pp
+When the stop does land, the slot is left exactly as one the wheel took at once
+would have been. A plain
+.Dv T150_OP_EFFECT_STOP
+leaves the effect downloaded and startable again, so a refused write is not the
+difference between stopping an effect and destroying it; a slot holding no
+effect at all, which is what a debt inherited from a displaced client is, goes
+with the debt that was its only reason to exist.
+.Pp
 A connection that never proved the token is the exception. Its input was
 never opened and it sent nothing to render, so there is nothing of its doing
 to undo, and it leaves without the wheel being written to at all. Anything on

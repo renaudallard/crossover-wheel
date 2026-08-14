@@ -1237,19 +1237,36 @@ session_emit(struct t150_session *s, uint64_t now_ms)
 		/*
 		 * Whether the game has put a new effect in this slot since the
 		 * stop was refused. The stop still has to go, because it is the
-		 * effect before it that the wheel may be rendering, but a slot
-		 * carrying new parameters must not be forgotten with the debt,
-		 * and slot_stop clears the flag that says those parameters are
-		 * still owed to the wheel.
+		 * effect before it that the wheel may be rendering, but
+		 * slot_stop clears the flag that says the new parameters are
+		 * owed to the wheel, and they still are.
 		 */
 		reloaded = owing->dirty;
 		if (slot_stop(s, (uint8_t)i) != 0) {
 			s->emit_failed = 1;
 			continue;
 		}
+		/*
+		 * The slot is left exactly as a stop that landed at once would
+		 * have left it, which for a plain stop means loaded and ready
+		 * to be started again. Releasing it here made a refused write
+		 * the difference between a stop and a destroy: the game's next
+		 * start, if it trusted the effect to still be downloaded, was
+		 * answered with a slot that no longer existed. Whoever wanted
+		 * the slot gone releases it on its own path, and a safe state
+		 * clears anything left behind.
+		 *
+		 * Except a slot that holds no effect, which is what a debt
+		 * inherited from a displaced session is: there is nothing in it
+		 * to keep once the stop it existed for has gone. Left behind,
+		 * the next re-acquire marks it dirty like any other used slot,
+		 * the pass cannot encode a kind that was never set, and the
+		 * write error that follows is answered to the next upload,
+		 * which had succeeded.
+		 */
 		if (reloaded)
 			owing->dirty = 1;
-		else
+		else if (owing->ef.kind == T150_EFFECT_NONE)
 			memset(owing, 0, sizeof(*owing));
 	}
 
