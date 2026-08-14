@@ -278,9 +278,11 @@ send_reply(int fd, const struct t150_reply *rep)
  * Returns 1 when it has proved itself, 0 when the frame has not fully
  * arrived, and -1 when it should be dropped.
  *
- * Nothing here can reach the wheel. The scratch session is fed only HELLO,
- * so even a correct token buys nothing until the caller promotes it, and a
- * wrong one is answered and then dropped.
+ * The only thing this reaches the wheel with is the input open, which the
+ * promoted session needs held from the moment it takes over. Its device
+ * settings wait for the caller to make the incumbent safe first: see the
+ * pending flag in struct t150_session. A wrong token is answered and dropped
+ * having written nothing at all.
  */
 static int
 pend_hello(struct t150_session *ps, int fd, uint8_t *buf, size_t *have)
@@ -804,6 +806,7 @@ main(int argc, char *argv[])
 				phave = 0;
 				pend_deadline = now_ms() + PEND_MS;
 				t150_session_init(&psess, &be, token);
+				psess.pending = 1;
 				psess.verbose = verbose;
 				psess.range_deg = range_deg;
 				psess.autocenter = autocenter;

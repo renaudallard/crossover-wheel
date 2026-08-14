@@ -152,6 +152,18 @@ struct t150_session {
 	uint64_t		 last_param_log_ms;	/* -v effect parameters, rate limited */
 	unsigned int		 epoch;		/* the backend epoch we believe */
 	int			 hello;
+	/*
+	 * A connection that is only proving its token, because someone else
+	 * holds the wheel. Such a session states its device settings on the
+	 * tick after it is promoted rather than inside the hello itself: the
+	 * newcomer proves the token before the incumbent has been made safe,
+	 * so writing them there told the wheel to render at the newcomer's
+	 * strength while the outgoing client's forces were still playing. The
+	 * input open stays in the hello, deliberately, because the promoted
+	 * session needs the wheel listening from the moment it takes over.
+	 */
+	uint8_t			 pending;
+	uint8_t			 settings_owed;
 	int			 armed;		/* the wheel may be holding a force */
 	int			 input_open;	/* we opened the wheel's input and owe it a close */
 	int			 verbose;

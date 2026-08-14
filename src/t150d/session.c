@@ -983,7 +983,10 @@ t150_session_frame(struct t150_session *s, uint8_t op, const uint8_t *payload,
 		n = t150_enc_input_open(pkt, sizeof(pkt));
 		(void)emit(s, pkt, n);
 		s->input_open = 1;
-		session_apply_settings(s);
+		if (s->pending)
+			s->settings_owed = 1;
+		else
+			session_apply_settings(s);
 		reply_ok(rep);
 		return 0;
 	}
@@ -1245,6 +1248,16 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 		 */
 		if (s->hello)
 			session_apply_settings(s);
+	}
+
+	/*
+	 * What a displacing client's hello could not say yet: it proved its
+	 * token before the incumbent had been made safe, so its settings
+	 * waited for the caller to do that.
+	 */
+	if (s->settings_owed) {
+		s->settings_owed = 0;
+		session_apply_settings(s);
 	}
 
 	/*
