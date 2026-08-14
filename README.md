@@ -542,6 +542,10 @@ whatever the wheel powered up with or whatever the last process left behind.
 Full means do not attenuate, which is also DirectInput's own default, so the
 strength ends up where the game's settings put it. A game that wants less
 says so with `DIPROP_FFGAIN`, and `t150ctl gain` still overrides it by hand.
+Once a game has asked, that is the value put back whenever the wheel is
+re-acquired: the proxy sends `DIPROP_FFGAIN` once and cannot send it again, so
+restoring full scale after a replug used to undo the driver's chosen strength
+for the rest of the session, silently.
 
 **The rotation range is `-r`, because no game can ask for it.** DirectInput
 has no property for wheel rotation: on Windows it is set in the vendor's

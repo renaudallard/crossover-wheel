@@ -316,6 +316,7 @@ t150_session_init(struct t150_session *s, struct t150_backend *be,
 {
 	memset(s, 0, sizeof(*s));
 	s->be = be;
+	s->gain = T150_DI_MAX;
 	if (token != NULL) {
 		strncpy(s->token, token, sizeof(s->token) - 1);
 		s->token[sizeof(s->token) - 1] = '\0';
@@ -458,6 +459,12 @@ t150_session_panic(struct t150_session *s, const char *why)
  * honest starting point: it means do not attenuate, and it leaves the
  * strength where the game's own settings put it.
  *
+ * It is the gain the client last asked for that goes back, not the literal
+ * full scale this used to send. The proxy sends DIPROP_FFGAIN once and has no
+ * path to send it again, so writing full here was the end of the driver's
+ * chosen strength: a wheel re-acquired mid race, or a daemon restarted under
+ * a running game, put every force back to full and nothing said so.
+ *
  * The rotation range has no DirectInput property at all. On Windows it is
  * set in the vendor's control panel and a game merely assumes the wheel is
  * already at the number in its settings, so a game asking for 900 degrees
@@ -480,11 +487,12 @@ session_apply_settings(struct t150_session *s)
 	 * been sent because the option was not passed. Three different faults
 	 * with one silence between them is not a diagnosis anybody can make.
 	 */
-	if ((n = t150_enc_gain(pkt, sizeof(pkt), T150_DI_MAX)) > 0) {
+	if ((n = t150_enc_gain(pkt, sizeof(pkt), s->gain)) > 0) {
 		int r = emit(s, pkt, n);
 
 		if (s->verbose)
-			fprintf(stderr, "t150d: device gain set to full: %s\n",
+			fprintf(stderr, "t150d: device gain set to %u of %u: "
+			    "%s\n", s->gain, (unsigned)T150_DI_MAX,
 			    r == 0 ? "sent" : "the write failed");
 	}
 	if (s->range_deg == 0) {
@@ -803,6 +811,11 @@ do_setting(struct t150_session *s, uint8_t op, const uint8_t *payload,
 			reply_err(rep, T150_ERR_DEVICE_IO);
 			return;
 		}
+		/*
+		 * Remembered, because the wheel forgets it and nothing else
+		 * can put it back. See session_apply_settings.
+		 */
+		s->gain = v > (uint32_t)T150_DI_MAX ? (uint32_t)T150_DI_MAX : v;
 		break;
 	case T150_OP_SET_RANGE:
 		n = t150_enc_range(pkt, sizeof(pkt), (unsigned int)v);

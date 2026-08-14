@@ -1354,6 +1354,31 @@ test_backend_epoch_reuploads_everything(void)
 }
 
 /*
+ * Which gain goes back matters. The proxy sends DIPROP_FFGAIN once, when the
+ * game sets it, and has no path to send it again, so restoring full scale
+ * here was the end of the driver's chosen strength: a wheel re-acquired mid
+ * race put every force back to full and nothing anywhere said so.
+ */
+static void
+test_a_re_acquire_restores_the_clients_gain(void)
+{
+	uint8_t arg[4];
+
+	reset_session();
+	hello(0);
+
+	put_u32(arg, 5000);
+	frame(T150_OP_SET_GAIN, arg, 4, 0, T150_OP_OK, T150_ERR_NONE);
+	expect_log("half gain reaches the wheel", "write 2: 43 40\n");
+
+	be.epoch++;
+	frame(T150_OP_KEEPALIVE, NULL, 0, 10, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(10);
+	expect_log("and the wheel gets that back, not full scale",
+	    "write 2: 43 40\n");
+}
+
+/*
  * A start refused while the wheel was off the bus is still a start the game
  * asked for, and the wheel has to be told about it when it comes back.
  *
@@ -1628,6 +1653,7 @@ main(void)
 	test_reset_reports_a_stop_the_wheel_refused();
 	test_device_error_is_reported_on_the_next_upload();
 	test_backend_epoch_reuploads_everything();
+	test_a_re_acquire_restores_the_clients_gain();
 	test_a_refused_start_is_replayed_when_the_wheel_returns();
 	test_a_start_every_frame_does_not_starve_other_slots();
 	test_the_parameter_log_names_the_condition();

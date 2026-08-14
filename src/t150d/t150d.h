@@ -156,6 +156,14 @@ struct t150_session {
 	int			 input_open;	/* we opened the wheel's input and owe it a close */
 	int			 verbose;
 	unsigned int		 range_deg;	/* 0 leaves the wheel's own */
+	/*
+	 * The device gain the client last asked for, in DirectInput's 0 to
+	 * 10000. Full until it says otherwise, which is DirectInput's own
+	 * default and the honest starting point. Remembered because the wheel
+	 * forgets it and this is the only thing that can put it back: the
+	 * proxy sends DIPROP_FFGAIN once and never again.
+	 */
+	uint32_t		 gain;
 	int			 always_triple;	/* -t: re-send the set on any change */
 	uint8_t			 next_slot;	/* where the next pass resumes */
 	uint8_t			 io_err;	/* a write failed, owed to the next upload */

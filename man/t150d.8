@@ -325,14 +325,22 @@ wheel was already off the bus and the packet could not be sent.
 The wheel keeps a device gain and a rotation range of its own, which survive
 the process that set them. The gain scales every force it renders.
 .Nm
-sets it to full when a client says hello, and again after the wheel has been
-re-acquired, because a wheel that has been away has forgotten it. Full means
-do not attenuate: it is DirectInput's own default for
+sets it to full when a client says hello, because a wheel that has been away
+has forgotten it. Full means do not attenuate: it is DirectInput's own default
+for
 .Dv DIPROP_FFGAIN ,
 so the strength a driver feels is the one the game's settings ask for. A game
 that wants less says so and
 .Xr t150ctl 1
 overrides it by hand.
+.Pp
+After that it is the gain the client last asked for that is restored, not full
+scale, whenever the wheel is re-acquired. The proxy sends
+.Dv DIPROP_FFGAIN
+once, when the game sets it, and has no path to send it again, so writing full
+here used to be the end of the driver's chosen strength: a wheel replugged mid
+race, or a daemon restarted under a running game, put every force back to full
+with nothing anywhere reporting it.
 .Pp
 The rotation range is left alone unless
 .Fl r
