@@ -607,9 +607,12 @@ A queue that merely stored the difference spent the session full and delivered
 every force a fifth of a second late, which the tester felt as a wheel with no
 resistance to a quick turn. So a packet still waiting when a newer one arrives
 for the same parameter is replaced by it, where it stands. The wheel holds one
-value per parameter and the one it never rendered could not be felt; order is
-untouched, and a play and a stop for one slot are different parameters that
-never merge. `-v` prints the merged and dropped counts on the way out, and
+value per parameter and the one it never rendered could not be felt. A play and
+a stop for one slot are different parameters that never merge, and only the
+newest packet waiting for a given target is merged into, so a repeat cannot
+overtake something queued behind it: a stop, a play and a stop for one slot
+stay three packets in that order. `-v` prints the merged and dropped counts on
+the way out, and
 after coalescing a drop means the wheel stopped taking writes altogether.
 
 That queue is `src/t150d/wirequeue.c`, kept apart from the macOS backend that

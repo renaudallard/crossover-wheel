@@ -29,6 +29,7 @@
 
 #include <string.h>
 
+#include "t150/t150.h"
 #include "wirequeue.h"
 
 /*
@@ -45,8 +46,8 @@
  * have both.
  *
  * A control packet's mode is byte 2, so a play and a stop for one slot are
- * different keys and neither can swallow the other. That is the one merge
- * that would be a bug rather than an economy.
+ * different keys and neither can swallow the other. Telling them apart is
+ * necessary but not sufficient: see same_target below for the order.
  */
 static int
 same_parameter(const struct t150_wire *a, const uint8_t *buf, size_t len)
@@ -59,6 +60,49 @@ same_parameter(const struct t150_wire *a, const uint8_t *buf, size_t len)
 	n = len < 3 ? len : 3;
 
 	return memcmp(a->buf, buf, n) == 0;
+}
+
+/*
+ * How many leading bytes name what a packet addresses, as opposed to which
+ * value it carries there. A parameter id is two bytes, a slot or a setting
+ * number is one, and the gain and input packets address the only thing they
+ * can.
+ */
+static size_t
+target_len(uint8_t op)
+{
+	switch (op) {
+	case T150_FF_FIRST_CONSTANT:	/* 0x02, and 0x05 for a condition, */
+	case T150_FF_UPDATE_CONSTANT:	/* carry the parameter id at 1 and 2 */
+	case T150_FF_UPDATE_PERIODIC:
+	case T150_FF_UPDATE_CONDITION:
+		return 3;
+	case T150_FF_COMMIT_F0:		/* the slot at byte 1 */
+	case T150_FF_OP_CONTROL:
+	case T150_OP_SETTINGS:		/* which setting, at byte 1 */
+		return 2;
+	default:			/* gain and input: the opcode is all */
+		return 1;
+	}
+}
+
+/*
+ * Whether two packets are two states of one thing, which is a wider question
+ * than same_parameter's. A play and a stop for one slot are different
+ * parameters and the same target, and so are an autocenter enable and its
+ * disable.
+ */
+static int
+same_target(const struct t150_wire *a, const uint8_t *buf, size_t len)
+{
+	size_t n;
+
+	if (a->len == 0 || a->buf[0] != buf[0])
+		return 0;
+
+	n = target_len(buf[0]);
+
+	return n <= a->len && n <= len && memcmp(a->buf, buf, n) == 0;
 }
 
 void
@@ -93,9 +137,17 @@ t150_wq_depth(const struct t150_wirequeue *q)
  *
  * The cost of holding the position is that a value can be written earlier
  * than the daemon asked for it, ahead of another packet queued in between.
- * That is sound here because the wheel keeps one value per parameter and the
- * order between different parameters is untouched: whatever the daemon last
- * said about each is what the wheel ends up holding.
+ * That is only sound while nothing queued in between addresses the same
+ * thing, so the search runs from the newest end and stops at the first
+ * packet that does. If that packet carries the same value the merge is
+ * safe, because nothing after it has anything to say about this target; if
+ * it carries a different one the newcomer has to go behind it.
+ *
+ * Searching from the oldest end instead is what this did, and it reordered
+ * a repeat: given a stop, a play and a stop for one slot, the second stop
+ * merged into the first and the wheel was left playing an effect the game
+ * had stopped. A play and a stop are different parameters, so neither ever
+ * swallowed the other, which is what made it look safe.
  *
  * Returns 0 whether the packet was appended or merged, and -1 only if it
  * cannot be represented.
@@ -108,11 +160,13 @@ t150_wq_push(struct t150_wirequeue *q, const uint8_t *buf, size_t len)
 	if (len == 0 || len > sizeof(q->ring[0].buf))
 		return -1;
 
-	for (i = q->tail; i != q->head; i++) {
-		struct t150_wire *w = &q->ring[i % T150_WQ_MAX];
+	for (i = q->head; i != q->tail; ) {
+		struct t150_wire *w = &q->ring[--i % T150_WQ_MAX];
 
-		if (!same_parameter(w, buf, len))
+		if (!same_target(w, buf, len))
 			continue;
+		if (!same_parameter(w, buf, len))
+			break;
 
 		memcpy(w->buf, buf, len);
 		q->merged++;

@@ -171,8 +171,11 @@ excess would spend the session full and deliver every force a fifth of a
 second late, which is what the first build with a writer thread did. So a
 packet still waiting when a newer one arrives for the same parameter is
 replaced by it, in its place: the wheel holds one value per parameter, and the
-one it never rendered was not going to be felt. Order is untouched, and a play
-and a stop for the same slot are different parameters and never merge.
+one it never rendered was not going to be felt. A play and a stop for the same
+slot are different parameters and never merge, and only the newest packet
+waiting for a given target is merged into, so a repeat cannot overtake
+something queued behind it: a stop, a play and a stop for one slot stay three
+packets in that order.
 .Pp
 Under
 .Fl v

@@ -141,6 +141,55 @@ test_a_stop_cannot_swallow_a_play(void)
 }
 
 /*
+ * The same rule, one packet further on, which is where it used to break. A
+ * repeat merged into the oldest copy of itself, so a stop that arrived after
+ * a play took the earlier stop's place in front of it and the wheel was left
+ * playing an effect the game had stopped. Nothing swallowed anything: a play
+ * and a stop stayed two packets throughout, and the order alone was wrong.
+ */
+static void
+test_a_repeated_stop_does_not_overtake_a_play(void)
+{
+	struct t150_wirequeue q;
+
+	t150_wq_init(&q);
+	CONTROL_STOP(&q);
+	CONTROL_PLAY(&q);
+	CONTROL_STOP(&q);
+
+	check_int("a repeat behind a play is its own packet",
+	    (long)t150_wq_depth(&q), 3);
+	check_int("so nothing was merged", (long)q.merged, 0);
+	check_next("the first stop goes first", &q, "41 00 00 01");
+	check_next("then the play", &q, "41 00 41 01");
+	check_next("and the game's last word is the wheel's", &q,
+	    "41 00 00 01");
+}
+
+/*
+ * The settings share the shape and the hazard. A safe state ends with the
+ * autocenter force at zero and the enable at zero, and an enable that
+ * merged into an earlier enable would arrive before the disable that
+ * followed it, leaving the wheel gripped.
+ */
+static void
+test_a_repeated_setting_does_not_overtake_its_opposite(void)
+{
+	struct t150_wirequeue q;
+
+	t150_wq_init(&q);
+	PUSH(&q, 0x40, 0x04, 0x01, 0x00);	/* autocenter on */
+	PUSH(&q, 0x40, 0x04, 0x00, 0x00);	/* and off again */
+	PUSH(&q, 0x40, 0x04, 0x01, 0x00);	/* on once more */
+
+	check_int("three states of one setting wait as three packets",
+	    (long)t150_wq_depth(&q), 3);
+	check_next("in the order they were asked for", &q, "40 04 01 00");
+	check_next("second", &q, "40 04 00 00");
+	check_next("and the newest last", &q, "40 04 01 00");
+}
+
+/*
  * Merging must not reorder. An update that arrives while its own commit is
  * still waiting has to stay in front of that commit, or the wheel is given a
  * level for an effect it has not been told about yet.
@@ -328,6 +377,8 @@ main(void)
 	test_a_superseded_level_is_replaced_not_queued();
 	test_different_parameters_do_not_merge();
 	test_a_stop_cannot_swallow_a_play();
+	test_a_repeated_stop_does_not_overtake_a_play();
+	test_a_repeated_setting_does_not_overtake_its_opposite();
 	test_a_merge_keeps_its_place_in_the_queue();
 	test_depth_is_bounded_by_the_effects_not_by_the_rate();
 	test_a_full_queue_drops_the_oldest();
