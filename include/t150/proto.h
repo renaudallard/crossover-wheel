@@ -139,7 +139,7 @@ struct t150_proto_hdr {
 	uint16_t	length;		/* payload bytes, excludes the header */
 };
 
-/* Not yet implemented, see docs/ARCHITECTURE.md for the build order. */
+/* The codec. src/lib/proto.c owns every byte, tests/proto_check.c checks it. */
 size_t	t150_proto_pack_hdr(uint8_t *buf, size_t buflen,
 	    const struct t150_proto_hdr *hdr);
 int	t150_proto_unpack_hdr(const uint8_t *buf, size_t buflen,
