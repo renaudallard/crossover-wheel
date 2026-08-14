@@ -229,6 +229,31 @@ capture_device(long vid, long pid)
 	return r == kIOReturnSuccess ? 0 : -1;
 }
 
+/*
+ * Wait for a device with these ids to appear, up to three seconds. The same
+ * poll t150boot does after its own switch, and for the same reason: the wheel
+ * detaches, re-enumerates and is matched again, which is not instant.
+ */
+#define SETTLE_TRIES	60
+#define SETTLE_STEP_MS	50
+
+static int
+wheel_came_back(long vid, long pid)
+{
+	io_service_t svc;
+	int i;
+
+	for (i = 0; i < SETTLE_TRIES; i++) {
+		if ((svc = find_device(vid, pid)) != IO_OBJECT_NULL) {
+			IOObjectRelease(svc);
+			return 1;
+		}
+		nap(SETTLE_STEP_MS);
+	}
+
+	return 0;
+}
+
 static void
 release_device(long vid, long pid)
 {
@@ -933,9 +958,23 @@ out:
 	 * coming back under a different product id, so there is nothing to
 	 * hand back and looking for it only produces a false alarm.
 	 */
-	if (rc == 0 && act == ACT_INIT) {
-		printf("\nthe wheel has left to re-enumerate, so there is "
-		    "nothing to hand back\n");
+	/*
+	 * After a successful switch the wheel has already detached and is
+	 * coming back under a different product id, so there is nothing to
+	 * hand back. Whether it really went is a question with an answer:
+	 * look for it at the firmware id, the way t150boot does, rather than
+	 * inferring it from the transfer status.
+	 *
+	 * The inference was wrong in one direction and stranded the hardware
+	 * when it was. A control endpoint stall is also the standard way a
+	 * device refuses a request it will not honour, and a device that
+	 * stalls stays firmly on the bus; the wheel was still captured, so
+	 * macOS could not see it and only a replug brought it back.
+	 */
+	if (rc == 0 && act == ACT_INIT &&
+	    wheel_came_back(vid, T150_PID_FIRMWARE)) {
+		printf("\nthe wheel has left and come back at 0x%04x, so "
+		    "there is nothing to hand back\n", T150_PID_FIRMWARE);
 	} else {
 		printf("\nhanding the wheel back to macOS\n");
 		release_device(vid, pid);
