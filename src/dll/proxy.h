@@ -72,6 +72,15 @@ struct t150_device {
 	int			 wide;		/* the game asked for the A or W interface */
 	DWORD			 gain;		/* last DIPROP_FFGAIN seen */
 	DWORD			 autocenter;	/* last DIPROP_AUTOCENTER seen */
+	/*
+	 * The connection those two were last told to. A restarted daemon is a
+	 * fresh session that starts at full gain and knows nothing of what the
+	 * game asked for, and DirectInput gives a game no reason to set a
+	 * property twice, so the proxy is the only thing that can say it
+	 * again.
+	 */
+	unsigned int		 prop_gen;
+	int			 props_set;
 	int			 pedal_swap;	/* present Y as gas, Z as brake */
 	int			 pedal_invert;	/* pedals rest at zero, not max */
 	int			 pedals_found;	/* both pedal axes are really there */
@@ -102,6 +111,9 @@ HRESULT	t150_effect_enum(struct t150_device *dev,
 
 /* Mark every effect a device created as no longer playing. */
 void	t150_effect_all_stopped(struct t150_device *dev);
+
+/* Say the device properties again if the daemon on the other end is new. */
+void	t150_device_replay_props(struct t150_device *dev);
 
 /*
  * Fold a DIEFFECT into the normalized model, honouring only the fields the

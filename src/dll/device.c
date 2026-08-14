@@ -359,6 +359,45 @@ dev_EnumObjects(IDirectInputDevice8W *self, LPDIENUMDEVICEOBJECTSCALLBACKW cb,
 	    &c, ask);
 }
 
+/*
+ * Say the device properties again when the daemon has been replaced.
+ *
+ * A restarted daemon is a fresh session: it starts at full gain and knows
+ * nothing of what this game asked for. DirectInput gives a game no reason to
+ * set a property twice, so nothing else can put it back, and the driver's
+ * chosen strength was silently replaced with full for the rest of the run.
+ * Effects already re-upload themselves on a generation change; this is the
+ * device level equivalent.
+ */
+void
+t150_device_replay_props(struct t150_device *d)
+{
+	unsigned int gen = t150_client_generation();
+	uint8_t arg[4];
+	uint32_t v;
+
+	if (!d->props_set || d->prop_gen == gen)
+		return;
+	d->prop_gen = gen;
+
+	v = d->gain;
+	arg[0] = (uint8_t)(v & 0xff);
+	arg[1] = (uint8_t)((v >> 8) & 0xff);
+	arg[2] = (uint8_t)((v >> 16) & 0xff);
+	arg[3] = (uint8_t)((v >> 24) & 0xff);
+	(void)t150_client_call(T150_OP_SET_GAIN, arg, sizeof(arg));
+
+	v = d->autocenter == DIPROPAUTOCENTER_OFF ? 0 : (uint32_t)T150_DI_MAX;
+	arg[0] = (uint8_t)(v & 0xff);
+	arg[1] = (uint8_t)((v >> 8) & 0xff);
+	arg[2] = (uint8_t)((v >> 16) & 0xff);
+	arg[3] = (uint8_t)((v >> 24) & 0xff);
+	(void)t150_client_call(T150_OP_SET_AUTOCENTER, arg, sizeof(arg));
+
+	t150_log("the daemon is a new one, said the gain and autocenter "
+	    "again\n");
+}
+
 static HRESULT WINAPI
 dev_GetProperty(IDirectInputDevice8W *self, REFGUID prop, LPDIPROPHEADER hdr)
 {
@@ -391,6 +430,8 @@ dev_SetProperty(IDirectInputDevice8W *self, REFGUID prop, LPCDIPROPHEADER hdr)
 		uint32_t v;
 
 		if (prop == DIPROP_FFGAIN || prop == DIPROP_AUTOCENTER) {
+			d->prop_gen = t150_client_generation();
+			d->props_set = 1;
 			if (prop == DIPROP_FFGAIN) {
 				d->gain = dw->dwData;
 				v = dw->dwData;

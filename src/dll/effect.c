@@ -320,6 +320,12 @@ upload(struct effect_obj *e)
 	gen = t150_client_generation();
 	if (e->gen != gen) {
 		e->gen = gen;
+		/*
+		 * The device settings first: they scale everything the wheel
+		 * renders, so re-uploading an effect to a daemon that has
+		 * forgotten the gain would put it back at full strength.
+		 */
+		t150_device_replay_props(e->dev);
 		if (e->playing) {
 			uint8_t start[2] = { (uint8_t)e->slot, 1 };
 
