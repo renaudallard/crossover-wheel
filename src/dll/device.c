@@ -480,7 +480,7 @@ dev_Unacquire(IDirectInputDevice8W *self)
 	 * half a second of the wheel still pulling.
 	 */
 	(void)t150_client_call(T150_OP_RESET, NULL, 0);
-	t150_effect_all_stopped(from_iface(self));
+	t150_effect_all_stopped();
 
 	return IDirectInputDevice8_Unacquire(INNER(self));
 }
@@ -846,6 +846,9 @@ dev_GetForceFeedbackState(IDirectInputDevice8W *self, LPDWORD out)
 static HRESULT WINAPI
 dev_SendForceFeedbackCommand(IDirectInputDevice8W *self, DWORD flags)
 {
+	/* Nothing here is per device: the daemon's slots are per connection. */
+	(void)self;
+
 	/*
 	 * These mean different things and used to be sent as the same op.
 	 * RESET stops and releases every effect; STOPALL stops them and
@@ -887,7 +890,7 @@ dev_SendForceFeedbackCommand(IDirectInputDevice8W *self, DWORD flags)
 	 */
 	if (flags & (DISFFC_RESET | DISFFC_STOPALL | DISFFC_PAUSE |
 	    DISFFC_SETACTUATORSOFF))
-		t150_effect_all_stopped(from_iface(self));
+		t150_effect_all_stopped();
 
 	/* Continue and actuators-on need nothing: the slots are still there. */
 	return DI_OK;

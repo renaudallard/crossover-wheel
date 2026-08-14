@@ -111,8 +111,8 @@ HRESULT	t150_effect_create(struct t150_device *dev, REFGUID guid,
 HRESULT	t150_effect_enum(struct t150_device *dev,
 	    LPDIENUMCREATEDEFFECTOBJECTSCALLBACK cb, LPVOID ref);
 
-/* Mark every effect a device created as no longer playing. */
-void	t150_effect_all_stopped(struct t150_device *dev);
+/* Mark every effect this process holds as no longer playing. */
+void	t150_effect_all_stopped(void);
 
 /* Say the device properties again if the daemon on the other end is new. */
 void	t150_device_replay_props(struct t150_device *dev);

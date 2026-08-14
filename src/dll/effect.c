@@ -91,8 +91,7 @@ t150_effect_enum(struct t150_device *dev,
 }
 
 /*
- * Every effect this device created is stopped, as far as the game is
- * concerned.
+ * Every effect this process holds is stopped, as far as the game is concerned.
  *
  * The device level commands stop everything on the wheel without naming a
  * single effect, so nothing could clear the flag that says an object is
@@ -101,16 +100,23 @@ t150_effect_enum(struct t150_device *dev,
  * started it again. A game that had deliberately stopped its forces could be
  * handed a pulling wheel by a daemon restart. It also had GetEffectStatus
  * answer that a stopped effect was still running.
+ *
+ * Every effect rather than the ones the device that took the command created,
+ * because the daemon keeps one slot table per connection and the proxy opens
+ * one connection per process: the stop it sends reaches every slot, whichever
+ * wrapped device asked for it. SDL makes exactly that shape, a second device
+ * for the same wheel, and scoping this to one of them left the other's effects
+ * believing they still played.
  */
 void
-t150_effect_all_stopped(struct t150_device *dev)
+t150_effect_all_stopped(void)
 {
 	size_t i;
 
 	for (i = 0; i < T150_SLOT_MAX; i++) {
 		struct effect_obj *e = live[i];
 
-		if (e != NULL && e->dev == dev)
+		if (e != NULL)
 			e->playing = 0;
 	}
 }
