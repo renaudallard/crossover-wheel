@@ -348,6 +348,20 @@ jobs:
           # The signature has to survive being copied into the image: without
           # it macOS calls the app damaged rather than merely unverified.
           codesign --verify --strict /tmp/dmgcheck/crossover-wheel.app
+      - name: the checksum the updater refuses to install without
+        # The application will not install an update whose release publishes
+        # no SHA256SUMS: a missing one is an ordinary mistake when assets are
+        # attached by hand, and an ordinary mistake must not be the difference
+        # between checking the download and not checking it. Generating it
+        # here means a release cannot forget and thereby strand every copy
+        # already installed.
+        #
+        # The format is shasum's own, "<hash>  <name>", and the updater takes
+        # the first field of the first line naming a .dmg.
+        run: |
+          cd build/bin
+          shasum -a 256 crossover-wheel-*.dmg > SHA256SUMS
+          cat SHA256SUMS
       - name: confirm the probes run
         # No wheel is attached to a CI runner, so the only thing that can be
         # checked here is that each tool starts, parses arguments and exits
@@ -397,4 +411,5 @@ jobs:
             build/bin/t150d
             build/bin/crossover-wheel.app/**
             build/bin/crossover-wheel-*.dmg
+            build/bin/SHA256SUMS
           if-no-files-found: error
