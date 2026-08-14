@@ -284,8 +284,17 @@ APP_CFLAGS = -O2 -fobjc-arc -Iinclude -Isrc $(WARNINGS)
 ifeq ($(UNAME_S),Darwin)
 app: $(APP)
 
-$(APP): src/mac/t150menu.m dist/Info.plist $(TOOL_BINS) $(PROBE_BINS) \
-    $(DAEMON_BIN) | $(BIN)
+# The recipe copies more than it is built from, and make can only see a change
+# in something it was told about. install.sh in particular is the file most
+# likely to be edited between builds, because the bundle exists to be a front
+# end over it, and a bundle that was not rebuilt shipped the previous copy.
+APP_RES_SRCS = install.sh dist/update.sh \
+	       $(wildcard man/*.1 man/*.7 man/*.8) \
+	       $(wildcard dist/icons/AppIcon.iconset/*.png) \
+	       $(wildcard dist/icons/menubar/*.png)
+
+$(APP): src/mac/t150menu.m dist/Info.plist $(APP_RES_SRCS) $(TOOL_BINS) \
+    $(PROBE_BINS) $(DAEMON_BIN) | $(BIN)
 	rm -rf $(APP)
 	mkdir -p $(APP)/Contents/MacOS $(APP_RES)
 	sed 's/@VERSION@/$(REL_VERSION)/g' dist/Info.plist \
