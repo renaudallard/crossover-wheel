@@ -245,6 +245,24 @@
 	}];
 
 	/*
+	 * Waking is one of the three things that put the wheel back into boot
+	 * mode, and the only one the system will tell us about, so act on it
+	 * rather than waiting up to a timer period. Somebody who wakes the
+	 * machine and starts a game straight away is exactly who this is for.
+	 *
+	 * On NSWorkspace's own notification centre. Workspace notifications
+	 * are not posted to the default one, and an observer registered there
+	 * would simply never fire.
+	 */
+	[[[NSWorkspace sharedWorkspace] notificationCenter]
+	    addObserverForName:NSWorkspaceDidWakeNotification object:nil
+	    queue:[NSOperationQueue mainQueue]
+	    usingBlock:^(NSNotification *note) {
+		(void)note;
+		[weak watchWheel];
+	}];
+
+	/*
 	 * Nothing installed yet means the person just double clicked this to
 	 * install, so show them the window rather than a menu bar icon they
 	 * have to find.
