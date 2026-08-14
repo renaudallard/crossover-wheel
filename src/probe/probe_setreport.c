@@ -9,8 +9,11 @@
  *
  * The default action sets the autocenter spring to full and enables it,
  * because that is the one command whose effect is unmistakable: the wheel
- * starts pulling itself back to centre the moment it lands. Use -A to switch
- * it off again.
+ * starts pulling itself back to centre the moment it lands. Switch it off
+ * again with -a 0, which sends the force: the enable flag at 0x04 only says
+ * whether the spring survives an application opening the wheel's input, and
+ * nothing on macOS opens it, so clearing that flag alone releases nothing.
+ * RESEARCH.md A15, which cost six hardware sessions to learn.
  *
  * Three things are deliberately left as separate flags rather than being
  * guessed, because each is an open question the run is meant to settle:
@@ -106,7 +109,8 @@ usage(void)
 	    "\n"
 	    "  -a force     set autocenter spring to force (0..100) and enable\n"
 	    "               it, the default action with force 100\n"
-	    "  -A           disable autocenter\n"
+	    "  -A           clear the autocenter enable flag. It does not\n"
+	    "               release a held wheel: use -a 0 for that\n"
 	    "  -r degrees   set rotation range (%u..%u)\n"
 	    "  -g gain      set gain, raw hardware units (0..%u), where full\n"
 	    "               scale is 0x80 and not 0xff\n"
@@ -220,6 +224,12 @@ main(int argc, char *argv[])
 		npkt = 2;
 		break;
 	case ACT_AUTOCENTER_OFF:
+		/*
+		 * The flag alone, which is what this option means and all it
+		 * has ever done. It is kept because the framing matrix wants
+		 * to be able to send exactly one packet, and it is documented
+		 * as not being the way to free a wheel: that is -a 0.
+		 */
 		pkt[0].bytes[0] = T150_OP_SETTINGS;
 		pkt[0].bytes[1] = T150_OP_AUTOCENTER_ENABLE;
 		pkt[0].bytes[2] = 0;
@@ -341,7 +351,7 @@ main(int argc, char *argv[])
 		    "physically reacted.\n");
 		if (act == ACT_AUTOCENTER)
 			printf("Turn the spring back off with:  "
-			    "probe_setreport -A\n");
+			    "probe_setreport -a 0\n");
 	} else {
 		printf("\nThe write failed. Before concluding the HID path is "
 		    "closed, retry with\na different report id (-i 0x0a), "
