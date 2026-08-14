@@ -41,7 +41,7 @@ Product id. The default is 0xb677, the T150 in firmware mode.
 .Sh COMMANDS
 .Bl -tag -width Ds
 .It Cm range Ar degrees
-Lock to lock, 270 to 1080. The firmware clamps anything smaller.
+Lock to lock, 270 to 1080. Anything outside that is refused here.
 .Pp
 For driving a game, this number and the game's own rotation setting must be
 the same. DirectInput has no property for wheel rotation, so a game cannot

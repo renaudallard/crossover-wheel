@@ -303,8 +303,13 @@ t150_ff_pk_id1(unsigned int slot)
 	return (uint16_t)(slot * 0x1cu + 0x0eu);
 }
 
-/* Rotation range accepted by the firmware. Values below the minimum are
- * capped by the wheel itself. */
+/*
+ * Rotation range accepted by the firmware. The wheel caps anything smaller
+ * than the minimum itself, which is why the minimum is 270 rather than 0;
+ * every tool here refuses a number outside these bounds rather than sending
+ * one and relying on that, so the range they advertise is the range they
+ * keep.
+ */
 #define T150_RANGE_MIN		270u
 #define T150_RANGE_MAX		1080u
 

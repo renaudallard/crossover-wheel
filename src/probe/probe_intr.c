@@ -736,8 +736,17 @@ main(int argc, char *argv[])
 			pid = T150_PID_BOOT;
 			break;
 		case 'r':
+			/*
+			 * The minimum as well as the maximum, so that the
+			 * bound this prints in its usage is the bound it
+			 * keeps. t150ctl and the daemon both refuse anything
+			 * below 270 and these did not, so the three disagreed
+			 * about a range all of them advertised as 270 to 1080.
+			 * -x is the way to send a number outside it.
+			 */
 			if (act != ACT_NONE ||
-			    probe_parse_uint(optarg, T150_RANGE_MAX, &arg) != 0)
+			    probe_parse_uint(optarg, T150_RANGE_MAX, &arg) != 0 ||
+			    arg < T150_RANGE_MIN)
 				usage();
 			act = ACT_RANGE;
 			break;
