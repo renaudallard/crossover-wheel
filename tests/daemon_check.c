@@ -1094,6 +1094,63 @@ test_reset_reports_a_stop_the_wheel_refused(void)
 }
 
 /*
+ * Every loop that stops everything, with more than one slot playing.
+ *
+ * Each of these walks all sixteen slots, and every successful start in the
+ * suite was for one slot at a time, so a regression that stopped the first
+ * playing slot and left the rest was invisible to the whole of it. On this
+ * hardware every unstopped slot stays latched.
+ */
+static void
+test_every_teardown_stops_every_playing_slot(void)
+{
+	int i;
+
+	for (i = 0; i < 4; i++) {
+		reset_session();
+		hello(0);
+		load_and_play(0, 0);
+		load_and_play(1, 0);
+		(void)tick(0);
+		drain_log();
+
+		switch (i) {
+		case 0:
+			/* The watchdog, which is what all of this is for. */
+			(void)tick(T150_WATCHDOG_MS);
+			expect_log("the watchdog stops both slots",
+			    "write 4: 41 00 00 01\n"
+			    "write 4: 41 01 00 01\n"
+			    "write 4: 40 03 00 00\n"
+			    "write 4: 40 04 00 00\n");
+			break;
+		case 1:
+			frame(T150_OP_RESET, NULL, 0, 10, T150_OP_OK,
+			    T150_ERR_NONE);
+			expect_log("a reset stops both slots",
+			    "write 4: 41 00 00 01\n"
+			    "write 4: 41 01 00 01\n");
+			break;
+		case 2:
+			frame(T150_OP_STOP_ALL, NULL, 0, 10, T150_OP_OK,
+			    T150_ERR_NONE);
+			expect_log("a stop all stops both slots",
+			    "write 4: 41 00 00 01\n"
+			    "write 4: 41 01 00 01\n");
+			break;
+		default:
+			t150_session_end(&sess, "test");
+			expect_log("a client going away stops both slots",
+			    "write 4: 41 00 00 01\n"
+			    "write 4: 41 01 00 01\n"
+			    "write 4: 40 03 00 00\n"
+			    "write 4: 40 04 00 00\n");
+			break;
+		}
+	}
+}
+
+/*
  * DESTROY is the one opcode that erases a slot the wheel may still be
  * playing, and no test sent it. The proxy sends it on the last Release of an
  * effect and on Unload, without a Stop first, so a game releasing a running
@@ -2032,6 +2089,7 @@ main(void)
 	test_a_refused_stop_is_not_replayed_as_a_start();
 	test_stop_all_tries_every_slot_before_reporting();
 	test_reset_reports_a_stop_the_wheel_refused();
+	test_every_teardown_stops_every_playing_slot();
 	test_destroy_stops_the_effect_and_releases_the_slot();
 	test_gain_scales_the_envelope();
 	test_a_ramp_is_scaled_by_its_gain();
