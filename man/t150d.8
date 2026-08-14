@@ -179,9 +179,13 @@ packets in that order.
 .Pp
 Under
 .Fl v
-the count of merged and dropped packets is printed on the way out. Merged is
-the queue working. Dropped means 128 distinct packets were waiting, which is a
-wheel that has stopped taking writes rather than one that is merely behind.
+the count of merged and refused packets is printed on the way out. Merged is
+the queue working. Refused means 128 distinct packets were already waiting,
+which is a wheel that has stopped taking writes rather than one that is merely
+behind. A refusal is reported to the session as a failed write, so the effect
+stays owed and the next pass sends it again; the queue never discards a packet
+it has already accepted, because accepting one is what tells the session it
+need not keep a copy.
 .Pp
 macOS only. The queue itself is checked by
 .Pa tests/wirequeue_check ,

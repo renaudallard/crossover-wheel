@@ -149,8 +149,10 @@ t150_wq_depth(const struct t150_wirequeue *q)
  * had stopped. A play and a stop are different parameters, so neither ever
  * swallowed the other, which is what made it look safe.
  *
- * Returns 0 whether the packet was appended or merged, and -1 only if it
- * cannot be represented.
+ * Returns 0 whether the packet was appended or merged, and -1 when it could
+ * not be taken: either it cannot be represented, or the queue is full. A
+ * caller that is told 0 may record the packet as written; that is the whole
+ * contract, and it is why a full queue refuses rather than making room.
  */
 int
 t150_wq_push(struct t150_wirequeue *q, const uint8_t *buf, size_t len)
@@ -177,13 +179,21 @@ t150_wq_push(struct t150_wirequeue *q, const uint8_t *buf, size_t len)
 	/*
 	 * Nothing waiting addresses this, so it is new work. Full here means
 	 * the wheel has stopped taking writes altogether rather than merely
-	 * lagging, since coalescing has already collapsed everything it can:
-	 * the oldest goes, because it is the one most likely to have been
-	 * overtaken by the state of the car.
+	 * lagging, since coalescing has already collapsed everything it can.
+	 *
+	 * Refuse the newcomer rather than making room for it. Discarding the
+	 * oldest is what this did, and the packet it discarded had already
+	 * been reported written: the session recorded it in the slot's sent
+	 * bytes, stopped believing the slot was dirty, and never sent it
+	 * again, so a force could go missing with every layer reporting
+	 * success. Refusing is the only answer that stays true, because it is
+	 * the one the caller can still act on: the slot stays dirty and the
+	 * next pass tries again.
 	 */
 	if (q->head - q->tail >= T150_WQ_MAX) {
-		q->tail++;
 		q->dropped++;
+
+		return -1;
 	}
 
 	q->ring[q->head % T150_WQ_MAX].len = (uint8_t)len;

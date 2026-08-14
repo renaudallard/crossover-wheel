@@ -785,13 +785,15 @@ hid_close(void *priv)
 		/*
 		 * Merged packets are the queue working: the daemon builds
 		 * faster than the wheel takes and the newer value replaced
-		 * one the wheel was never going to render. Dropped packets
+		 * one the wheel was never going to render. Refused packets
 		 * are the queue failing, and after coalescing that means a
-		 * hundred and twenty eight distinct packets went unwritten.
+		 * hundred and twenty eight distinct packets were already
+		 * waiting. Each refusal went back to the session as a failed
+		 * write, so the effect was owed again rather than lost.
 		 */
 		if (h->verbose)
 			fprintf(stderr, "t150d: the writer merged %u packet(s) "
-			    "into fresher ones and dropped %u\n",
+			    "into fresher ones and refused %u\n",
 			    h->q.merged, h->q.dropped);
 	}
 

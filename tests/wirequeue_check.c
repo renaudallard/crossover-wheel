@@ -235,10 +235,11 @@ test_depth_is_bounded_by_the_effects_not_by_the_rate(void)
 /*
  * The backstop. Only distinct parameters can fill the queue now, so reaching
  * the limit means the wheel has stopped taking writes rather than merely
- * lagging behind. The oldest goes.
+ * lagging behind. What is already in stays in: every one of those packets has
+ * been reported written, and the caller has stopped keeping a copy.
  */
 static void
-test_a_full_queue_drops_the_oldest(void)
+test_a_full_queue_keeps_what_it_accepted(void)
 {
 	struct t150_wirequeue q;
 	unsigned int i;
@@ -254,8 +255,35 @@ test_a_full_queue_drops_the_oldest(void)
 	check_int("the queue holds its limit and no more",
 	    (long)t150_wq_depth(&q), (long)T150_WQ_MAX);
 	check_int("the overflow is counted", (long)q.dropped, 2);
-	check_next("and what survives starts after the oldest two", &q,
-	    "03 02 00 00");
+	check_next("and nothing already accepted was thrown away for it", &q,
+	    "03 00 00 00");
+}
+
+/*
+ * What the caller is told matters more than what is kept. A packet the queue
+ * refuses must be refused out loud: the session records a packet as being on
+ * the wheel the moment the write reports success, and stops resending it, so
+ * a silent discard loses a force with every layer reporting success.
+ */
+static void
+test_a_full_queue_refuses_rather_than_lying(void)
+{
+	struct t150_wirequeue q;
+	uint8_t p[4] = { 0x03, 0x00, 0x00, 0x00 };
+	unsigned int i;
+
+	t150_wq_init(&q);
+	for (i = 0; i < T150_WQ_MAX; i++) {
+		p[1] = (uint8_t)(i & 0xff);
+		p[2] = (uint8_t)(i >> 8);
+		check_int("every packet up to the limit is taken",
+		    t150_wq_push(&q, p, sizeof(p)), 0);
+	}
+
+	p[1] = 0xff;
+	p[2] = 0xff;
+	check_int("and the one that does not fit is refused",
+	    t150_wq_push(&q, p, sizeof(p)), -1);
 }
 
 /* A wheel that has gone leaves nothing behind for one that comes back. */
@@ -381,7 +409,8 @@ main(void)
 	test_a_repeated_setting_does_not_overtake_its_opposite();
 	test_a_merge_keeps_its_place_in_the_queue();
 	test_depth_is_bounded_by_the_effects_not_by_the_rate();
-	test_a_full_queue_drops_the_oldest();
+	test_a_full_queue_keeps_what_it_accepted();
+	test_a_full_queue_refuses_rather_than_lying();
 	test_clearing_empties_the_queue();
 	test_refusals();
 	test_length_is_part_of_the_key();

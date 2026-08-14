@@ -611,9 +611,12 @@ value per parameter and the one it never rendered could not be felt. A play and
 a stop for one slot are different parameters that never merge, and only the
 newest packet waiting for a given target is merged into, so a repeat cannot
 overtake something queued behind it: a stop, a play and a stop for one slot
-stay three packets in that order. `-v` prints the merged and dropped counts on
-the way out, and
-after coalescing a drop means the wheel stopped taking writes altogether.
+stay three packets in that order. `-v` prints the merged and refused counts on
+the way out, and after coalescing a refusal means the wheel stopped taking
+writes altogether. A refusal is reported to the session as a failed write, so
+the effect stays owed and goes again on the next pass; the queue never discards
+a packet it has already accepted, because accepting one is what tells the
+session it need not keep a copy.
 
 That queue is `src/t150d/wirequeue.c`, kept apart from the macOS backend that
 uses it so `tests/wirequeue_check.c` can drive every rule in it on a machine

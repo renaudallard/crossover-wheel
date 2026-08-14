@@ -29,7 +29,7 @@
 struct t150_wirequeue {
 	struct t150_wire	ring[T150_WQ_MAX];
 	unsigned int		head, tail;
-	unsigned int		dropped;	/* pushed onto a full queue */
+	unsigned int		dropped;	/* refused, the queue was full */
 	unsigned int		merged;		/* superseded one already in */
 };
 
