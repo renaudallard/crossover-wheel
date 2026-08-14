@@ -130,8 +130,11 @@ Springs, envelopes, ramps and per-effect gain are encoded to match
 Thrustmaster's own Windows driver byte for byte, and no one has felt them on a
 wheel yet. A constant force, a damper and two periodics have been.
 
-The man pages are here. Read one with:
+The man pages ship inside the application. Read one without installing
+anything:
 
-  man ./t150d.8
+  man /Applications/crossover-wheel.app/Contents/Resources/t150d.8
+
+./install.sh from the source tree puts them on your manpath instead.
 
 docs/RESEARCH.md in the repository is the evidence behind all of this.

@@ -356,11 +356,14 @@ DMG_STAGE   = $(BUILD)/dmg
 
 dmg: $(DMG)
 
-$(DMG): $(APP)
+$(DMG): $(APP) dist/README.macos
 	rm -rf $(DMG_STAGE) $(DMG)
 	mkdir -p $(DMG_STAGE)
 	cp -R $(APP) $(DMG_STAGE)/
 	ln -s /Applications $(DMG_STAGE)/Applications
+	# The README the project's own README says every archive carries, and
+	# which nothing copied anywhere until now.
+	cp dist/README.macos $(DMG_STAGE)/README.txt
 	hdiutil create -volname crossover-wheel -srcfolder $(DMG_STAGE) \
 	    -fs HFS+ -format UDZO -ov $(DMG)
 	@echo "built $(DMG)"

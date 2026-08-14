@@ -342,6 +342,7 @@ jobs:
           test -f /tmp/dmgcheck/crossover-wheel.app/Contents/Resources/t150-dinput8.dll
           # The shortcut is what makes it drag-and-drop rather than a folder
           # somebody has to know what to do with.
+          test -f /tmp/dmgcheck/README.txt
           test -L /tmp/dmgcheck/Applications
           test "$(readlink /tmp/dmgcheck/Applications)" = "/Applications"
           # The signature has to survive being copied into the image: without
