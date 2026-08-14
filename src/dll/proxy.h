@@ -70,7 +70,6 @@ struct t150_device {
 	IDirectInputDevice8W	*inner;
 	LONG			 refs;
 	int			 wide;		/* the game asked for the A or W interface */
-	uint16_t		 slots;		/* one bit per slot in use */
 	DWORD			 gain;		/* last DIPROP_FFGAIN seen */
 	DWORD			 autocenter;	/* last DIPROP_AUTOCENTER seen */
 	int			 pedal_swap;	/* present Y as gas, Z as brake */
@@ -84,9 +83,12 @@ struct t150_device {
 
 HRESULT	t150_device_wrap(IDirectInputDevice8W *inner, int wide, void **out);
 
-/* Take and give back a slot. Returns -1 when the wheel has no room left. */
-int	t150_device_slot_alloc(struct t150_device *dev);
-void	t150_device_slot_free(struct t150_device *dev, int slot);
+/*
+ * Take and give back one of the wheel's effect slots. Returns -1 when there
+ * is no room left. Process wide, not per device: see device.c for why.
+ */
+int	t150_slot_alloc(void);
+void	t150_slot_free(int slot);
 
 HRESULT	t150_effect_create(struct t150_device *dev, REFGUID guid,
 	    const DIEFFECT *params, IDirectInputEffect **out);

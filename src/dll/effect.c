@@ -282,7 +282,7 @@ eff_Release(IDirectInputEffect *self)
 		uint8_t slot = (uint8_t)e->slot;
 
 		(void)t150_client_call(T150_OP_EFFECT_DESTROY, &slot, 1);
-		t150_device_slot_free(e->dev, e->slot);
+		t150_slot_free(e->slot);
 		/* Balances the reference taken in t150_effect_create. */
 		IDirectInputDevice8_Release((IDirectInputDevice8W *)e->dev);
 		free(e);
@@ -595,10 +595,10 @@ t150_effect_create(struct t150_device *dev, REFGUID guid, const DIEFFECT *params
 
 	if ((kind = t150_kind_from_guid(guid)) == T150_EFFECT_NONE)
 		return DIERR_DEVICENOTREG;
-	if ((slot = t150_device_slot_alloc(dev)) < 0)
+	if ((slot = t150_slot_alloc()) < 0)
 		return DIERR_DEVICEFULL;
 	if ((e = calloc(1, sizeof(*e))) == NULL) {
-		t150_device_slot_free(dev, slot);
+		t150_slot_free(slot);
 		return E_OUTOFMEMORY;
 	}
 

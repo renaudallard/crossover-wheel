@@ -37,26 +37,59 @@ t150_is_wheel(const GUID *product)
 	return product->Data1 == (DWORD)((T150_PID_FIRMWARE << 16) | T150_VID);
 }
 
-int
-t150_device_slot_alloc(struct t150_device *dev)
-{
-	int i;
+/*
+ * One slot map for the process, not one per wrapped device.
+ *
+ * The slots being handed out are the daemon's, and the daemon keeps one table
+ * per connection while this proxy opens exactly one connection per process.
+ * A per-device map therefore handed out slot 0 twice for the same sixteen
+ * slots on the wheel as soon as a game held two wrapped devices, and SDL
+ * makes exactly that: SDL_HapticOpen creates a second DirectInput device for
+ * the wheel rather than reusing the joystick's. The second effect then
+ * overwrote the first's parameters, and releasing either one destroyed the
+ * slot the other was still playing.
+ *
+ * Interlocked rather than locked. There is nothing else here to serialise,
+ * and a CRITICAL_SECTION would need somewhere to be initialised that is not
+ * DllMain.
+ */
+static volatile LONG slots_in_use;
 
-	for (i = 0; i < (int)T150_SLOT_MAX; i++) {
-		if ((dev->slots & (1u << i)) == 0) {
-			dev->slots |= (uint16_t)(1u << i);
-			return i;
+int
+t150_slot_alloc(void)
+{
+	int i = 0;
+
+	while (i < (int)T150_SLOT_MAX) {
+		LONG bit = (LONG)1 << i;
+		LONG old = slots_in_use;
+
+		if ((old & bit) != 0) {
+			i++;
+			continue;
 		}
+		if (InterlockedCompareExchange(&slots_in_use, old | bit,
+		    old) == old)
+			return i;
+		/* Another thread moved it: read again and re-test this slot. */
 	}
 
 	return -1;
 }
 
 void
-t150_device_slot_free(struct t150_device *dev, int slot)
+t150_slot_free(int slot)
 {
-	if (slot >= 0 && slot < (int)T150_SLOT_MAX)
-		dev->slots &= (uint16_t)~(1u << slot);
+	LONG bit, old;
+
+	if (slot < 0 || slot >= (int)T150_SLOT_MAX)
+		return;
+
+	bit = (LONG)1 << slot;
+	do {
+		old = slots_in_use;
+	} while (InterlockedCompareExchange(&slots_in_use, old & ~bit,
+	    old) != old);
 }
 
 static struct t150_device *
