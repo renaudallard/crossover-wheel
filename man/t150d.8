@@ -10,6 +10,7 @@
 .Op Fl a Ar force
 .Op Fl e Ar endpoint
 .Op Fl g Ar ms
+.Op Fl p
 .Op Fl r Ar degrees
 .Op Fl t
 .Op Fl w
@@ -136,6 +137,15 @@ different path runs alongside. The default is
 which the proxy reads through Wine's
 .Pa Z:
 mapping.
+.It Fl p
+Keep the emitter to its four millisecond floor even when the writer has
+nothing in hand, as builds before this one did. The default lets a pass run
+early against an empty queue, which is worth up to a whole period on a force
+the wheel could take straight away. This exists for the same reason
+.Fl t
+does: it changes the hot path of something that works, and the only way to
+know whether it is an improvement is to feel both on a wheel. See
+.Sx THE EMITTER .
 .It Fl r Ar degrees
 Lock to lock, 270 to 1080, applied whenever a client takes the wheel and
 again after the wheel has been re-acquired. Unset leaves the wheel's own
@@ -342,7 +352,9 @@ is the case it was really for, and a pass that failed is never brought
 forward, because the deadline is what stops a wheel that has gone turning the
 retry into a spin. Without
 .Fl w
-nothing can answer the question and the floor always applies.
+nothing can answer the question and the floor always applies, and
+.Fl p
+keeps it whatever the writer says.
 .Pp
 Only the packet that moved is sent. A level, a coefficient or a phase is one
 packet; a change to the envelope, the duration or the effect's type is the

@@ -995,6 +995,32 @@ test_an_idle_writer_emits_ahead_of_the_floor(void)
 	be.idle = NULL;
 }
 
+/* -p keeps the floor whatever the writer says, so the two can be compared. */
+static void
+test_strict_pace_keeps_the_floor(void)
+{
+	struct t150_effect ef;
+
+	reset_session();
+	be.idle = fake_idle;
+	idle_answer = 1;
+	sess.strict_pace = 1;
+	hello(0);
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+	drain_log();
+
+	ef.u.constant.magnitude = 5000;
+	upload_at(&ef, 1);
+	(void)tick(1);
+	expect_log("-p waits for the floor even with an idle writer", "");
+
+	sess.strict_pace = 0;
+	be.idle = NULL;
+}
+
 /*
  * Except after a pass that failed. The deadline is the only thing stopping a
  * wheel that has gone from turning the retry into a spin, and an idle writer
@@ -2411,6 +2437,7 @@ main(void)
 	test_only_the_packet_that_moved_is_sent();
 	test_an_idle_writer_emits_ahead_of_the_floor();
 	test_a_failed_pass_is_not_brought_forward();
+	test_strict_pace_keeps_the_floor();
 
 	(void)fclose(logfp);
 	free(logbuf);

@@ -513,7 +513,7 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: t150d [-ntvw] [-a force] [-e endpoint] [-g ms] [-r degrees]\n"
+	    "usage: t150d [-nptvw] [-a force] [-e endpoint] [-g ms] [-r degrees]\n"
 	    "\n"
 	    "  -a force     leave the wheel's own centring spring at this, 0 to\n"
 	    "               %u, on every acquire. 0 releases it and is the\n"
@@ -528,6 +528,11 @@ usage(void)
 	    "               to eighteen packets, so this delays it, and the\n"
 	    "               ceiling is what a client's round trip can absorb\n"
 	    "  -n           drive nothing, log the packets instead\n"
+	    "  -p           keep the emitter to its four millisecond floor even\n"
+	    "               when the writer has nothing in hand, as builds\n"
+	    "               before this one did. The default lets a pass run\n"
+	    "               early against an empty queue, which is worth up to\n"
+	    "               a whole period. Here to compare the two by feel\n"
 	    "  -r degrees   lock to lock, %u to %u, set whenever a client takes\n"
 	    "               the wheel. No game can ask for this: DirectInput has\n"
 	    "               no property for it. Unset leaves the wheel's own\n"
@@ -558,10 +563,10 @@ main(int argc, char *argv[])
 	size_t have = 0, phave = 0;
 	unsigned short port;
 	unsigned int gap_ms = 0, range_deg = 0, autocenter = 0;
-	int always_triple = 0, writer = 0;
+	int always_triple = 0, writer = 0, strict_pace = 0;
 	int ch, lfd, cfd = -1, pfd_pend = -1, verbose = 0, fake = 0;
 
-	while ((ch = getopt(argc, argv, "a:e:g:nr:tvw")) != -1) {
+	while ((ch = getopt(argc, argv, "a:e:g:npr:tvw")) != -1) {
 		switch (ch) {
 		case 'a':
 			if (parse_level(optarg, &autocenter) != 0)
@@ -576,6 +581,9 @@ main(int argc, char *argv[])
 			break;
 		case 'n':
 			fake = 1;
+			break;
+		case 'p':
+			strict_pace = 1;
 			break;
 		case 'r':
 			if (parse_range(optarg, &range_deg) != 0)
@@ -657,6 +665,7 @@ main(int argc, char *argv[])
 	sess.range_deg = range_deg;
 	sess.autocenter = autocenter;
 	sess.always_triple = always_triple;
+	sess.strict_pace = strict_pace;
 
 	/*
 	 * Every signal that would otherwise kill the process outright, so the
@@ -902,6 +911,7 @@ main(int argc, char *argv[])
 				sess.range_deg = range_deg;
 				sess.autocenter = autocenter;
 				sess.always_triple = always_triple;
+				sess.strict_pace = strict_pace;
 				sess.peer_port = peer_port;
 				cfd = nfd2;
 				have = 0;
@@ -918,6 +928,7 @@ main(int argc, char *argv[])
 				psess.range_deg = range_deg;
 				psess.autocenter = autocenter;
 				psess.always_triple = always_triple;
+				psess.strict_pace = strict_pace;
 				psess.peer_port = peer_port;
 				if (verbose)
 					fprintf(stderr, "t150d: second client "

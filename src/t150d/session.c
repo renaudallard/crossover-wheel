@@ -1214,11 +1214,15 @@ session_replay_starts(struct t150_session *s)
  * A pass that failed is never brought forward. The deadline is what stops a
  * wheel that has gone turning the retry into a spin, and emit_failed is how
  * session_emit says that happened.
+ *
+ * -p keeps to the floor whatever the backend says, and exists for the same
+ * reason -t does: this changes the hot path of something that works, and the
+ * only way to know whether it is an improvement is to feel both on a wheel.
  */
 static int
 emit_now(const struct t150_session *s)
 {
-	return !s->emit_failed && s->be->idle != NULL &&
+	return !s->strict_pace && !s->emit_failed && s->be->idle != NULL &&
 	    s->be->idle(s->be->priv);
 }
 

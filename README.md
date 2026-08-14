@@ -619,7 +619,8 @@ that 4 ms floor is skipped while the writer's queue is empty: the floor was
 there to keep a game's frame out of a burst of synchronous USB transfers, and
 a writer thread paces itself, so against an empty queue it only delayed a
 force the wheel could have taken now. It comes back the moment the writer
-falls behind. Only effect
+falls behind, and `-p` keeps it whatever the writer says, for anyone who
+wants to feel the two against each other. Only effect
 parameters are treated this way. Starts, stops, resets, the settings and
 every path that makes the wheel safe are written the moment they arrive and
 are never merged, because those are things that happen rather than values

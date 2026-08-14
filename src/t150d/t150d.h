@@ -210,6 +210,7 @@ struct t150_session {
 	uint32_t		 client_autocenter;
 	int			 client_set_autocenter;
 	int			 always_triple;	/* -t: re-send the set on any change */
+	int			 strict_pace;	/* -p: never emit ahead of the floor */
 	uint8_t			 next_slot;	/* where the next pass resumes */
 	uint8_t			 io_err;	/* a write failed, owed to the next upload */
 	uint8_t			 replay_starts;	/* the wheel came back, re-start what was playing */
