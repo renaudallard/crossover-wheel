@@ -278,13 +278,15 @@ changed. See THE EMITTER in [`t150d(8)`](../man/t150d.8).
 key.
 
 ```
-f0  pk_id0  f1  attack_length:u16  attack_level  fade_length:u16  fade_level
+f0  pk_id0:u16  attack_length:u16  attack_level  fade_length:u16  fade_level
                                                           [ f2  f3 ]  <- condition only
 ```
 
 `f0` is the effect class, not a fixed opcode: `0x02` for constant and for
-periodic, `0x05` for spring and damper. `f1` is 0.
-`pk_id0 = slot * 0x1C + 0x1C`. Lengths are milliseconds.
+periodic, `0x05` for spring and damper.
+`pk_id0 = slot * 0x1C + 0x1C`, little-endian and sixteen bits wide: the byte
+after it is the key's high half rather than a pad, which matters from slot 9
+on, where the key passes 0xFF. RESEARCH.md A40. Lengths are milliseconds.
 
 **A constant or a periodic ends at `fade_level`.** Measured in Thrustmaster's
 own driver: `02 1c 00 e8 03 02 e8 03 01`, nine bytes and no trailer. This
@@ -313,10 +315,11 @@ vendor sends zeros there.
 **2. `ff_update`, 4, 8 or 11 bytes.** The effect-class parameters.
 
 ```
-class  pk_id1  f1  <class-specific payload>
+class  pk_id1:u16  <class-specific payload>
 ```
 
-`f1` is 0 and `pk_id1 = slot * 0x1C + 0x0E`. The class byte here uses a
+`pk_id1 = slot * 0x1C + 0x0E`, little-endian and sixteen bits wide like the
+other key. The class byte here uses a
 different set from `ff_first`:
 
 | class | payload | bytes |
@@ -329,12 +332,14 @@ different set from `ff_first`:
 and declares the effect type, duration and start delay.
 
 ```
-f0  id  effect_type:u16  length:u16  f1:u16  f2  pk_id1  f3  pk_id0  f4  delay  f5
+f0  id  effect_type:u16  length:u16  f1:u16  f2  pk_id1:u16  pk_id0:u16  delay:u16
 ```
 
-`f0` is `0x01`, `id` is the slot, and `f1` through `f5` are 0. `length` is the
-duration in milliseconds, with `0xFFFF` meaning endless. `delay` is a 16-bit
-little-endian millisecond value in the last two bytes.
+`f0` is `0x01`, `id` is the slot, and `f1` and `f2` are 0. `length` is the
+duration in milliseconds, with `0xFFFF` meaning endless; a finite length that
+scales to `0xFFFF` is capped one millisecond short, so that it cannot be read
+as endless. `delay` is a 16-bit little-endian millisecond value in the last two
+bytes. Fifteen bytes in total.
 
 | `effect_type` | Effect |
 | --- | --- |
