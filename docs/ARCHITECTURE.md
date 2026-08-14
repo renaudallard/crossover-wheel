@@ -94,6 +94,16 @@ DirectInput 8, the bus driver is the escalation, not the starting point.
 The proxy is ordinary user-mode code, so an effect update is a COM call plus
 a loopback socket write, with no wineserver round trip and no IRP path.
 
+That write is bounded. Every wrapped call is a blocking send and two blocking
+receives on the thread the game is waiting on, and winsock waits forever by
+default, so the first of the five seams above would have come back through the
+socket: a daemon that stopped reading without closing would park the frame
+indefinitely. The socket carries a send and receive timeout of half the
+watchdog, and a timeout drops the connection rather than retrying on it,
+because a late reply would arrive against the following call. The reconnect is
+rate limited, so the worst a stalled daemon costs is force feedback rather
+than the game.
+
 The daemon does not write to the wheel from the frame that arrives. A frame
 records what a slot should hold, and a pass sends whatever differs from the
 bytes that slot last put on the wire. A pass runs at most once every

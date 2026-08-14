@@ -340,6 +340,7 @@ connect_locked(void)
 	struct sockaddr_in sa;
 	unsigned short port;
 	WSADATA wsa;
+	DWORD tv;
 	int ok = 0;
 
 	if (online)
@@ -371,6 +372,28 @@ connect_locked(void)
 		t150_log("cannot reach the daemon on port %u\n", port);
 		goto out;
 	}
+
+	/*
+	 * Bound the round trip. Every wrapped call is a blocking send and two
+	 * blocking receives on the thread the game is waiting on, and winsock
+	 * waits for ever by default, so a peer that stopped reading without
+	 * closing would park the game's frame indefinitely. Freezing the game
+	 * rather than degrading is the exact failure this proxy exists to
+	 * avoid: it is the first of the five seams ARCHITECTURE.md lists
+	 * against putting a bus driver in the bottle.
+	 *
+	 * Shorter than the daemon's watchdog, so a stall is noticed before the
+	 * wheel is released for it, and long enough that an ordinary reply is
+	 * never in danger. A timeout goes through drop_locked rather than
+	 * being retried, because a late reply would arrive against the next
+	 * call and desynchronise the stream; the reconnect in t150_client_call
+	 * then re-establishes the session.
+	 */
+	tv = T150_WATCHDOG_MS / 2;
+	(void)setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv,
+	    sizeof(tv));
+	(void)setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv,
+	    sizeof(tv));
 	if (call_locked(T150_OP_HELLO, token, T150_TOKEN_LEN) != 0) {
 		t150_log("the daemon would not take our token\n");
 		goto out;
