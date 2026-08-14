@@ -96,9 +96,17 @@ the menu says so and leaves it alone rather than starting a second beside it.
 
 | icon | meaning |
 | --- | --- |
-| thin hub | the daemon is stopped, or no wheel is plugged in |
+| thin hub | the daemon is stopped, no wheel is plugged in, or the wheel is still starting up |
 | filled hub | the daemon holds the wheel |
 | full hub | a game is streaming force feedback |
+
+**Wait for "wheel connected" before launching a game.** A wheel that has just
+been plugged in, or that has just come back from sleep, is at the generic boot
+identity every T-series wheel shares rather than at its own, and a game that
+enumerates it there sees a different device: the buttons you mapped are mapped
+against something it can no longer find. The menu says *wheel starting up, not
+ready for a game* until the switch has happened, which takes a few seconds and
+which the app and the daemon both do by themselves.
 
 **Copy the log** puts everything the daemon has printed on the clipboard,
 whether or not a window is open to show it. That log is how nearly every fault

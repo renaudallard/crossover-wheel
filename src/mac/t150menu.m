@@ -50,6 +50,7 @@
 @property (strong) NSTimer *watch;
 @property (assign) BOOL clientConnected;
 @property (assign) BOOL wheelSeen;
+@property (assign) BOOL wheelReady;
 @end
 
 @implementation T150Menu
@@ -226,6 +227,7 @@
 	self.item.menu = m;
 	[self leaveBootMode];
 	self.wheelSeen = [self wheelPresent];
+	self.wheelReady = [self wheelUsable];
 	[self refresh];
 
 	/*
@@ -277,7 +279,7 @@
 {
 	NSString *name;
 
-	if (!running || !self.wheelSeen)
+	if (!running || !self.wheelReady)
 		name = @"t150-idleTemplate";
 	else if (self.clientConnected)
 		name = @"t150-activeTemplate";
@@ -302,8 +304,17 @@
 	BOOL mine = self.daemon != nil && self.daemon.isRunning;
 	BOOL elsewhere = !mine && [self daemonElsewhere];
 	BOOL running = mine || elsewhere;
-	NSString *wheel = self.wheelSeen ? @"wheel connected"
-	    : @"no wheel found";
+	/*
+	 * Three states, not two. A wheel still at the boot id is plugged in
+	 * and unusable: that id names no model, so a game enumerating it there
+	 * binds to a different device from the one it will see once the switch
+	 * has happened, and every button mapped against the other one has to
+	 * be done again. Saying "connected" then was saying it at the one
+	 * moment it matters most that somebody waits a few seconds.
+	 */
+	NSString *wheel = self.wheelReady ? @"wheel connected"
+	    : (self.wheelSeen ? @"wheel starting up, not ready for a game"
+	    : @"no wheel found");
 
 	[self showGlyph:running];
 
@@ -343,6 +354,7 @@
 {
 	(void)menu;
 	self.wheelSeen = [self wheelPresent];
+	self.wheelReady = [self wheelUsable];
 	[self refresh];
 }
 
@@ -388,12 +400,13 @@
  */
 - (void)watchWheel
 {
-	BOOL was = self.wheelSeen;
+	BOOL was = self.wheelSeen, wasReady = self.wheelReady;
 
 	[self leaveBootMode];
 	self.wheelSeen = [self wheelPresent];
+	self.wheelReady = [self wheelUsable];
 
-	if (self.wheelSeen != was)
+	if (self.wheelSeen != was || self.wheelReady != wasReady)
 		[self refresh];
 }
 
@@ -415,16 +428,35 @@
 {
 	io_service_t s;
 
-	if ((s = t150_usb_find(T150_VID, T150_PID_FIRMWARE)) != IO_OBJECT_NULL) {
-		IOObjectRelease(s);
+	if ([self wheelUsable])
 		return YES;
-	}
 	if ((s = t150_usb_find(T150_VID, T150_PID_BOOT)) != IO_OBJECT_NULL) {
 		IOObjectRelease(s);
 		return YES;
 	}
 
 	return NO;
+}
+
+/*
+ * Whether the wheel is at its own product id, which is the only one a game
+ * can use.
+ *
+ * At the boot id it is on the bus and no use to anybody: that id names no
+ * model, every T-series wheel shares it, and a game that enumerates the wheel
+ * there binds to a different device from the one it will see once the switch
+ * has happened. wheelPresent above is the wider question, and the difference
+ * between the two is what tells "no wheel" apart from "not ready yet".
+ */
+- (BOOL)wheelUsable
+{
+	io_service_t s;
+
+	if ((s = t150_usb_find(T150_VID, T150_PID_FIRMWARE)) == IO_OBJECT_NULL)
+		return NO;
+	IOObjectRelease(s);
+
+	return YES;
 }
 
 #pragma mark - what the wheel keeps for itself
