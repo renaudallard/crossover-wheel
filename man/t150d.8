@@ -100,12 +100,29 @@ whether that is needed and the interrupt OUT route works with none. A floor
 on the write rate would cap effect updates well below what force feedback
 wants, so this exists to put the pause back if a real wheel asks for it.
 .Pp
-It is capped at 50 milliseconds because it delays the safe state, which is up
-to eighteen packets, and the watchdog is meant to have the wheel limp within
-half a second of a game going quiet. It composes with the emitter rather than
-replacing it: the emitter bounds how often a pass runs and this bounds how
-long one takes, so a large gap lengthens a pass and therefore the interval
-between watchdog evaluations.
+It is capped at 20 milliseconds, which is the pause it exists to be able to
+restore: that is what
+.Xr t150-probe 1
+leaves between its writes, and a lower ceiling would leave this option unable
+to answer its own question.
+.Pp
+It came down from 50 because a client's round trip cannot absorb that. The
+proxy waits half the watchdog, 250 milliseconds, for a reply before it gives up
+and drops the connection, and everything the daemon writes while a frame is in
+hand counts against that: an emission pass runs before the socket is read, and
+the frame itself can be a reset stopping every loaded slot. At 50 the budget is
+five packets, which a game stopping five effects at once spends outright; at 20
+it is twelve.
+Past that the proxy hangs up on a daemon that is working perfectly and
+reconnects into a displacement, so this is a setting to measure with rather
+than one to leave on. Nothing bounds the case where the wheel has stopped
+taking writes and every slot owes a stop, because the retries are then the
+traffic; that is a wheel whose force feedback has already failed, and the
+watchdog rather than this is what makes it safe.
+.Pp
+It composes with the emitter rather than replacing it: the emitter bounds how
+often a pass runs and this bounds how long one takes, so a large gap lengthens
+a pass and therefore the interval between watchdog evaluations.
 .It Fl n
 Drive nothing. Print every packet that would have gone to the wheel instead,
 in the form

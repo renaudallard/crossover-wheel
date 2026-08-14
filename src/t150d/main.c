@@ -456,7 +456,26 @@ parse_level(const char *s, unsigned int *out)
 	return 0;
 }
 
-/* Milliseconds, refusing anything that is not a number or is absurd. */
+/*
+ * Milliseconds, refusing anything that is not a number or is absurd.
+ *
+ * The ceiling is the pause this exists to be able to restore. probe_setreport
+ * has always left 20 ms between its writes, and hid_darwin.c says -g is here
+ * to put that back if a real wheel asks for it, so a ceiling below 20 would
+ * leave the option unable to answer its own question.
+ *
+ * It came down from 50 because a client's round trip cannot absorb that. The
+ * proxy waits half the watchdog, 250 ms, before it gives up on a reply and
+ * drops the connection, and everything written while a frame is in hand counts
+ * against that: the emission pass runs before the socket is read, and the
+ * frame itself may be a reset stopping every loaded slot. At 50 the budget is
+ * five packets, which a game stopping five effects at once spends outright; at
+ * 20 it is twelve. Beyond that the proxy hangs up on a daemon that is working
+ * and reconnects into a displacement, so this is a setting to measure with
+ * rather than one to leave on.
+ */
+#define GAP_MAX	20u
+
 static int
 parse_ms(const char *s, unsigned int *out)
 {
@@ -465,7 +484,7 @@ parse_ms(const char *s, unsigned int *out)
 
 	errno = 0;
 	v = strtoul(s, &end, 10);
-	if (errno != 0 || end == s || *end != '\0' || v > 50)
+	if (errno != 0 || end == s || *end != '\0' || v > GAP_MAX)
 		return -1;
 	*out = (unsigned int)v;
 
@@ -486,9 +505,10 @@ usage(void)
 	    "               this itself, a person can\n"
 	    "  -e endpoint  where to publish the port and token\n"
 	    "               (default $HOME%s)\n"
-	    "  -g ms        pause this long after each packet, 0 to 50. Off\n"
+	    "  -g ms        pause this long after each packet, 0 to %u. Off\n"
 	    "               by default, see hid_darwin.c. A safe state is up\n"
-	    "               to eighteen packets, so this delays it\n"
+	    "               to eighteen packets, so this delays it, and the\n"
+	    "               ceiling is what a client's round trip can absorb\n"
 	    "  -n           drive nothing, log the packets instead\n"
 	    "  -r degrees   lock to lock, %u to %u, set whenever a client takes\n"
 	    "               the wheel. No game can ask for this: DirectInput has\n"
@@ -502,7 +522,7 @@ usage(void)
 	    "  -w           write to the wheel from a thread of its own, so a\n"
 	    "               game is never waiting for a USB transfer. macOS\n"
 	    "               only, and new: compare it against a run without\n",
-	    T150_DI_MAX, ENDPOINT_REL, T150_RANGE_MIN, T150_RANGE_MAX);
+	    T150_DI_MAX, ENDPOINT_REL, GAP_MAX, T150_RANGE_MIN, T150_RANGE_MAX);
 	exit(2);
 }
 
