@@ -391,12 +391,17 @@ test_ramp(void)
 	    "write 4: 03 46 00 20\n"
 	    "write 4: 41 02 41 01\n");
 
-	/* Past the end it holds, rather than wrapping back to the start. */
+	/*
+	 * Past the end it holds, rather than wrapping back to the start, and
+	 * this time without the re-play. The wheel was given a length in its
+	 * commit and ends the effect itself; a play packet restarts that
+	 * countdown, so playing it again here held the force for another whole
+	 * second after the ramp the game asked for had finished.
+	 */
 	frame(T150_OP_KEEPALIVE, NULL, 0, 2500, T150_OP_OK, T150_ERR_NONE);
 	(void)tick(2500);
-	expect_log("a ramp holds at its end",
-	    "write 4: 03 46 00 40\n"
-	    "write 4: 41 02 41 01\n");
+	expect_log("a ramp holds at its end and is not played again",
+	    "write 4: 03 46 00 40\n");
 
 	frame(T150_OP_KEEPALIVE, NULL, 0, 2600, T150_OP_OK, T150_ERR_NONE);
 	(void)tick(2600);

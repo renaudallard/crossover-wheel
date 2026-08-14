@@ -1070,6 +1070,25 @@ ramp_level(const struct t150_slot *sl, uint64_t now_ms)
 	return (int32_t)(sl->ramp.start + (span * (int64_t)elapsed) / (int64_t)total);
 }
 
+/*
+ * Whether a slot's own duration has already run out.
+ *
+ * The wheel is given a length in its commit and ends the effect itself, so
+ * nothing here has to stop one. What this exists for is the re-play in the
+ * emitter: a play packet restarts that countdown, and a ramp is slid by the
+ * daemon right up to its end, so the last recompute lands at or just after
+ * the moment the wheel was going to stop. Re-playing there held the force for
+ * another whole duration.
+ */
+static int
+slot_expired(const struct t150_slot *sl, uint64_t now_ms)
+{
+	if (sl->ef.duration == T150_DURATION_INFINITE || sl->ef.duration == 0)
+		return 0;
+
+	return now_ms - sl->started_ms >= sl->ef.duration / 1000;
+}
+
 /* Forget what the wheel was believed to hold, and mean to teach it again. */
 static void
 session_forget_wheel(struct t150_session *s)
@@ -1192,7 +1211,8 @@ session_emit(struct t150_session *s, uint64_t now_ms)
 			 * own commit and the game's own start follows it.
 			 */
 			if (r == 1 && sl->playing &&
-			    sl->ef.kind == T150_EFFECT_CONSTANT)
+			    sl->ef.kind == T150_EFFECT_CONSTANT &&
+			    !slot_expired(sl, now_ms))
 				(void)control(s, (uint8_t)k, 1,
 				    sl->iterations > 0 ? sl->iterations : 1);
 			continue;
