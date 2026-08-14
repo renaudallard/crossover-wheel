@@ -362,9 +362,22 @@ install_proxy()
 	is_our_proxy "$builtin" &&
 	    die "that is the proxy, not CrossOver's builtin. Refusing."
 
+	# The same rule the dinput8_orig.dll branch below applies, and for the
+	# same reason. A dinput8.dll that is neither the proxy nor a Wine
+	# builtin is another wrapper somebody installed, and it is about to be
+	# overwritten. Skipping the backup because one already existed meant
+	# the second run destroyed it: the .bak held whatever was there the
+	# first time, normally Wine's placeholder, and the file nobody else has
+	# a copy of was gone.
 	if [ -f "$sys32/dinput8.dll" ] && ! is_our_proxy "$sys32/dinput8.dll" &&
-	    ! is_wine_builtin "$sys32/dinput8.dll" &&
-	    [ ! -f "$sys32/dinput8.dll.crossover-wheel.bak" ]; then
+	    ! is_wine_builtin "$sys32/dinput8.dll"; then
+		if [ -f "$sys32/dinput8.dll.crossover-wheel.bak" ]; then
+			warn "dinput8.dll is neither the proxy nor a Wine"
+			warn "builtin, and a backup of an earlier one already"
+			warn "exists. Overwriting it would lose a file nobody"
+			warn "else has a copy of."
+			die "move $sys32/dinput8.dll aside yourself first"
+		fi
 		run cp "$sys32/dinput8.dll" \
 		    "$sys32/dinput8.dll.crossover-wheel.bak"
 		say "  kept the old dinput8.dll as .crossover-wheel.bak"

@@ -215,6 +215,30 @@ test_the_hidapi_setting_is_matched_by_value()
 	    fail "a wrong value was not reported"
 }
 
+# Another tool's dinput8.dll is about to be overwritten, and the backup is the
+# only copy of it. Skipping the backup because a stale one existed destroyed it
+# on the second run.
+test_a_third_party_wrapper_is_never_lost()
+{
+	sys32=$work/bottles/alpha/drive_c/windows/system32
+
+	build_tree alpha
+	printf 'MZ some other dinput8 wrapper\n' > "$sys32/dinput8.dll"
+	run_install "" --no-binaries --no-app || :
+	grep -aq 'some other dinput8 wrapper' \
+	    "$sys32/dinput8.dll.crossover-wheel.bak" ||
+	    fail "the wrapper was not kept on the first run"
+
+	# A second wrapper appears, with the first run's backup still there.
+	printf 'MZ a second wrapper nobody else has\n' > "$sys32/dinput8.dll"
+	run_install "" --no-binaries --no-app &&
+	    fail "overwriting a wrapper with a stale backup was allowed"
+	grep -q 'move ' "$work/out" ||
+	    fail "it did not say what to do about it"
+	grep -aq 'a second wrapper nobody else has' "$sys32/dinput8.dll" ||
+	    fail "the second wrapper was destroyed"
+}
+
 # -n has to be honest: it says what it would do and writes nothing.
 test_dry_run_changes_nothing()
 {
@@ -232,6 +256,7 @@ test_one_bottle_needs_no_question
 test_bad_answers_are_refused
 test_the_builtin_is_what_lands_beside_the_proxy
 test_the_hidapi_setting_is_matched_by_value
+test_a_third_party_wrapper_is_never_lost
 test_dry_run_changes_nothing
 
 if [ "$failures" -ne 0 ]; then
