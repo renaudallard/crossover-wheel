@@ -340,10 +340,15 @@ connect_locked(void)
 	if (online)
 		return 0;
 	if (!started) {
-		if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
-			LeaveCriticalSection(&lock);
+		/*
+		 * The lock is the caller's, as the comment above says and as
+		 * every other exit from this function assumes. Releasing it
+		 * here as well, which is what this did, left it released twice
+		 * for one enter: a leftover from when this code was the body
+		 * of t150_client_start and took the lock itself.
+		 */
+		if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
 			return -1;
-		}
 		started = 1;
 	}
 
