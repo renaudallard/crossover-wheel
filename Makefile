@@ -143,14 +143,20 @@ help:
 
 daemon: $(DAEMON_BIN)
 
+# Whether these can be built at all is decided by whether the rules exist, not
+# by a test inside a recipe, for the reason the probes and the tools give
+# below: a recipe cannot stop make building what it was told a target depends
+# on. It matters here because the bundle names the proxy among the files it
+# packages. A Mac has no cross compiler and takes its proxy prebuilt from the
+# job that does, and that copy is older than the checkout it lands in, so a
+# rule here would have make try to rebuild it and stop on a compiler that was
+# never going to be there. With no rule a proxy already in place is a file like
+# any other.
+ifeq ($(HAVE_DLL_CC),yes)
 dll: $(DLL_BIN) $(DLL_CHECK_BIN) $(DINPUT_PROBE_BIN)
 
 $(DLL_BIN): $(DLL_SRCS) src/dll/proxy.h src/dll/dinput8.def $(SHARED_HDRS) \
     | $(BIN)
-ifneq ($(HAVE_DLL_CC),yes)
-	@echo "dll: $(DLL_CC) not found, install gcc-mingw-w64-x86-64" >&2
-	@false
-endif
 	$(DLL_CC) $(DLL_CPPFLAGS) $(DLL_CFLAGS) -shared -o $@ $(DLL_SRCS) \
 	    src/dll/dinput8.def -static-libgcc $(DLL_LIBS)
 
@@ -168,6 +174,11 @@ $(DLL_CHECK_BIN): tests/dll_check.c $(DLL_SRCS) src/dll/proxy.h $(SHARED_HDRS) \
 $(DINPUT_PROBE_BIN): src/tools/probe_dinput.c $(SHARED_HDRS) | $(BIN)
 	$(DLL_CC) $(DLL_CPPFLAGS) $(DLL_CFLAGS) -o $@ src/tools/probe_dinput.c \
 	    -static-libgcc -ldinput8 $(DLL_LIBS)
+else
+dll:
+	@echo "dll: $(DLL_CC) not found, install gcc-mingw-w64-x86-64" >&2
+	@false
+endif
 
 # Guarded by the prerequisites, not by the recipe. A recipe cannot stop make
 # building what it was told the target depends on, so the old form still
@@ -308,7 +319,14 @@ app: $(APP)
 # in something it was told about. install.sh in particular is the file most
 # likely to be edited between builds, because the bundle exists to be a front
 # end over it, and a bundle that was not rebuilt shipped the previous copy.
-APP_RES_SRCS = install.sh dist/update.sh \
+#
+# The proxy is named through wildcard, because it is the one entry that need
+# not exist: a Mac has no cross compiler, so it arrives from the job that does,
+# and naming it directly would have make try to build it and fail. Left out
+# altogether, which is how this was, a proxy that arrived after the bundle was
+# built was never packaged: the bundle was newer than everything make had been
+# told about, so the recipe did not run and the copy inside it stayed as it was.
+APP_RES_SRCS = install.sh dist/update.sh $(wildcard $(DLL_BIN)) \
 	       $(wildcard man/*.1 man/*.7 man/*.8) \
 	       $(wildcard dist/icons/AppIcon.iconset/*.png) \
 	       $(wildcard dist/icons/menubar/*.png)
