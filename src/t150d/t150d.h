@@ -239,6 +239,14 @@ unsigned int t150_session_tick(struct t150_session *s, uint64_t now_ms);
 void	t150_session_panic(struct t150_session *s, const char *why);
 
 /*
+ * Carry the stops a displaced session could not get to the wheel over to the
+ * session replacing it, so the one thing that knows the wheel may still be
+ * pulling does not go with the connection that learned it.
+ */
+void	t150_session_inherit_stops(struct t150_session *to,
+	    const struct t150_session *from);
+
+/*
  * The client has gone for good rather than gone quiet: make the wheel safe
  * and let the session go. The wheel's input stays open, because the daemon
  * still holds the wheel and the firmware rests both pedals at maximum while

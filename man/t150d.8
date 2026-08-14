@@ -414,6 +414,11 @@ emitter's cadence and on every watchdog wake until the wheel accepts it. What
 does go down immediately is the game's intent, so an effect the game stopped is
 never started again by the replay that follows a re-acquire, however the stop
 itself fared.
+The debt also survives the two things that replace what the daemon knows about
+a slot without changing what the wheel is rendering: the game uploading a new
+effect to that slot, and a second client displacing the first. Both used to
+take the record with them and leave the wheel pulling with nothing able to stop
+it.
 .Pp
 A connection that never proved the token is the exception. Its input was
 never opened and it sent nothing to render, so there is nothing of its doing

@@ -470,6 +470,32 @@ t150_session_panic(struct t150_session *s, const char *why)
 }
 
 /*
+ * Hand an outgoing session's unpaid stops to the one taking its place.
+ *
+ * A stop the wheel refused is a slot it may still be rendering, and the
+ * newcomer's own table knows nothing about it. A displacement threw that debt
+ * away with the session holding it, so the one thing that knew the wheel might
+ * still be pulling went at the moment the wheel changed hands.
+ *
+ * Only the debt travels. The effect itself does not: the newcomer owns the
+ * slot from here and will upload its own, and what is owed is a stop rather
+ * than anything to play.
+ */
+void
+t150_session_inherit_stops(struct t150_session *to,
+    const struct t150_session *from)
+{
+	size_t i;
+
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		if (!from->slots[i].used || !from->slots[i].stop_owed)
+			continue;
+		to->slots[i].used = 1;
+		to->slots[i].stop_owed = 1;
+	}
+}
+
+/*
  * The device settings a client inherits rather than asks for.
  *
  * The wheel keeps a device gain of its own and nothing here ever set it, so
@@ -563,7 +589,7 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 	struct t150_slot *sl;
 	struct t150_wire sent[3];
 	uint64_t started_ms;
-	uint8_t want, was_playing, iterations;
+	uint8_t want, was_playing, was_owed, iterations;
 
 	if (len < T150_PROTO_EFFECT_LEN ||
 	    t150_proto_unpack_effect(payload, len, &ef) != 0) {
@@ -602,6 +628,15 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 	started_ms = sl->started_ms;
 	iterations = sl->iterations;
 	/*
+	 * A stop the wheel refused is owed whatever the game does next, so it
+	 * survives here too. Re-using a slot does not settle that debt: what
+	 * the wheel may still be rendering is the effect that was there
+	 * before. Clearing it left nothing anywhere able to stop the wheel,
+	 * because the emitter's retry and every safe state both ask whether a
+	 * stop is owed before they send one.
+	 */
+	was_owed = sl->used ? sl->stop_owed : 0;
+	/*
 	 * What the wheel already holds has to survive this, or every upload
 	 * would look like the first one and the comparison in flush_slot
 	 * would never match. It is the one field here that describes the
@@ -611,6 +646,7 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 
 	memset(sl, 0, sizeof(*sl));
 	sl->playing = was_playing;
+	sl->stop_owed = was_owed;
 	sl->started_ms = started_ms;
 	sl->iterations = iterations;
 	memcpy(sl->sent, sent, sizeof(sl->sent));
@@ -783,6 +819,16 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 		    kind_name(sl->ef.kind));
 
 	sl->playing = 1;
+	/*
+	 * A start also settles any stop still owed on this slot. Both flags say
+	 * the same thing, that the wheel may be rendering it, and every release
+	 * path acts on either, so nothing is lost by clearing this one. Left
+	 * standing it was acted on: the proxy uploads before it starts, so a
+	 * game playing an effect again sends stop, upload and start in one
+	 * burst, and the next emission pass stopped and released the very
+	 * effect the game had just started.
+	 */
+	sl->stop_owed = 0;
 	sl->iterations = payload[1];
 	sl->started_ms = now_ms;
 
@@ -1174,12 +1220,28 @@ session_emit(struct t150_session *s, uint64_t now_ms)
 	 * talking would keep it silent for as long as it ran.
 	 */
 	for (i = 0; i < T150_SLOT_MAX; i++) {
-		if (!s->slots[i].used || !s->slots[i].stop_owed)
+		struct t150_slot *owing = &s->slots[i];
+		int reloaded;
+
+		if (!owing->used || !owing->stop_owed)
 			continue;
-		if (slot_stop(s, (uint8_t)i) == 0)
-			memset(&s->slots[i], 0, sizeof(s->slots[i]));
-		else
+		/*
+		 * Whether the game has put a new effect in this slot since the
+		 * stop was refused. The stop still has to go, because it is the
+		 * effect before it that the wheel may be rendering, but a slot
+		 * carrying new parameters must not be forgotten with the debt,
+		 * and slot_stop clears the flag that says those parameters are
+		 * still owed to the wheel.
+		 */
+		reloaded = owing->dirty;
+		if (slot_stop(s, (uint8_t)i) != 0) {
 			s->emit_failed = 1;
+			continue;
+		}
+		if (reloaded)
+			owing->dirty = 1;
+		else
+			memset(owing, 0, sizeof(*owing));
 	}
 
 	for (i = 0; i < T150_SLOT_MAX && done < T150_EMIT_SLOTS; i++) {

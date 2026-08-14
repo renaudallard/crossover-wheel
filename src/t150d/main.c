@@ -750,6 +750,13 @@ main(int argc, char *argv[])
 				t150_session_panic(&sess,
 				    "displaced by a new client");
 				(void)close(cfd);
+				/*
+				 * Anything the outgoing session could not get
+				 * the wheel to stop is still owed, and once it
+				 * is overwritten only the session taking over
+				 * can go on trying.
+				 */
+				t150_session_inherit_stops(&psess, &sess);
 				sess = psess;
 				sess.verbose = verbose;
 				cfd = pfd_pend;

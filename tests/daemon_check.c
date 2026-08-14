@@ -1010,6 +1010,123 @@ test_a_refused_stop_keeps_the_slot_and_retries(void)
 }
 
 /*
+ * The game re-using a slot does not settle a stop the wheel refused.
+ *
+ * The debt used to be wiped along with the rest of the slot, so the emitter's
+ * retry skipped it, every later safe state sent nothing for it, and a wheel
+ * still rendering the old effect went on doing so until the daemon exited. A
+ * stop and an upload for one slot inside a single read is the whole of it:
+ * main.c consumes both frames before the next tick, so the retry that would
+ * have paid the debt never runs in between.
+ */
+static void
+test_a_refused_stop_survives_a_re_upload(void)
+{
+	struct t150_effect ef;
+	uint8_t slot = 0;
+
+	reset_session();
+	hello(0);
+	load_and_play(0, 0);
+	(void)tick(0);
+	drain_log();
+
+	write_fails = 1;
+	frame(T150_OP_EFFECT_STOP, &slot, 1, 10, T150_OP_ERROR,
+	    T150_ERR_DEVICE_IO);
+	write_fails = 0;
+	drain_log();
+
+	constant(&ef, 0, 5000);
+	upload_at(&ef, 10);
+	drain_log();
+
+	/*
+	 * The stop first, because it belongs to the effect that was playing,
+	 * and then the new level, because paying the debt must not throw the
+	 * upload away with it.
+	 */
+	(void)tick(20);
+	expect_log("a re-upload cancelled a stop the wheel had refused",
+	    "write 4: 41 00 00 01\n"
+	    "write 4: 03 0e 00 20\n");
+
+	(void)tick(40);
+	expect_log("the debt is paid once", "");
+}
+
+/*
+ * A start settles a stop still owed on that slot, because both say the wheel
+ * may be rendering it and every release path acts on either.
+ *
+ * The proxy uploads before it starts, so a game playing an effect again sends
+ * stop, upload and start in one burst. With the debt left standing across all
+ * three the next emission pass stopped and released the effect the game had
+ * just started, which is the whole of a force that comes back and then goes.
+ */
+static void
+test_a_start_settles_a_stop_still_owed(void)
+{
+	struct t150_effect ef;
+	uint8_t start[2] = { 0, 1 }, slot = 0;
+
+	reset_session();
+	hello(0);
+	load_and_play(0, 0);
+	(void)tick(0);
+	drain_log();
+
+	write_fails = 1;
+	frame(T150_OP_EFFECT_STOP, &slot, 1, 10, T150_OP_ERROR,
+	    T150_ERR_DEVICE_IO);
+	write_fails = 0;
+	drain_log();
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 10);
+	frame(T150_OP_EFFECT_START, start, 2, 10, T150_OP_OK, T150_ERR_NONE);
+	expect_log("the start reaches the wheel", "write 4: 41 00 41 01\n");
+
+	(void)tick(20);
+	expect_log("and nothing stops it again", "");
+	if (!sess.slots[0].used || !sess.slots[0].playing)
+		fail("the pass released a slot the game had just started");
+}
+
+/*
+ * A displacement replaces the whole session, and a stop the wheel refused
+ * lives in the one being replaced. The newcomer's table starts empty, so
+ * without the handover the only record that the wheel may still be pulling
+ * went with the connection that made it.
+ */
+static void
+test_a_displaced_session_hands_over_what_it_could_not_stop(void)
+{
+	struct t150_session next;
+
+	reset_session();
+	hello(0);
+	load_and_play(0, 0);
+	(void)tick(0);
+	drain_log();
+
+	/* The wheel refuses the stop the displacement asks for. */
+	write_fails = 1;
+	t150_session_panic(&sess, "displaced by a new client");
+	write_fails = 0;
+	drain_log();
+
+	t150_session_init(&next, &be, TOKEN);
+	next.epoch = be.epoch;
+	t150_session_inherit_stops(&next, &sess);
+	sess = next;
+
+	(void)tick(10);
+	expect_log("the session taking over retries the stop",
+	    "write 4: 41 00 00 01\n");
+}
+
+/*
  * A stop the wheel refused is still a stop the game asked for. Leaving the
  * slot marked as playing had session_replay_starts, which reads that as "the
  * game wants this running", start the very force the game had asked to be rid
@@ -2086,6 +2203,9 @@ main(void)
 	test_updates_faster_than_the_emit_period_are_coalesced();
 	test_write_failure_does_not_pin_the_poll_loop();
 	test_a_refused_stop_keeps_the_slot_and_retries();
+	test_a_refused_stop_survives_a_re_upload();
+	test_a_start_settles_a_stop_still_owed();
+	test_a_displaced_session_hands_over_what_it_could_not_stop();
 	test_a_refused_stop_is_not_replayed_as_a_start();
 	test_stop_all_tries_every_slot_before_reporting();
 	test_reset_reports_a_stop_the_wheel_refused();
