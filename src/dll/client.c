@@ -26,8 +26,7 @@
 
 static CRITICAL_SECTION lock;
 static SOCKET sock = INVALID_SOCKET;
-static HANDLE keepalive_thread;
-static HANDLE keepalive_stop;
+static int keepalive_running;
 static int started;
 static int online;
 /*
@@ -309,15 +308,20 @@ t150_client_call(uint8_t op, const void *payload, size_t len)
 	return r == 0 ? 0 : -1;
 }
 
+/*
+ * The keepalive runs for the life of the process, and there is nowhere to stop
+ * it from. The only teardown hook a DLL has is DllMain, which holds the loader
+ * lock, so waiting on a thread there deadlocks; a game on its way out is
+ * exactly the case the daemon's watchdog exists for, and it releases the wheel
+ * half a second later whatever this thread does.
+ */
 static DWORD WINAPI
 keepalive_main(LPVOID arg)
 {
 	(void)arg;
 
 	for (;;) {
-		if (WaitForSingleObject(keepalive_stop, KEEPALIVE_MS) ==
-		    WAIT_OBJECT_0)
-			return 0;
+		Sleep(KEEPALIVE_MS);
 
 		EnterCriticalSection(&lock);
 		if (sock != INVALID_SOCKET &&
@@ -325,6 +329,9 @@ keepalive_main(LPVOID arg)
 			drop_locked();
 		LeaveCriticalSection(&lock);
 	}
+
+	/* Not reached. */
+	return 0;
 }
 
 /*
@@ -399,11 +406,19 @@ connect_locked(void)
 		goto out;
 	}
 
-	if (keepalive_stop == NULL)
-		keepalive_stop = CreateEventW(NULL, TRUE, FALSE, NULL);
-	if (keepalive_thread == NULL && keepalive_stop != NULL)
-		keepalive_thread = CreateThread(NULL, 0, keepalive_main, NULL,
-		    0, NULL);
+	/*
+	 * One for the process, and its handle is closed straight away because
+	 * nothing ever waits on it. Closing a thread handle does not end the
+	 * thread.
+	 */
+	if (!keepalive_running) {
+		HANDLE th = CreateThread(NULL, 0, keepalive_main, NULL, 0, NULL);
+
+		if (th != NULL) {
+			keepalive_running = 1;
+			(void)CloseHandle(th);
+		}
+	}
 
 	online = 1;
 	ok = 1;
@@ -439,32 +454,6 @@ t150_client_generation(void)
 	LeaveCriticalSection(&lock);
 
 	return g;
-}
-
-void
-t150_client_stop(void)
-{
-	HANDLE th;
-
-	EnterCriticalSection(&lock);
-	if (sock != INVALID_SOCKET)
-		(void)call_locked(T150_OP_BYE, NULL, 0);
-	drop_locked();
-	th = keepalive_thread;
-	keepalive_thread = NULL;
-	LeaveCriticalSection(&lock);
-
-	/*
-	 * Outside the lock, because the keepalive takes it. Not called from
-	 * DllMain either: waiting on a thread there deadlocks against the
-	 * loader.
-	 */
-	if (th != NULL) {
-		if (keepalive_stop != NULL)
-			(void)SetEvent(keepalive_stop);
-		(void)WaitForSingleObject(th, 1000);
-		(void)CloseHandle(th);
-	}
 }
 
 int

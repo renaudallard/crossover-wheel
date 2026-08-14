@@ -36,9 +36,11 @@
 /*
  * The daemon connection. One per process, guarded by its own lock, because
  * DirectInput calls arrive from whichever thread the game feels like using.
+ * There is no stop: a DLL's only teardown hook is DllMain, which cannot wait
+ * on the keepalive thread without deadlocking the loader, and a game on its
+ * way out is what the daemon's watchdog is for.
  */
 int	t150_client_start(void);
-void	t150_client_stop(void);
 int	t150_client_online(void);
 
 /*
