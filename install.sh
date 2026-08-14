@@ -291,8 +291,23 @@ set_bottle_env()
 {
 	conf=$1
 
-	if grep -q 'SDL_JOYSTICK_HIDAPI' "$conf" 2>/dev/null; then
-		say "  SDL_JOYSTICK_HIDAPI already set, left alone"
+	# The value is the whole point, so match the value. Grepping for the
+	# name alone said "already set, left alone" for a line that says the
+	# opposite, and for SDL_JOYSTICK_HIDAPI_PS3, and for a commented out
+	# one. RESEARCH.md B11: at anything but 0 the wheel does not appear
+	# inside the bottle at all, so reporting success there is reporting
+	# success for an install that cannot work.
+	if grep -Eq '^[[:space:]]*"?SDL_JOYSTICK_HIDAPI"?[[:space:]]*=[[:space:]]*"?0"?[[:space:]]*$' \
+	    "$conf" 2>/dev/null; then
+		say "  SDL_JOYSTICK_HIDAPI is already 0, left alone"
+		return
+	fi
+	if grep -Eq '^[[:space:]]*"?SDL_JOYSTICK_HIDAPI"?[[:space:]]*=' \
+	    "$conf" 2>/dev/null; then
+		warn "SDL_JOYSTICK_HIDAPI is set to something other than 0 in"
+		warn "  $conf"
+		warn "The wheel does not appear inside a bottle without it at"
+		warn "0. Change that line, or delete it and run this again."
 		return
 	fi
 

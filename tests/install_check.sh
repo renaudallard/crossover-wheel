@@ -178,6 +178,43 @@ test_the_builtin_is_what_lands_beside_the_proxy()
 	    fail "dinput8.dll is not the proxy"
 }
 
+# The wheel does not appear inside a bottle unless this is 0, so the check
+# has to be about the value. Matching the name alone reported success for a
+# line saying the opposite, and for the PS3 and PS4 suffixed variables.
+test_the_hidapi_setting_is_matched_by_value()
+{
+	conf=$work/bottles/alpha/cxbottle.conf
+
+	build_tree alpha
+	run_install "" --no-binaries --no-app || :
+	grep -q '"SDL_JOYSTICK_HIDAPI" = "0"' "$conf" ||
+	    fail "the variable was not added to a bottle without it"
+
+	# Already correct: left alone, and said to be.
+	build_tree alpha
+	printf '[EnvironmentVariables]\n"SDL_JOYSTICK_HIDAPI" = "0"\n' \
+	    >> "$work/bottles/alpha/cxbottle.conf"
+	run_install "" --no-binaries --no-app || :
+	grep -q 'already 0' "$work/out" ||
+	    fail "a bottle that already has it was not recognised"
+
+	# A different variable whose name starts the same must not count.
+	build_tree alpha
+	printf '[EnvironmentVariables]\n"SDL_JOYSTICK_HIDAPI_PS3" = "0"\n' \
+	    >> "$work/bottles/alpha/cxbottle.conf"
+	run_install "" --no-binaries --no-app || :
+	grep -q '"SDL_JOYSTICK_HIDAPI" = "0"' "$conf" ||
+	    fail "the PS3 variable was mistaken for this one"
+
+	# Present with the wrong value: say so rather than claim success.
+	build_tree alpha
+	printf '[EnvironmentVariables]\n"SDL_JOYSTICK_HIDAPI" = "1"\n' \
+	    >> "$work/bottles/alpha/cxbottle.conf"
+	run_install "" --no-binaries --no-app || :
+	grep -q 'something other than 0' "$work/out" ||
+	    fail "a wrong value was not reported"
+}
+
 # -n has to be honest: it says what it would do and writes nothing.
 test_dry_run_changes_nothing()
 {
@@ -194,6 +231,7 @@ test_naming_a_bottle_works_for_every_name
 test_one_bottle_needs_no_question
 test_bad_answers_are_refused
 test_the_builtin_is_what_lands_beside_the_proxy
+test_the_hidapi_setting_is_matched_by_value
 test_dry_run_changes_nothing
 
 if [ "$failures" -ne 0 ]; then
