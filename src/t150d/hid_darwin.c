@@ -33,6 +33,7 @@
 #include <IOKit/hid/IOHIDManager.h>
 
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -99,6 +100,22 @@ struct hid_be {
 	 * necessary.
 	 */
 	int			 threaded;
+	/*
+	 * A write the wheel refused for a reason that is not a removal, owed
+	 * to the poll thread.
+	 *
+	 * With a writer, hid_write answers the session the moment the bytes
+	 * are copied into the queue, so by the time the write actually fails
+	 * the frame that caused it has long been answered and the session has
+	 * recorded the packet as being on the wheel. The failure was logged
+	 * and then dropped: an effect could go missing with every layer
+	 * reporting success, and a stop that never arrived left the wheel
+	 * pulling. Carrying it forward is the only way back to the session,
+	 * which reacts by keeping the slot dirty and sending it again.
+	 *
+	 * Atomic because the writer sets it and the poll thread takes it.
+	 */
+	atomic_int		 write_failed;
 	pthread_t		 thread;
 	pthread_mutex_t		 mtx;
 	pthread_cond_t		 cv;
@@ -583,6 +600,12 @@ writer_main(void *arg)
 					h->next_scan_ms = mono_ms() + RESCAN_MS;
 					break;
 				}
+				/*
+				 * The wheel is still there and refused this
+				 * packet. Owe it to the poll thread, which is
+				 * the only path back to the session.
+				 */
+				atomic_store(&h->write_failed, 1);
 			}
 			nap_ms(h->gap_ms);
 		}
@@ -621,8 +644,18 @@ hid_write(void *priv, const uint8_t *buf, size_t len)
 	 * is the whole fix: the daemon goes straight back to its socket and
 	 * the game's next frame is answered without waiting for USB.
 	 */
-	if (h->threaded)
+	if (h->threaded) {
+		/*
+		 * Answer for the packet the writer could not place before
+		 * taking another. Refused rather than queued and then
+		 * reported, so the session is left holding this packet and
+		 * sends it again rather than believing it arrived.
+		 */
+		if (atomic_exchange(&h->write_failed, 0))
+			return -1;
+
 		return queue_push(h, buf, len);
+	}
 
 	if (h->dev == NULL) {
 		uint64_t now = mono_ms();
