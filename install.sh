@@ -247,10 +247,17 @@ choose_bottle()
 	esac
 	[ "$reply" -ge 1 ] && [ "$reply" -le $# ] || die "out of range: $reply"
 
+	# Stop at the one that was chosen rather than walking past it. Letting
+	# the loop run to the end left the function returning the status of the
+	# last comparison, which is false for every choice but the last, and
+	# set -e turned that into the whole install exiting without a word.
 	i=0
 	for b in "$@"; do
 		i=$((i + 1))
-		[ "$i" -eq "$reply" ] && BOTTLE=$b
+		if [ "$i" -eq "$reply" ]; then
+			BOTTLE=$b
+			break
+		fi
 	done
 }
 

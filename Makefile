@@ -227,8 +227,13 @@ $(BIN)/wirequeue_check: tests/wirequeue_check.c $(DAEMONOBJ)/wirequeue.o \
 $(BIN)/%_check: tests/%_check.c $(LIB_OBJS) | $(BIN)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+# install.sh is shell, so its test is shell. It builds a synthetic CrossOver
+# tree under tmp/ and drives the real script against it, which needs no Mac,
+# no CrossOver and no wheel: PREFIX, CX_ROOT and BOTTLE_ROOT are what the
+# script takes from the environment for exactly this.
 test: $(TEST_BINS)
 	@for t in $(TEST_BINS); do "$$t" || exit 1; done
+	@sh $(CURDIR)/tests/install_check.sh
 
 check: test
 
