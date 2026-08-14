@@ -64,6 +64,54 @@ settle_run_loop(void)
 	} while (res != kCFRunLoopRunFinished && res != kCFRunLoopRunTimedOut);
 }
 
+/*
+ * A stable order for the nodes.
+ *
+ * CFSetGetValues yields whatever the set's hashing gives it, which is derived
+ * from pointer values and therefore differs between runs. Anything that
+ * addresses a node by index, which is what -n is, would otherwise mean a
+ * different node from one run to the next: commit b36275e fixed exactly this
+ * where the daemon took the first element of the same set. Sorting by
+ * location, then by primary usage page and usage, gives an index that means
+ * the same thing every time.
+ */
+static long
+node_key(IOHIDDeviceRef d, CFStringRef key)
+{
+	long v = 0;
+
+	(void)probe_get_long(d, key, &v);
+
+	return v;
+}
+
+static int
+by_location(const void *a, const void *b)
+{
+	IOHIDDeviceRef x = *(const IOHIDDeviceRef *)a;
+	IOHIDDeviceRef y = *(const IOHIDDeviceRef *)b;
+	CFStringRef keys[] = { CFSTR(kIOHIDLocationIDKey),
+	    CFSTR(kIOHIDPrimaryUsagePageKey), CFSTR(kIOHIDPrimaryUsageKey) };
+	size_t i;
+
+	for (i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+		long dx = node_key(x, keys[i]), dy = node_key(y, keys[i]);
+
+		if (dx != dy)
+			return dx < dy ? -1 : 1;
+	}
+
+	return 0;
+}
+
+static void
+sort_items(struct probe_devlist *dl)
+{
+	if (dl->count > 1)
+		qsort(dl->items, (size_t)dl->count, sizeof(*dl->items),
+		    by_location);
+}
+
 int
 probe_devlist_open(struct probe_devlist *dl, long vid, int have_pid, long pid)
 {
@@ -103,6 +151,7 @@ probe_devlist_open(struct probe_devlist *dl, long vid, int have_pid, long pid)
 		return -1;
 	}
 	CFSetGetValues(dl->devices, dl->items);
+	sort_items(dl);
 
 	return 0;
 }
