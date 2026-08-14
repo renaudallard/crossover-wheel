@@ -698,8 +698,20 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	};
 
 	t.terminationHandler = ^(NSTask *task) {
-		(void)task;
 		dispatch_async(dispatch_get_main_queue(), ^{
+			/*
+			 * Only for the daemon this is still running. Changing a
+			 * setting stops one and starts another, and this
+			 * handler runs on a queue of its own, so the old task's
+			 * turn can come after the new one has been stored.
+			 * Forgetting it then left the application with a
+			 * running daemon it no longer knew was its own: the
+			 * menu showed it as somebody else's and offered no way
+			 * to stop it, and quitting orphaned it holding the
+			 * wheel.
+			 */
+			if (weak.daemon != task)
+				return;
 			weak.daemon = nil;
 			weak.clientConnected = NO;
 			[weak refresh];
