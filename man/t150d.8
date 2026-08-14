@@ -57,6 +57,16 @@ two seconds, or that sends anything other than a token, is dropped without the
 current client noticing: anything on the machine can reach loopback, and
 displacing on the connection alone would let any local process end a game's
 force feedback at will.
+.Pp
+One daemon at a time per endpoint. Starting a second one against the same
+endpoint is refused rather than allowed to fight the first: acquiring the
+wheel scrubs every slot and closes and reopens its input, so a second daemon
+takes a running game's force feedback away, and it publishes its own port over
+the first's and removes it again on the way out, leaving a daemon that is
+running perfectly well with nothing able to find it. The login agent and the
+menu bar item's own child are the two ways to arrive here and neither could
+see the other. Running several on purpose still works: give each one its own
+.Fl e .
 .Sh OPTIONS
 .Bl -tag -width Ds
 .It Fl a Ar force
@@ -102,7 +112,9 @@ in the form
 .Xr t150-probe 1
 prints. This is the only behaviour on anything but macOS.
 .It Fl e Ar endpoint
-Where to publish the port and token. The default is
+Where to publish the port and token, and what the single instance lock is
+taken on: a second daemon given the same path is refused, and one given a
+different path runs alongside. The default is
 .Pa ~/Library/Application Support/t150ffb/endpoint ,
 which the proxy reads through Wine's
 .Pa Z:

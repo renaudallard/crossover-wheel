@@ -177,6 +177,51 @@ write_endpoint(const char *path, unsigned short port, const char *token,
 }
 
 /*
+ * One daemon per endpoint, held for the life of the process.
+ *
+ * Two daemons on one wheel is not a configuration that degrades: the second
+ * one acquires it, which scrubs every slot and closes and reopens the input,
+ * so a game already being driven by the first loses its effects. The second
+ * also publishes its own port over the first's, and unlinks it again on the
+ * way out, leaving the first running perfectly well with nothing able to find
+ * it. There are two first class ways to get here, the login agent and the
+ * menu bar item's own child, and neither could see the other.
+ *
+ * A lock on a file beside the endpoint rather than a check of the endpoint
+ * itself, because the question is whether a process is alive and only the
+ * kernel can answer that without a race. It is released when the process ends,
+ * however it ends. Running two daemons on purpose still works: the lock is per
+ * endpoint, so -e gives each its own.
+ *
+ * Returns the descriptor, which must stay open, or -1 if somebody has it.
+ */
+static int
+lock_endpoint(const char *path)
+{
+	char lockpath[PATH_MAX];
+	struct flock fl;
+	int fd;
+
+	if ((size_t)snprintf(lockpath, sizeof(lockpath), "%s.lock", path) >=
+	    sizeof(lockpath))
+		return -1;
+	if (mkpath(lockpath) != 0)
+		return -1;
+	if ((fd = open(lockpath, O_WRONLY | O_CREAT, 0600)) == -1)
+		return -1;
+
+	memset(&fl, 0, sizeof(fl));
+	fl.l_type = F_WRLCK;
+	fl.l_whence = SEEK_SET;
+	if (fcntl(fd, F_SETLK, &fl) == -1) {
+		(void)close(fd);
+		return -1;
+	}
+
+	return fd;
+}
+
+/*
  * Remove the endpoint file, but only while it is still the one this process
  * published. A second daemon overwrites it with its own port and token, and
  * unlinking unconditionally on the way out would delete the newcomer's, so
@@ -548,6 +593,9 @@ main(int argc, char *argv[])
 	(void)gap_ms;
 	(void)writer;
 #endif
+	if (lock_endpoint(endpoint) == -1)
+		errx(1, "another t150d already has %s. Stop it first, or "
+		    "give this one its own with -e", endpoint);
 	if ((lfd = listen_loopback(&port)) == -1)
 		err(1, "cannot listen on loopback");
 	if (write_endpoint(endpoint, port, token, &epstat) != 0)
