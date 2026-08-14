@@ -54,7 +54,9 @@ build_tree()
 	make_proxy "$work/src/t150-dinput8.dll"
 
 	for b in "$@"; do
-		mkdir -p "$work/bottles/$b/drive_c/windows/system32"
+		# A 64-bit prefix has both; a 32-bit one has system32 alone.
+		mkdir -p "$work/bottles/$b/drive_c/windows/system32" \
+		    "$work/bottles/$b/drive_c/windows/syswow64"
 		printf '[Bottle]\n"Template" = "win10_64"\n' \
 		    > "$work/bottles/$b/cxbottle.conf"
 	done
@@ -239,6 +241,21 @@ test_a_third_party_wrapper_is_never_lost()
 	    fail "the second wrapper was destroyed"
 }
 
+# The proxy and the builtin copied beside it are both x86_64, so a 32-bit
+# bottle cannot use either. system32 exists in one too, which is why the test
+# that carried this message could never fail.
+test_a_32_bit_bottle_is_refused()
+{
+	build_tree alpha
+	rmdir "$work/bottles/alpha/drive_c/windows/syswow64"
+
+	run_install "" --no-binaries --no-app &&
+	    fail "a 32-bit bottle was installed into"
+	grep -q 'not 64-bit' "$work/out" ||
+	    fail "it did not say why"
+	installed_in alpha && fail "a 32-bit bottle was written to anyway"
+}
+
 # -n has to be honest: it says what it would do and writes nothing.
 test_dry_run_changes_nothing()
 {
@@ -257,6 +274,7 @@ test_bad_answers_are_refused
 test_the_builtin_is_what_lands_beside_the_proxy
 test_the_hidapi_setting_is_matched_by_value
 test_a_third_party_wrapper_is_never_lost
+test_a_32_bit_bottle_is_refused
 test_dry_run_changes_nothing
 
 if [ "$failures" -ne 0 ]; then

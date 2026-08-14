@@ -345,8 +345,16 @@ install_proxy()
 
 	bdir=$BOTTLE_ROOT/$BOTTLE
 	sys32=$bdir/drive_c/windows/system32
-	[ -d "$sys32" ] ||
-	    die "no system32 in bottle '$BOTTLE', is it a 64-bit bottle?"
+	[ -d "$sys32" ] || die "no system32 in bottle '$BOTTLE'"
+
+	# system32 exists in a 32-bit prefix too: there it is where the i386
+	# DLLs live, and there is no syswow64 at all. So the directory that
+	# tells the two apart is syswow64, and the test that used to carry
+	# this message could not fail for either. The proxy is an x86_64 PE
+	# and so is the builtin copied beside it, and a 32-bit bottle would
+	# have taken both and reported "both files verified".
+	[ -d "$bdir/drive_c/windows/syswow64" ] ||
+	    die "bottle '$BOTTLE' is not 64-bit, and the proxy is an x86_64 DLL"
 
 	if ! builtin=$(find_builtin "$bdir"); then
 		warn "cannot find CrossOver's builtin dinput8.dll under"
