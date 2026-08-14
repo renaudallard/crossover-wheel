@@ -33,6 +33,63 @@ from_iface(IDirectInputEffect *p)
 	return (struct effect_obj *)p;
 }
 
+/*
+ * Every effect object that is currently alive, indexed by the slot it holds.
+ *
+ * A slot is taken for exactly as long as its effect object exists and no two
+ * live objects share one, so the slot map doubles as the registry and there
+ * is no list to keep or lock. It exists because a device otherwise has no way
+ * to reach the effects it created: dev_EnumCreatedEffectObjects had nothing
+ * to walk and answered DI_OK without calling the callback once, which tells a
+ * game that walks its effects to stop them that it has finished a job it
+ * never started.
+ *
+ * Written with an interlocked exchange for the same reason the slot map is:
+ * two game threads may create and release effects at once.
+ */
+static struct effect_obj *volatile live[T150_SLOT_MAX];
+
+static void
+remember(struct effect_obj *e)
+{
+	if (e->slot >= 0 && e->slot < (int)T150_SLOT_MAX)
+		(void)InterlockedExchangePointer((void *volatile *)&live[e->slot],
+		    e);
+}
+
+static void
+forget(struct effect_obj *e)
+{
+	if (e->slot >= 0 && e->slot < (int)T150_SLOT_MAX)
+		(void)InterlockedExchangePointer((void *volatile *)&live[e->slot],
+		    NULL);
+}
+
+/*
+ * Walk the live effects belonging to one device.
+ *
+ * DirectInput hands the callback the interface without adding a reference, so
+ * a callback is free to release it: nothing is dereferenced after the call,
+ * and the release itself is what clears the entry.
+ */
+HRESULT
+t150_effect_enum(struct t150_device *dev,
+    LPDIENUMCREATEDEFFECTOBJECTSCALLBACK cb, LPVOID ref)
+{
+	size_t i;
+
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		struct effect_obj *e = live[i];
+
+		if (e == NULL || e->dev != dev)
+			continue;
+		if (cb(&e->iface, ref) == DIENUM_STOP)
+			break;
+	}
+
+	return DI_OK;
+}
+
 uint8_t
 t150_kind_from_guid(REFGUID guid)
 {
@@ -282,6 +339,7 @@ eff_Release(IDirectInputEffect *self)
 		uint8_t slot = (uint8_t)e->slot;
 
 		(void)t150_client_call(T150_OP_EFFECT_DESTROY, &slot, 1);
+		forget(e);
 		t150_slot_free(e->slot);
 		/* Balances the reference taken in t150_effect_create. */
 		IDirectInputDevice8_Release((IDirectInputDevice8W *)e->dev);
@@ -618,6 +676,13 @@ t150_effect_create(struct t150_device *dev, REFGUID guid, const DIEFFECT *params
 	e->ef.gain = T150_DI_MAX;
 	e->ef.duration = T150_DURATION_INFINITE;
 	e->ef.direction = 9000;
+
+	/*
+	 * Reachable from the device before anything can be done to it, so a
+	 * game that walks its effects mid-creation on another thread sees a
+	 * complete object rather than a half filled one.
+	 */
+	remember(e);
 
 	if (params != NULL) {
 		t150_effect_convert(&e->ef, params, params->dwFlags | DIEP_DURATION |

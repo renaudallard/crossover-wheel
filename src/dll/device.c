@@ -847,12 +847,19 @@ static HRESULT WINAPI
 dev_EnumCreatedEffectObjects(IDirectInputDevice8W *self,
     LPDIENUMCREATEDEFFECTOBJECTSCALLBACK cb, LPVOID ref, DWORD fl)
 {
-	(void)self;
-	(void)cb;
-	(void)ref;
-	(void)fl;
+	if (cb == NULL)
+		return DIERR_INVALIDPARAM;
+	/* The only flag DirectInput defines here is none at all. */
+	if (fl != 0)
+		return DIERR_INVALIDPARAM;
 
-	return DI_OK;
+	/*
+	 * This used to answer DI_OK without calling the callback once, which
+	 * is the worst of the three things it could have done: a game walks
+	 * its effects to stop or release them before letting the device go,
+	 * and was being told it had finished a job it never started.
+	 */
+	return t150_effect_enum(from_iface(self), cb, ref);
 }
 
 static HRESULT WINAPI

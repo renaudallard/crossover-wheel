@@ -94,6 +94,13 @@ HRESULT	t150_effect_create(struct t150_device *dev, REFGUID guid,
 	    const DIEFFECT *params, IDirectInputEffect **out);
 
 /*
+ * Walk the live effect objects a device created, which is what DirectInput's
+ * EnumCreatedEffectObjects is for.
+ */
+HRESULT	t150_effect_enum(struct t150_device *dev,
+	    LPDIENUMCREATEDEFFECTOBJECTSCALLBACK cb, LPVOID ref);
+
+/*
  * Fold a DIEFFECT into the normalized model, honouring only the fields the
  * flags name and leaving the rest of ef alone. Exposed rather than kept
  * static because it is the fiddliest code in the proxy, and the only part
