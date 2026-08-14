@@ -1199,9 +1199,19 @@ version_number(NSString *v)
 			latest = [latest substringFromIndex:1];
 
 		dispatch_async(dispatch_get_main_queue(), ^{
+			/*
+			 * A build that carries no version, or the makefile's
+			 * fallback for one, cannot be compared against
+			 * anything: it is a source build rather than an out of
+			 * date release, and offering it an update every time
+			 * it starts is noise about something that is not
+			 * wrong. Asked directly it still answers.
+			 */
+			NSString *v = version_number(mine);
+
 			if (!announce && (latest.length == 0 ||
-			    [version_number(latest)
-			    isEqualToString:version_number(mine)]))
+			    v.length == 0 || [v isEqualToString:@"0"] ||
+			    [v isEqualToString:version_number(latest)]))
 				return;
 			[self showUpdate:latest mine:mine dmg:dmg sums:sums
 			    error:e];
