@@ -41,14 +41,15 @@
  * way out is what the daemon's watchdog is for.
  */
 int	t150_client_start(void);
-int	t150_client_online(void);
 
 /*
- * Which connection this is. An effect that uploaded to an older one has to
- * say itself again, because the daemon on the other end of a new connection
- * has never heard of it.
+ * Which connection this is, and whether it is up, under one lock rather than
+ * two. An effect that uploaded to an older one has to say itself again,
+ * because the daemon on the other end of a new connection has never heard of
+ * it, and an upload has to know both facts to decide anything. Pass NULL for
+ * online when only the generation is wanted.
  */
-unsigned int t150_client_generation(void);
+unsigned int t150_client_state(int *online);
 
 /*
  * Send one frame and wait for its reply. Returns 0 when the daemon answered

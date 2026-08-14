@@ -323,7 +323,7 @@ upload(struct effect_obj *e)
 	if (t150_client_call(T150_OP_EFFECT_UPLOAD, buf, sizeof(buf)) != 0)
 		return -1;
 
-	gen = t150_client_generation();
+	gen = t150_client_state(NULL);
 	if (e->gen != gen) {
 		e->gen = gen;
 		/*

@@ -459,27 +459,17 @@ t150_client_start(void)
 }
 
 unsigned int
-t150_client_generation(void)
+t150_client_state(int *up)
 {
 	unsigned int g;
 
 	EnterCriticalSection(&lock);
 	g = generation;
+	if (up != NULL)
+		*up = online;
 	LeaveCriticalSection(&lock);
 
 	return g;
-}
-
-int
-t150_client_online(void)
-{
-	int r;
-
-	EnterCriticalSection(&lock);
-	r = online;
-	LeaveCriticalSection(&lock);
-
-	return r;
 }
 
 /* Called from DllMain, so it does nothing that can block or load anything. */

@@ -372,7 +372,7 @@ dev_EnumObjects(IDirectInputDevice8W *self, LPDIENUMDEVICEOBJECTSCALLBACKW cb,
 void
 t150_device_replay_props(struct t150_device *d)
 {
-	unsigned int gen = t150_client_generation();
+	unsigned int gen = t150_client_state(NULL);
 	uint8_t arg[4];
 	uint32_t v;
 
@@ -430,7 +430,7 @@ dev_SetProperty(IDirectInputDevice8W *self, REFGUID prop, LPCDIPROPHEADER hdr)
 		uint32_t v;
 
 		if (prop == DIPROP_FFGAIN || prop == DIPROP_AUTOCENTER) {
-			d->prop_gen = t150_client_generation();
+			d->prop_gen = t150_client_state(NULL);
 			d->props_set = 1;
 			if (prop == DIPROP_FFGAIN) {
 				d->gain = dw->dwData;
@@ -831,13 +831,15 @@ dev_GetEffectInfo(IDirectInputDevice8W *self, LPDIEFFECTINFOW info, REFGUID guid
 static HRESULT WINAPI
 dev_GetForceFeedbackState(IDirectInputDevice8W *self, LPDWORD out)
 {
+	int up;
+
 	(void)self;
 
 	if (out == NULL)
 		return E_POINTER;
 
-	*out = t150_client_online() ?
-	    (DIGFFS_POWERON | DIGFFS_ACTUATORSON | DIGFFS_EMPTY) :
+	(void)t150_client_state(&up);
+	*out = up ? (DIGFFS_POWERON | DIGFFS_ACTUATORSON | DIGFFS_EMPTY) :
 	    (DIGFFS_POWEROFF | DIGFFS_ACTUATORSOFF);
 
 	return DI_OK;
