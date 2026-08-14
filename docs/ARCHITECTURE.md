@@ -111,6 +111,18 @@ not leave in one segment, and then the tail waits for a delayed acknowledgement
 rather than for the wheel. Tens of milliseconds on a path whose whole budget is
 four is worth two lines to rule out.
 
+The proxy does not send the frame at all when it would carry what the daemon
+already has. A `Start` uploads before it starts, so a game that starts an
+effect as often as it draws a frame pays two round trips for one of them to do
+anything; the second is skipped when the packed effect matches the last one the
+daemon acknowledged. It is skipped only while the connection is up and is the
+one the effect was uploaded to, the game has not reset the device since, and
+the acknowledgement is newer than half the watchdog, because a watchdog that
+fired cleared the daemon's slots with the connection still open. The first of
+those is also what keeps the reconnect reachable: `t150_client_call` is where a
+restarted daemon is noticed, so a skip that bypassed a dead socket would leave
+a game repeating one steady force with nothing to restore it.
+
 The daemon does not write to the wheel from the frame that arrives. A frame
 records what a slot should hold, and a pass sends whatever differs from the
 bytes that slot last put on the wire. A pass runs at most once every

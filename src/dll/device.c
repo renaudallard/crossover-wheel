@@ -481,6 +481,7 @@ dev_Unacquire(IDirectInputDevice8W *self)
 	 */
 	(void)t150_client_call(T150_OP_RESET, NULL, 0);
 	t150_effect_all_stopped();
+	t150_effect_all_unloaded();
 
 	return IDirectInputDevice8_Unacquire(INNER(self));
 }
@@ -868,6 +869,13 @@ dev_SendForceFeedbackCommand(IDirectInputDevice8W *self, DWORD flags)
 	 */
 	if (flags & DISFFC_RESET) {
 		(void)t150_client_call(T150_OP_RESET, NULL, 0);
+		/*
+		 * A reset releases the slots, so what the daemon holds is
+		 * nothing and the next upload has to say so again. STOPALL and
+		 * the pause below leave every effect downloaded, which is the
+		 * whole difference between them, and neither is this.
+		 */
+		t150_effect_all_unloaded();
 	} else if (flags & DISFFC_STOPALL) {
 		(void)t150_client_call(T150_OP_STOP_ALL, NULL, 0);
 	}

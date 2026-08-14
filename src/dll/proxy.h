@@ -115,6 +115,12 @@ HRESULT	t150_effect_enum(struct t150_device *dev,
 /* Mark every effect this process holds as no longer playing. */
 void	t150_effect_all_stopped(void);
 
+/*
+ * Mark every effect this process holds as no longer downloaded, which a
+ * device level reset makes true and only the device knows. See upload().
+ */
+void	t150_effect_all_unloaded(void);
+
 /* Say the device properties again if the daemon on the other end is new. */
 void	t150_device_replay_props(struct t150_device *dev);
 

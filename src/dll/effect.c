@@ -24,6 +24,10 @@ struct effect_obj {
 	int			 playing;
 	int			 logged;	/* the first Start is logged, not every one */
 	unsigned int		 gen;		/* the connection this was uploaded to */
+	/* What the daemon last acknowledged, and when. See upload(). */
+	int			 sent_valid;
+	ULONGLONG		 sent_ms;
+	uint8_t			 sent[T150_PROTO_EFFECT_LEN];
 	struct t150_effect	 ef;
 };
 
@@ -118,6 +122,31 @@ t150_effect_all_stopped(void)
 
 		if (e != NULL)
 			e->playing = 0;
+	}
+}
+
+/*
+ * Every effect this process holds is gone from the daemon.
+ *
+ * A device level reset releases every slot without naming one, so nothing
+ * else can tell an effect object that the copy the daemon held no longer
+ * exists. Only a reset: DISFFC_STOPALL and a pause stop what is playing and
+ * leave it downloaded, which is a different thing and not this.
+ *
+ * Every effect rather than one device's, for the reason t150_effect_all_stopped
+ * gives above: the slots are per connection and there is one connection per
+ * process.
+ */
+void
+t150_effect_all_unloaded(void)
+{
+	size_t i;
+
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		struct effect_obj *e = live[i];
+
+		if (e != NULL)
+			e->sent_valid = 0;
 	}
 }
 
@@ -317,11 +346,57 @@ upload(struct effect_obj *e)
 {
 	uint8_t buf[T150_PROTO_EFFECT_LEN];
 	unsigned int gen;
+	int up;
 
 	if (t150_proto_pack_effect(buf, sizeof(buf), &e->ef) == 0)
 		return -1;
-	if (t150_client_call(T150_OP_EFFECT_UPLOAD, buf, sizeof(buf)) != 0)
+
+	/*
+	 * A game that re-uploads an effect it has not changed pays a round
+	 * trip on the thread it draws from, and the daemon answers by
+	 * comparing the same bytes and sending the wheel nothing. Compare
+	 * them here instead. Every Start does an upload first, so a game that
+	 * starts an effect as often as it plays a frame pays two round trips
+	 * per frame for one of them to do anything.
+	 *
+	 * The packed form rather than the struct, which is the discipline
+	 * flush_slot uses in the daemon and for the same reason: the struct
+	 * carries padding and the inactive tail of a union, neither of which
+	 * is a difference the wheel could tell.
+	 *
+	 * Skipping is only sound while nothing can have emptied the daemon's
+	 * slot behind us, and there are four ways that happens:
+	 *
+	 * - The connection went. t150_client_call is what reconnects, so
+	 *   skipping it while the socket is down would leave a game that keeps
+	 *   sending the same force with no force feedback and nothing to
+	 *   restore it. Hence the online test, which is also what makes the
+	 *   reconnect reachable.
+	 * - The daemon was restarted. That is the generation, and the block
+	 *   below already exists to say the effect again over a new one.
+	 * - The game reset the device, which releases every slot without
+	 *   naming one. t150_effect_all_unloaded is called from there.
+	 * - The daemon's watchdog fired and made the wheel safe, which clears
+	 *   its slots with the connection still up. It fires after
+	 *   T150_WATCHDOG_MS of silence from this process, and an upload the
+	 *   daemon answered is not silence, so an acknowledgement newer than
+	 *   the watchdog proves no safe state has happened since. Half of it,
+	 *   for the margin between two machines' clocks.
+	 */
+	gen = t150_client_state(&up);
+	if (up && e->sent_valid && e->gen == gen &&
+	    GetTickCount64() - e->sent_ms < T150_WATCHDOG_MS / 2 &&
+	    memcmp(e->sent, buf, sizeof(buf)) == 0)
+		return 0;
+
+	if (t150_client_call(T150_OP_EFFECT_UPLOAD, buf, sizeof(buf)) != 0) {
+		/* What the daemon has is now anyone's guess. */
+		e->sent_valid = 0;
 		return -1;
+	}
+	memcpy(e->sent, buf, sizeof(buf));
+	e->sent_ms = GetTickCount64();
+	e->sent_valid = 1;
 
 	gen = t150_client_state(NULL);
 	if (e->gen != gen) {
@@ -647,6 +722,8 @@ eff_Unload(IDirectInputEffect *self)
 
 	(void)t150_client_call(T150_OP_EFFECT_DESTROY, &slot, 1);
 	e->playing = 0;
+	/* The daemon has no copy to compare the next upload against. */
+	e->sent_valid = 0;
 
 	return DI_OK;
 }
