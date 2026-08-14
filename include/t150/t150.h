@@ -262,9 +262,15 @@
  * Opening and closing the wheel's input, two bytes each on the interrupt OUT
  * pipe. The firmware tracks whether an application has the input open, which
  * is why t150_set_enable_autocenter's comment says the autocenter "is always
- * active while no input are open": nothing on macOS opens it, so it always is.
- * Whether the wheel also gates force feedback on this is the open question
- * these exist to answer.
+ * active while no input are open".
+ *
+ * Force feedback is gated on it too, and that was the open question these
+ * exist to answer: the wheel renders nothing until something sends the open.
+ * RESEARCH.md A28. Nothing on macOS sends it on a daemon's behalf, so t150d
+ * sends it itself and holds it open for as long as it holds the wheel, which
+ * is also what leaves the pedals resting where a game expects them. That makes
+ * the enable flag load bearing rather than decorative: A15 measured it a no-op
+ * only because nothing had the input open when it was measured.
  *
  * Source: scarburato/t150_driver hid-t150/hid-t150.c, which allocates the
  * three packets in t150_init() as little-endian uint16 0x0442, 0x0542 and

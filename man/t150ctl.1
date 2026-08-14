@@ -90,8 +90,8 @@ Desktop collection, because a set of nodes has no order and picking the first
 would be a coin toss over which one drives the motor.
 .Pp
 A zero autocenter is the only thing that releases the wheel. The protocol has
-a separate enable flag, and clearing it releases nothing at all, because the
-autocenter is active whenever no application has the wheel's input open and
-nothing on macOS opens one. This tool sends both, force first.
+a separate enable flag, and clearing it releases nothing at all: it decides
+whether the autocenter survives an application opening the wheel's input,
+not whether there is one. This tool sends both, force first.
 .Sh AUTHORS
 .An Renaud Allard

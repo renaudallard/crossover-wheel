@@ -11,8 +11,8 @@
  * because that is the one command whose effect is unmistakable: the wheel
  * starts pulling itself back to centre the moment it lands. Switch it off
  * again with -a 0, which sends the force: the enable flag at 0x04 only says
- * whether the spring survives an application opening the wheel's input, and
- * nothing on macOS opens it, so clearing that flag alone releases nothing.
+ * whether the spring survives an application opening the wheel's input, not
+ * whether there is a spring, so clearing that flag alone releases nothing.
  * RESEARCH.md A15, which cost six hardware sessions to learn.
  *
  * Three things are deliberately left as separate flags rather than being

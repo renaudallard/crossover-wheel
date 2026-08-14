@@ -28,9 +28,12 @@
 
 /*
  * Open and close the wheel's input. The firmware tracks whether an
- * application has the input open, and the autocenter is unconditionally
- * active while none has. Whether force feedback is gated the same way is not
- * yet known, so a daemon should open before it uploads anything.
+ * application has one open and renders nothing at all while none has: the
+ * autocenter is unconditionally active and no effect plays, which RESEARCH.md
+ * A28 measured and which was the missing packet behind every silent effect run
+ * this project made. So a daemon opens before it uploads anything. An open
+ * outlives the process that sent it (A30), so whatever opens one owes the
+ * close.
  */
 size_t	t150_enc_input_open(uint8_t *buf, size_t buflen);
 size_t	t150_enc_input_close(uint8_t *buf, size_t buflen);
