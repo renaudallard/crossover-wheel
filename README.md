@@ -458,6 +458,21 @@ strip, and USB into the machine rather than a hub.
 
 Two small tools, both macOS only and neither needing root.
 
+**A game must not see the wheel in boot mode.** DirectInput builds a device's
+identity out of its vendor and product ids, so the same wheel is two different
+devices to a game depending on which one it was enumerated at: `044f:b65d`
+comes up as *Thrustmaster FFB Wheel*, the generic boot identity every T-series
+wheel shares, and `044f:b677` as the T150. **A game started before the switch
+binds to the wrong one, and every button mapped against the other is against
+a device it can no longer see** — which looks like the wheel randomly needing
+its whole controller configuration done again.
+
+Nothing in the bottle can fix that afterwards: CrossOver carries in whatever
+macOS enumerated. The answer is to make sure the switch has happened first.
+The application does it, on its own timer and again the moment it starts, so
+leaving it running in the menu bar is enough; the daemon does it too on its
+own scan. From a terminal it is `t150boot`, before the game rather than after.
+
 **`t150boot`** takes the wheel out of boot mode, which is where it starts and
 where sleep, wake and every replug put it back. Nothing else works until it
 has run:

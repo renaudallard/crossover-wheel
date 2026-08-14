@@ -22,6 +22,24 @@ Sleep, wake and a replug all put the wheel back into boot mode, so this is
 meant to run on every plug-in rather than once. It needs no privilege, so it
 can be a user LaunchAgent that never asks for a password.
 .Pp
+It has to run before the game, not merely before the force feedback.
+DirectInput builds a device's identity out of its vendor and product ids, so
+a wheel enumerated at
+.Li 044f:b65d
+is a different device from the same wheel at
+.Li 044f:b677 :
+it appears as the generic
+.Dq Thrustmaster FFB Wheel
+that every T-series wheel shares rather than as the T150, and a game that
+binds to it has every button mapped against a device it will not see next
+time. Nothing inside the bottle can correct that afterwards, because CrossOver
+carries in whatever macOS enumerated.
+.Pp
+.Xr t150d 8
+does the same switch on its own scan, and
+.Xr crossover-wheel 7
+does it from the menu bar on a timer, so either of those running is enough.
+.Pp
 It never claims a USB interface. An endpoint 0 device request does not need
 one, claiming the interface macOS's HID driver already owns would be refused,
 and

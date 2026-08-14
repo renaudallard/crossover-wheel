@@ -43,6 +43,7 @@
 @property (strong) NSMenuItem *statusLine;
 @property (strong) NSMenuItem *runItem;
 @property (strong) NSMenuItem *loginItem;
+@property (strong) NSTimer *watch;
 @property (assign) BOOL clientConnected;
 @property (assign) BOOL wheelSeen;
 @end
@@ -170,8 +171,23 @@
 
 	m.delegate = self;
 	self.item.menu = m;
+	[self leaveBootMode];
 	self.wheelSeen = [self wheelPresent];
 	[self refresh];
+
+	/*
+	 * Two seconds is slower than the daemon's own scan and fast enough
+	 * that a wheel is out of boot mode long before somebody has launched
+	 * a game. The block holds self weakly, because the timer holds the
+	 * block and the run loop holds the timer.
+	 */
+	__weak __typeof__(self) weak = self;
+
+	self.watch = [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:YES
+	    block:^(NSTimer *t) {
+		(void)t;
+		[weak watchWheel];
+	}];
 
 	/*
 	 * Nothing installed yet means the person just double clicked this to
@@ -254,16 +270,67 @@
 }
 
 /*
- * Looked up only when the menu is about to be shown. refresh runs on every
- * line the daemon prints, and asking a subprocess whether the wheel is there
- * once per log line would be a spawn per line for a status nobody is looking
- * at.
+ * Sampled again here as well as on the watch timer, so a menu that is opened
+ * between two ticks states what is true now. refresh itself runs on every
+ * line the daemon prints, and asking IOKit once per log line would be a
+ * registry walk per line for a status nobody is looking at.
  */
 - (void)menuWillOpen:(NSMenu *)menu
 {
 	(void)menu;
 	self.wheelSeen = [self wheelPresent];
 	[self refresh];
+}
+
+/*
+ * Take the wheel out of boot mode, if that is where it is.
+ *
+ * Every T-series wheel shares the boot identity 044f:b65d, whose product
+ * string is "Thrustmaster FFB Wheel" and names no model, and only the mode
+ * switch reveals the T150's own b677 (RESEARCH.md, the enumeration table). A
+ * plug-in, a sleep and a wake all put it back there.
+ *
+ * That matters to a game and not only to this daemon. DirectInput builds a
+ * device's identity out of the vendor and product ids, so a wheel enumerated
+ * at b65d is a different device from the same wheel at b677: it comes up as
+ * "Thrustmaster FFB Wheel" instead of the T150, and every button a person
+ * mapped against the other one is against a device the game no longer sees.
+ * A game started in the window before the switch therefore costs its owner
+ * the whole controller configuration.
+ *
+ * The daemon does this too, on its own scan, but only while it is running.
+ * This is the part that is always running, so it is the one that can close
+ * the window. It is cheap: with the wheel in firmware mode there is nothing
+ * at the boot id and this is one registry lookup. It refuses to switch a
+ * T-series wheel that is not a T150, because the value means something else
+ * entirely to a T300RS or a TMX.
+ */
+- (void)leaveBootMode
+{
+	uint8_t model = 0;
+
+	(void)t150_boot_switch(T150_VID, T150_PID_BOOT, T150_SWITCH_VALUE,
+	    &model);
+}
+
+/*
+ * Watch the bus rather than waiting to be asked.
+ *
+ * The wheel used to be looked for only at launch and when the menu was about
+ * to open, so the icon stated something that had been true whenever it was
+ * last sampled: a wheel unplugged mid session still read as connected until
+ * somebody clicked. Worse, a wheel sitting in boot mode stayed there until
+ * the daemon was started, which is the state a game must not enumerate it in.
+ */
+- (void)watchWheel
+{
+	BOOL was = self.wheelSeen;
+
+	[self leaveBootMode];
+	self.wheelSeen = [self wheelPresent];
+
+	if (self.wheelSeen != was)
+		[self refresh];
 }
 
 /*
@@ -277,7 +344,8 @@
  * somebody to go hunting for a fault that is not there.
  *
  * Both product ids count. The boot one means it is plugged in but not yet
- * switched, which the daemon does by itself once it runs.
+ * switched, which leaveBootMode above puts right on the next tick of the
+ * watch timer, and which the daemon also does on its own scan.
  */
 - (BOOL)wheelPresent
 {
@@ -1203,6 +1271,9 @@ sha256_of(NSData *d)
 - (void)quit:(id)sender
 {
 	(void)sender;
+
+	[self.watch invalidate];
+	self.watch = nil;
 
 	/*
 	 * Stop the daemon we started rather than orphaning it. Its own
