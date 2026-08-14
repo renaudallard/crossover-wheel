@@ -1226,9 +1226,9 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 	 * The backend re-acquires the wheel on its own account, and acquiring
 	 * scrubs every slot, so from that moment what this session believes
 	 * the wheel holds is a lie. Forget it and let the pass below teach
-	 * the wheel again. Nothing replays a start: the game asked for that
-	 * before the wheel went away, and a wheel that begins pushing on its
-	 * own after a replug is not an improvement.
+	 * the wheel again, and then replay the starts: see
+	 * session_replay_starts for why a wheel that begins pushing again
+	 * after a replug is the outcome to want rather than the one to avoid.
 	 */
 	if (s->epoch != s->be->epoch) {
 		s->epoch = s->be->epoch;
