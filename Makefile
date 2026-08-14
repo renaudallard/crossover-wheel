@@ -92,6 +92,15 @@ DLL_CPPFLAGS = -Iinclude -Isrc/dll -DT150_PROXY_VERSION=\"$(DLL_VERSION)\"
 DLL_CFLAGS   = -O2 -std=c11 $(WARNINGS)
 DLL_LIBS     = -ldxguid -luuid -lole32 -lws2_32
 
+# The headers both ends of the wire protocol share. The cross build compiles
+# straight from sources to a PE, so it produces no .o for -MMD to write a .d
+# beside and the include at the bottom of this file never learns about it.
+# Naming them is what keeps the two ends together: without this a change to
+# include/t150/proto.h relinked the daemon and left the proxy at the previous
+# build, with make reporting success and nothing anywhere saying the two no
+# longer agreed about the protocol.
+SHARED_HDRS = $(wildcard include/t150/*.h)
+
 .PHONY: all probes tools daemon dll test check strict clean help install app dmg
 
 ifeq ($(HAVE_DLL_CC),yes)
@@ -133,7 +142,8 @@ daemon: $(DAEMON_BIN)
 
 dll: $(DLL_BIN) $(DLL_CHECK_BIN) $(DINPUT_PROBE_BIN)
 
-$(DLL_BIN): $(DLL_SRCS) src/dll/proxy.h src/dll/dinput8.def | $(BIN)
+$(DLL_BIN): $(DLL_SRCS) src/dll/proxy.h src/dll/dinput8.def $(SHARED_HDRS) \
+    | $(BIN)
 ifneq ($(HAVE_DLL_CC),yes)
 	@echo "dll: $(DLL_CC) not found, install gcc-mingw-w64-x86-64" >&2
 	@false
@@ -143,7 +153,8 @@ endif
 
 # The proxy's own test, which links the sources it checks and loads the DLL
 # it was built alongside. Only runnable on Windows, so CI runs it there.
-$(DLL_CHECK_BIN): tests/dll_check.c $(DLL_SRCS) src/dll/proxy.h | $(BIN)
+$(DLL_CHECK_BIN): tests/dll_check.c $(DLL_SRCS) src/dll/proxy.h $(SHARED_HDRS) \
+    | $(BIN)
 	$(DLL_CC) $(DLL_CPPFLAGS) $(DLL_CFLAGS) -o $@ tests/dll_check.c \
 	    src/dll/device.c src/dll/effect.c src/dll/client.c \
 	    src/lib/proto.c -static-libgcc $(DLL_LIBS)
@@ -151,7 +162,7 @@ $(DLL_CHECK_BIN): tests/dll_check.c $(DLL_SRCS) src/dll/proxy.h | $(BIN)
 # The in-bottle diagnostic. It links no project source, only the shared
 # header for the wheel's ids, because it exists to report what DirectInput
 # says rather than what this project believes.
-$(DINPUT_PROBE_BIN): src/tools/probe_dinput.c include/t150/t150.h | $(BIN)
+$(DINPUT_PROBE_BIN): src/tools/probe_dinput.c $(SHARED_HDRS) | $(BIN)
 	$(DLL_CC) $(DLL_CPPFLAGS) $(DLL_CFLAGS) -o $@ src/tools/probe_dinput.c \
 	    -static-libgcc -ldinput8 $(DLL_LIBS)
 
