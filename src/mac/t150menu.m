@@ -26,6 +26,10 @@
 #import <Cocoa/Cocoa.h>
 #import <CommonCrypto/CommonDigest.h>
 
+#include <fcntl.h>
+#include <string.h>
+#include <unistd.h>
+
 #include "mac/bootswitch.h"
 #include "t150/t150.h"
 
@@ -77,6 +81,46 @@
 	return [self resource:@"t150d"];
 }
 
+/* Where t150d publishes its port, and takes its single instance lock. */
+- (NSString *)endpointPath
+{
+	return [NSHomeDirectory() stringByAppendingPathComponent:
+	    @"Library/Application Support/t150ffb/endpoint"];
+}
+
+/*
+ * Whether a daemon that is not our child is already running.
+ *
+ * "Start at login" and this menu are two different ways to get one, and until
+ * the daemon took a lock they could not see each other: the menu said the
+ * daemon was stopped while one was driving a game, offered to start it, and
+ * starting it took the wheel away from that game. t150d holds a lock on the
+ * endpoint for its whole life, so asking who holds it is the only answer that
+ * cannot race, and F_GETLK asks without taking it.
+ */
+- (BOOL)daemonElsewhere
+{
+	NSString *lock = [[self endpointPath] stringByAppendingString:@".lock"];
+	struct flock fl;
+	int fd;
+	BOOL held = NO;
+
+	if (self.daemon != nil && self.daemon.isRunning)
+		return NO;
+
+	if ((fd = open(lock.fileSystemRepresentation, O_RDONLY)) == -1)
+		return NO;
+
+	memset(&fl, 0, sizeof(fl));
+	fl.l_type = F_WRLCK;
+	fl.l_whence = SEEK_SET;
+	if (fcntl(fd, F_GETLK, &fl) == 0 && fl.l_type != F_UNLCK)
+		held = YES;
+	(void)close(fd);
+
+	return held;
+}
+
 /*
  * A bottle is a directory with a cxbottle.conf in it, which is the same test
  * install.sh makes. Anything else in that folder is not a bottle.
@@ -112,6 +156,15 @@
 	    statusItemWithLength:NSVariableStatusItemLength];
 
 	NSMenu *m = [[NSMenu alloc] init];
+
+	/*
+	 * Enable items ourselves. Cocoa's automatic enabling asks the target
+	 * whether it responds to the action, which is always yes here, so it
+	 * would override the one item whose enabled state carries meaning:
+	 * the daemon row, which is greyed when the daemon running is not ours
+	 * to stop.
+	 */
+	m.autoenablesItems = NO;
 
 	self.statusLine = [[NSMenuItem alloc] initWithTitle:@"" action:NULL
 	    keyEquivalent:@""];
@@ -246,13 +299,18 @@
 
 - (void)refresh
 {
-	BOOL running = self.daemon != nil && self.daemon.isRunning;
+	BOOL mine = self.daemon != nil && self.daemon.isRunning;
+	BOOL elsewhere = !mine && [self daemonElsewhere];
+	BOOL running = mine || elsewhere;
 	NSString *wheel = self.wheelSeen ? @"wheel connected"
 	    : @"no wheel found";
 
 	[self showGlyph:running];
 
-	if (running && self.clientConnected)
+	if (elsewhere)
+		self.statusLine.title = [NSString stringWithFormat:
+		    @"%@ · daemon running, started elsewhere", wheel];
+	else if (running && self.clientConnected)
 		self.statusLine.title = [NSString stringWithFormat:
 		    @"%@ · daemon running · a game is connected",
 		    wheel];
@@ -263,8 +321,14 @@
 		self.statusLine.title = [NSString stringWithFormat:
 		    @"%@ · daemon stopped", wheel];
 
-	self.runItem.title = running ? @"Stop the daemon"
-	    : @"Start the daemon";
+	/*
+	 * A daemon somebody else started is not ours to stop, and offering to
+	 * start a second one is offering to take the wheel from whatever the
+	 * first is driving. Say so rather than pretending either is possible.
+	 */
+	self.runItem.enabled = !elsewhere;
+	self.runItem.title = elsewhere ? @"The daemon is already running"
+	    : (running ? @"Stop the daemon" : @"Start the daemon");
 	self.loginItem.state = [self loginEnabled] ? NSControlStateValueOn
 	    : NSControlStateValueOff;
 }
@@ -1266,6 +1330,25 @@ sha256_of(NSData *d)
 	[t waitUntilExit];
 
 	return t.terminationStatus;
+}
+
+/*
+ * Quit is not the only way out. A force quit, a Quit AppleEvent or a logout
+ * all end the application without going through the menu item, and the daemon
+ * we started is our child: left behind it keeps the wheel, and the next launch
+ * cannot see it as its own. Cocoa calls this on every one of those.
+ */
+- (void)applicationWillTerminate:(NSNotification *)n
+{
+	(void)n;
+
+	[self.watch invalidate];
+	self.watch = nil;
+
+	if (self.daemon != nil && self.daemon.isRunning) {
+		[self.daemon terminate];
+		[self.daemon waitUntilExit];
+	}
 }
 
 - (void)quit:(id)sender
