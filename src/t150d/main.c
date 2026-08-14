@@ -536,7 +536,6 @@ main(int argc, char *argv[])
 	if (t150_backend_fake(&be, stdout) != 0)
 		errx(1, "cannot open the logging backend");
 	(void)gap_ms;
-	(void)autocenter;
 	(void)writer;
 #endif
 	if ((lfd = listen_loopback(&port)) == -1)
@@ -547,6 +546,7 @@ main(int argc, char *argv[])
 	t150_session_init(&sess, &be, token);
 	sess.verbose = verbose;
 	sess.range_deg = range_deg;
+	sess.autocenter = autocenter;
 	sess.always_triple = always_triple;
 
 	/*
@@ -756,6 +756,7 @@ main(int argc, char *argv[])
 				t150_session_init(&sess, &be, token);
 				sess.verbose = verbose;
 				sess.range_deg = range_deg;
+				sess.autocenter = autocenter;
 				sess.always_triple = always_triple;
 				sess.peer_port = peer_port;
 				cfd = nfd2;
@@ -770,6 +771,7 @@ main(int argc, char *argv[])
 				t150_session_init(&psess, &be, token);
 				psess.verbose = verbose;
 				psess.range_deg = range_deg;
+				psess.autocenter = autocenter;
 				psess.always_triple = always_triple;
 				psess.peer_port = peer_port;
 				if (verbose)

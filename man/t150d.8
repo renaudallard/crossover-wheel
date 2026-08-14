@@ -68,7 +68,17 @@ here, and the application offers it in its menu as
 .Em Centring spring .
 .Pp
 It is applied on every acquire rather than once, because the wheel forgets it
-when it is unplugged and the daemon is the only thing that notices.
+when it is unplugged and the daemon is the only thing that notices, and it is
+what every safe state leaves behind rather than a hard zero. Writing zero
+there undid this option on the first client to go away, and nothing put it
+back until the wheel was physically replugged, so the setting survived one
+game at most.
+.Pp
+A client's own centring spring is separate and wins while it drives: a game
+that sets one with
+.Dv T150_OP_SET_AUTOCENTER
+has that restored after a re-acquire, and the value here is what the wheel
+returns to once the game has gone.
 .It Fl g Ar ms
 Pause this long after every packet sent to the wheel. Off by default. The
 probe tools have always left 20 milliseconds between writes, on a comment
@@ -367,8 +377,10 @@ leaves the wheel holding whatever force it was last given.
 .Pp
 .Nm
 therefore treats silence as a fault. If no frame arrives for half a second it
-stops every effect and releases the autocenter, whether or not the socket is
-still open, which leaves the wheel limp rather than latched. A client is
+stops every effect and puts the autocenter back to
+.Fl a ,
+whether or not the socket is still open, which leaves the wheel limp rather
+than latched unless a spring was asked for. A client is
 expected to send
 .Dv T150_OP_KEEPALIVE
 often enough to stay ahead of this. The same safe state is entered when a

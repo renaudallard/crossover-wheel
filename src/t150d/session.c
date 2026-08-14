@@ -342,11 +342,23 @@ session_touched_wheel(const struct t150_session *s)
 	return s->input_open || s->armed;
 }
 
+/* Both packets, because the enable flag alone releases nothing. See A15. */
+static void
+emit_autocenter(struct t150_session *s, uint32_t force)
+{
+	uint8_t pkt[PKT_MAX];
+	size_t n;
+
+	n = t150_enc_autocenter_force(pkt, sizeof(pkt), force);
+	(void)s->be->write(s->be->priv, pkt, n);
+	n = t150_enc_autocenter_enable(pkt, sizeof(pkt), force != 0);
+	(void)s->be->write(s->be->priv, pkt, n);
+}
+
 static void
 session_safe_state(struct t150_session *s, const char *why)
 {
-	uint8_t pkt[PKT_MAX];
-	size_t i, n;
+	size_t i;
 
 	if (s->verbose && why != NULL)
 		fprintf(stderr, "t150d: safe state: %s\n", why);
@@ -373,8 +385,12 @@ session_safe_state(struct t150_session *s, const char *why)
 	s->emit_failed = 0;
 
 	/*
-	 * Release the autocenter last. A wheel that has been left holding a
-	 * force should end up limp, not fighting whoever grabs it next.
+	 * The autocenter last. A wheel that has been left holding a force
+	 * should end up as the person asked rather than fighting whoever grabs
+	 * it next, and what they asked for is -a: zero by default, which is
+	 * limp, and a spring for someone running a game that sends no forces
+	 * at all. Writing a hard zero here undid -a on the first client to go
+	 * away and nothing put it back until the wheel was replugged.
 	 *
 	 * It takes the force, not the enable flag. 0x04 only says whether the
 	 * autocenter survives an application opening the wheel's input, and
@@ -383,10 +399,7 @@ session_safe_state(struct t150_session *s, const char *why)
 	 * wheel safe. See PROTOCOL.md and RESEARCH.md A15, which cost six
 	 * hardware sessions to learn.
 	 */
-	n = t150_enc_autocenter_force(pkt, sizeof(pkt), 0);
-	(void)s->be->write(s->be->priv, pkt, n);
-	n = t150_enc_autocenter_enable(pkt, sizeof(pkt), 0);
-	(void)s->be->write(s->be->priv, pkt, n);
+	emit_autocenter(s, s->autocenter);
 
 	/*
 	 * Disarming is what stops the watchdog evaluating, so it may only
@@ -495,6 +508,17 @@ session_apply_settings(struct t150_session *s)
 			    "%s\n", s->gain, (unsigned)T150_DI_MAX,
 			    r == 0 ? "sent" : "the write failed");
 	}
+	/*
+	 * The centring spring goes back too, but only when the client chose
+	 * one: it set it once and has no reason to say it again, and a wheel
+	 * that has been away has forgotten it. The -a value is not re-stated
+	 * here, because the backend applies that on every acquire and the safe
+	 * state restores it, so saying it again would be two packets telling
+	 * the wheel what it already holds.
+	 */
+	if (s->client_set_autocenter)
+		emit_autocenter(s, s->client_autocenter);
+
 	if (s->range_deg == 0) {
 		if (s->verbose)
 			fprintf(stderr, "t150d: no rotation range given, the "
@@ -831,29 +855,20 @@ do_setting(struct t150_session *s, uint8_t op, const uint8_t *payload,
 		 * leaves the wheel gripped, which is PROTOCOL.md's warning
 		 * and was measured on hardware.
 		 */
-		if (v == 0) {
-			n = t150_enc_autocenter_force(pkt, sizeof(pkt), 0);
-			if (emit(s, pkt, n) != 0) {
-				reply_err(rep, T150_ERR_DEVICE_IO);
-				return;
-			}
-			n = t150_enc_autocenter_enable(pkt, sizeof(pkt), 0);
-			if (emit(s, pkt, n) != 0) {
-				reply_err(rep, T150_ERR_DEVICE_IO);
-				return;
-			}
-			break;
-		}
 		n = t150_enc_autocenter_force(pkt, sizeof(pkt), v);
 		if (emit(s, pkt, n) != 0) {
 			reply_err(rep, T150_ERR_DEVICE_IO);
 			return;
 		}
-		n = t150_enc_autocenter_enable(pkt, sizeof(pkt), 1);
+		n = t150_enc_autocenter_enable(pkt, sizeof(pkt), v != 0);
 		if (emit(s, pkt, n) != 0) {
 			reply_err(rep, T150_ERR_DEVICE_IO);
 			return;
 		}
+		/* Remembered, so a re-acquired wheel gets it back. */
+		s->client_autocenter = v > (uint32_t)T150_DI_MAX ?
+		    (uint32_t)T150_DI_MAX : v;
+		s->client_set_autocenter = 1;
 		break;
 	default:
 		reply_err(rep, T150_ERR_BAD_FRAME);

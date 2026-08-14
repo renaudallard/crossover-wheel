@@ -164,6 +164,22 @@ struct t150_session {
 	 * proxy sends DIPROP_FFGAIN once and never again.
 	 */
 	uint32_t		 gain;
+	/*
+	 * The centring spring, in the same 0 to 10000.
+	 *
+	 * These are two different questions and so they are two fields.
+	 * autocenter is what -a asked for: what a person wants the wheel to
+	 * feel like when no game is driving it, which is where every safe
+	 * state leaves it. Zero is limp, is the default, and is what a game
+	 * sending its own forces wants.
+	 *
+	 * client_autocenter is what the game asked for while it drives, and is
+	 * what a re-acquired wheel is given back, because the wheel forgets it
+	 * and the client has no reason to say it twice.
+	 */
+	uint32_t		 autocenter;
+	uint32_t		 client_autocenter;
+	int			 client_set_autocenter;
 	int			 always_triple;	/* -t: re-send the set on any change */
 	uint8_t			 next_slot;	/* where the next pass resumes */
 	uint8_t			 io_err;	/* a write failed, owed to the next upload */

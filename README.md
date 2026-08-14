@@ -128,7 +128,9 @@ its centring spring, so on Windows they live in the vendor's control panel.
 
 Both are written straight to the wheel and remembered, because the wheel
 forgets them when it is unplugged and the daemon is the only thing that
-notices a replug.
+notices a replug. The spring is also what the wheel returns to whenever a game
+lets go, rather than being released outright: that used to undo the setting on
+the first game that exited, so it survived one game at most.
 
 **Made a new bottle since?** *Install into a bottle…* in that menu puts the
 proxy into it, and that is the only thing the application ever installs. The

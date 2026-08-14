@@ -1379,6 +1379,73 @@ test_a_re_acquire_restores_the_clients_gain(void)
 }
 
 /*
+ * The client's centring spring is device state the wheel forgets, exactly
+ * like the gain. The client sets it once and has no reason to say it again.
+ */
+static void
+test_a_re_acquire_restores_the_clients_autocenter(void)
+{
+	uint8_t arg[4];
+
+	reset_session();
+	hello(0);
+
+	put_u32(arg, 10000);
+	frame(T150_OP_SET_AUTOCENTER, arg, 4, 0, T150_OP_OK, T150_ERR_NONE);
+	drain_log();
+
+	be.epoch++;
+	frame(T150_OP_KEEPALIVE, NULL, 0, 10, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(10);
+	expect_log("a re-acquired wheel is given the spring back",
+	    "write 2: 43 80\n"
+	    "write 4: 40 03 64 00\n"
+	    "write 4: 40 04 01 00\n");
+}
+
+/*
+ * -a is what a person wants the wheel to feel like when no game is driving
+ * it, which is the whole point of the option: a game that sends no forces at
+ * all leaves the wheel limp otherwise. The safe state wrote a hard zero, so
+ * the first client to go away undid it and nothing put it back until the
+ * wheel was physically replugged.
+ */
+static void
+test_the_safe_state_restores_the_configured_spring(void)
+{
+	reset_session();
+	sess.autocenter = 10000;
+	hello(0);
+	load_and_play(0, 0);
+	(void)tick(0);
+	drain_log();
+
+	/* The game goes quiet and the watchdog makes the wheel safe. */
+	(void)tick(T150_WATCHDOG_MS);
+	expect_log("the effect stops and the wheel keeps the spring it was told",
+	    "write 4: 41 00 00 01\n"
+	    "write 4: 40 03 64 00\n"
+	    "write 4: 40 04 01 00\n");
+}
+
+/* And with no -a the safe state is the limp wheel it has always been. */
+static void
+test_the_safe_state_is_limp_without_a_spring(void)
+{
+	reset_session();
+	hello(0);
+	load_and_play(0, 0);
+	(void)tick(0);
+	drain_log();
+
+	(void)tick(T150_WATCHDOG_MS);
+	expect_log("no spring asked for, so the wheel is left limp",
+	    "write 4: 41 00 00 01\n"
+	    "write 4: 40 03 00 00\n"
+	    "write 4: 40 04 00 00\n");
+}
+
+/*
  * A start refused while the wheel was off the bus is still a start the game
  * asked for, and the wheel has to be told about it when it comes back.
  *
@@ -1654,6 +1721,9 @@ main(void)
 	test_device_error_is_reported_on_the_next_upload();
 	test_backend_epoch_reuploads_everything();
 	test_a_re_acquire_restores_the_clients_gain();
+	test_a_re_acquire_restores_the_clients_autocenter();
+	test_the_safe_state_restores_the_configured_spring();
+	test_the_safe_state_is_limp_without_a_spring();
 	test_a_refused_start_is_replayed_when_the_wheel_returns();
 	test_a_start_every_frame_does_not_starve_other_slots();
 	test_the_parameter_log_names_the_condition();
