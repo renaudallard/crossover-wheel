@@ -706,6 +706,14 @@ watch_control(const struct control *c, struct result *r)
 			if (v > hi[i])
 				hi[i] = v;
 		}
+		/*
+		 * A button counts when it goes down during the window, not
+		 * when it is down. The axes were always judged against the
+		 * baseline sampled above and these were not, so a button still
+		 * held from the previous question, or one the wheel reports
+		 * pressed at rest, was attributed to whatever was being asked
+		 * about now. The same for the hat.
+		 */
 		for (i = 0; i < nbuttons && btn < 0; i++) {
 			DWORD n;
 
@@ -713,10 +721,12 @@ watch_control(const struct control *c, struct result *r)
 				continue;
 			n = buttons[i].state_ofs - DIJOFS_BUTTON0;
 
-			if (now.rgbButtons[n] & 0x80)
+			if ((now.rgbButtons[n] & 0x80) &&
+			    !(rest.rgbButtons[n] & 0x80))
 				btn = i;
 		}
-		if (pov < 0 && LOWORD(now.rgdwPOV[0]) != 0xffff)
+		if (pov < 0 && LOWORD(now.rgdwPOV[0]) != 0xffff &&
+		    LOWORD(rest.rgdwPOV[0]) == 0xffff)
 			pov = (int)now.rgdwPOV[0];
 	}
 
