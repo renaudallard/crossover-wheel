@@ -24,6 +24,7 @@
 #include <sys/types.h>
 
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 
 #include <err.h>
 #include <errno.h>
@@ -288,6 +289,23 @@ set_send_timeout(int fd)
 	tv.tv_sec = 1;
 	tv.tv_usec = 0;
 	(void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+}
+
+/*
+ * Nagle has nothing to hold back while the protocol stays a strict ping pong,
+ * because one frame is outstanding at a time and the reply carries the
+ * acknowledgement. It has something the moment a reply does not leave in one
+ * segment, and then the tail waits for a delayed acknowledgement rather than
+ * for the wheel. That is a stall measured in tens of milliseconds on a path
+ * whose whole budget is four, so the option goes on and the case cannot
+ * arise.
+ */
+static void
+set_nodelay(int fd)
+{
+	int on = 1;
+
+	(void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
 }
 
 static int
@@ -861,6 +879,7 @@ main(int argc, char *argv[])
 				continue;
 			}
 			set_send_timeout(nfd2);
+			set_nodelay(nfd2);
 
 			/*
 			 * The port is what tells two connections apart in the

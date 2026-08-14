@@ -348,7 +348,7 @@ connect_locked(void)
 	unsigned short port;
 	WSADATA wsa;
 	DWORD tv;
-	int ok = 0;
+	int one, ok = 0;
 
 	if (online)
 		return 0;
@@ -396,6 +396,20 @@ connect_locked(void)
 	 * call and desynchronise the stream; the reconnect in t150_client_call
 	 * then re-establishes the session.
 	 */
+	/*
+	 * Nagle has nothing to hold back while the protocol stays a strict
+	 * ping pong, because one frame is outstanding at a time and the
+	 * daemon's reply carries the acknowledgement. It has something the
+	 * moment a frame does not leave in one segment, and then the tail
+	 * waits for a delayed acknowledgement rather than for the daemon.
+	 * That is a stall measured in tens of milliseconds on a path whose
+	 * whole budget is four, so the option goes on and the case cannot
+	 * arise.
+	 */
+	one = 1;
+	(void)setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (const char *)&one,
+	    sizeof(one));
+
 	tv = T150_WATCHDOG_MS / 2;
 	(void)setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv,
 	    sizeof(tv));

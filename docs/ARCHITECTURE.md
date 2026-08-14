@@ -104,6 +104,13 @@ because a late reply would arrive against the following call. The reconnect is
 rate limited, so the worst a stalled daemon costs is force feedback rather
 than the game.
 
+Both ends set `TCP_NODELAY`. Nagle has nothing to hold back while one frame is
+outstanding at a time and each reply carries the acknowledgement, which is the
+shape this protocol has; it has something the moment a frame or a reply does
+not leave in one segment, and then the tail waits for a delayed acknowledgement
+rather than for the wheel. Tens of milliseconds on a path whose whole budget is
+four is worth two lines to rule out.
+
 The daemon does not write to the wheel from the frame that arrives. A frame
 records what a slot should hold, and a pass sends whatever differs from the
 bytes that slot last put on the wire. A pass runs at most once every
