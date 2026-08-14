@@ -64,22 +64,6 @@ struct hid_be {
 	struct t150_backend *be;
 	uint64_t	 next_scan_ms;
 	/*
-	 * The last input open or close that passed through, replayed after a
-	 * re-acquire. A wheel that is unplugged and replugged comes back with
-	 * its input shut, and only this layer knows that happened: the
-	 * session sends 42 04 once, on hello, and would never send it again.
-	 * Without this a mid-game replug, or a wheel that only appears after
-	 * the client has said hello, leaves the wheel silently deaf to every
-	 * effect. Set from the intent rather than from a successful write, so
-	 * that an open sent to an absent wheel still counts. 0 means nothing
-	 * has been asked for yet.
-	 *
-	 * Atomic because with a writer it is set by the poll thread inside
-	 * hid_write and read by the writer inside acquire(). One byte, but a
-	 * race is a race.
-	 */
-	_Atomic uint8_t	 input_state;
-	/*
 	 * The last boot mode outcome that was logged. The scan runs twice a
 	 * second now, so saying the same thing every time buries whatever
 	 * else the daemon has to say, and the commonest outcome by far is
@@ -440,9 +424,11 @@ acquire(struct hid_be *h)
 	 * hand first had hidden it, because the input was still open from an
 	 * earlier session.
 	 *
-	 * So the daemon holds the input for as long as it holds the wheel.
-	 * Nothing renders while no client has uploaded anything, and the
-	 * session still closes it in the safe state when the client goes.
+	 * So the daemon holds the input for as long as it holds the wheel:
+	 * unconditionally, on every acquire, whatever was open before. That is
+	 * why nothing here tracks the last open or close that went past. The
+	 * session no longer closes it when a client goes either, only when the
+	 * daemon itself is leaving.
 	 */
 	if ((len = t150_enc_input_close(pkt, sizeof(pkt))) > 0)
 		(void)raw_write(h, pkt, len);
@@ -451,7 +437,6 @@ acquire(struct hid_be *h)
 	if ((len = t150_enc_input_open(pkt, sizeof(pkt))) > 0 &&
 	    raw_write(h, pkt, len) != kIOReturnSuccess && h->verbose)
 		fprintf(stderr, "t150d: could not open the wheel's input\n");
-	h->input_state = T150_INPUT_OPEN;
 
 	/*
 	 * Say that the wheel is a new one as far as its contents go. The
@@ -630,19 +615,6 @@ hid_write(void *priv, const uint8_t *buf, size_t len)
 
 	if (len == 0)
 		return 0;
-
-	/*
-	 * Record what the session wants before trying to send it, not after
-	 * succeeding. A client that says hello while the wheel is absent, or
-	 * still at the boot product id, has its 42 04 dropped here, and if
-	 * that were only remembered on success the acquire that follows would
-	 * open a device and never open its input. Every write after it would
-	 * return success and the wheel would render nothing for the life of
-	 * that client, which is the exact failure that took eleven sessions
-	 * to find the first time.
-	 */
-	if (len == 2 && buf[0] == T150_OP_INPUT)
-		h->input_state = buf[1];
 
 	/*
 	 * With a writer, this returns the moment the bytes are copied. That
