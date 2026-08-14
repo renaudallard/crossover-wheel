@@ -1428,6 +1428,44 @@ test_the_safe_state_restores_the_configured_spring(void)
 	    "write 4: 40 04 01 00\n");
 }
 
+/*
+ * A stop drops whatever was waiting for its slot, which is deliberate: a pass
+ * that fired just after a stop would be writing a force to a wheel someone is
+ * holding. What it must not do is leave a later start playing parameters the
+ * wheel was never given, and the start only flushed when the slot was still
+ * marked dirty, which the stop had just cleared.
+ */
+static void
+test_a_start_after_a_stop_still_teaches_the_wheel(void)
+{
+	struct t150_effect ef;
+	uint8_t slot = 0;
+	uint8_t start[2];
+
+	reset_session();
+	hello(0);
+
+	/* Uploaded, then stopped before the emitter ever ran. */
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	frame(T150_OP_EFFECT_STOP, &slot, 1, 0, T150_OP_OK, T150_ERR_NONE);
+	expect_log("neither the upload nor the stop writes anything", "");
+
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+	expect_log("the start carries the parameters the wheel never got",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 40\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n"
+	    "write 4: 41 00 41 01\n");
+
+	/* And a start on a slot the wheel already holds still costs nothing. */
+	frame(T150_OP_EFFECT_START, start, 2, 1, T150_OP_OK, T150_ERR_NONE);
+	expect_log("a start with nothing to teach is one packet",
+	    "write 4: 41 00 41 01\n");
+}
+
 /* And with no -a the safe state is the limp wheel it has always been. */
 static void
 test_the_safe_state_is_limp_without_a_spring(void)
@@ -1724,6 +1762,7 @@ main(void)
 	test_a_re_acquire_restores_the_clients_autocenter();
 	test_the_safe_state_restores_the_configured_spring();
 	test_the_safe_state_is_limp_without_a_spring();
+	test_a_start_after_a_stop_still_teaches_the_wheel();
 	test_a_refused_start_is_replayed_when_the_wheel_returns();
 	test_a_start_every_frame_does_not_starve_other_slots();
 	test_the_parameter_log_names_the_condition();

@@ -720,28 +720,36 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 	 * parameters it starts, so the slot is flushed first. This is also
 	 * what keeps the game's own ordering: a game that uploads and starts
 	 * in one burst gets both on the wheel before it hears about either.
+	 *
+	 * Unconditionally, not only when the slot is marked dirty. dirty says
+	 * a pass is owed, and a stop clears it deliberately so that nothing
+	 * follows an effect that has just stopped; nothing but an upload ever
+	 * sets it again. A game that uploads, stops before the pass has run,
+	 * and then starts - which is what the proxy sends whenever a game
+	 * passes DIES_NODOWNLOAD - therefore had the wheel told to play
+	 * parameters it had never been given.
+	 *
+	 * flush_slot writes nothing when the encoded bytes already match what
+	 * the slot last put on the wire, so the common path costs a comparison
+	 * rather than three packets.
+	 *
+	 * The emit deadline is deliberately not pushed here. It is one
+	 * deadline for the whole session, and pushing it from a frame starves
+	 * every slot the frame did not touch: a game whose physics runs faster
+	 * than the emit period moves the deadline further away than its own
+	 * next frame, so the pass never runs and every other slot keeps
+	 * whatever the wheel was last told. Assetto Corsa at 333 Hz against a
+	 * 4 ms period did exactly that, and its damper went half a second
+	 * without an update while its constant force was started on every
+	 * frame. Only an emission pass moves the deadline.
 	 */
-	if (sl->dirty) {
-		if (flush_slot(s, sl) < 0) {
-			/* Reported here, so the next upload does not repeat it. */
-			s->io_err = 0;
-			reply_err(rep, T150_ERR_DEVICE_IO);
-			return;
-		}
-		sl->dirty = 0;
-		/*
-		 * The emit deadline is deliberately not pushed here. It is
-		 * one deadline for the whole session, and pushing it from a
-		 * frame starves every slot the frame did not touch: a game
-		 * whose physics runs faster than the emit period moves the
-		 * deadline further away than its own next frame, so the pass
-		 * never runs and every other slot keeps whatever the wheel
-		 * was last told. Assetto Corsa at 333 Hz against a 4 ms
-		 * period did exactly that, and its damper went half a second
-		 * without an update while its constant force was started on
-		 * every frame. Only an emission pass moves the deadline.
-		 */
+	if (flush_slot(s, sl) < 0) {
+		/* Reported here, so the next upload does not repeat it. */
+		s->io_err = 0;
+		reply_err(rep, T150_ERR_DEVICE_IO);
+		return;
 	}
+	sl->dirty = 0;
 
 	/*
 	 * The intent is recorded before the write, not after it, which is the
