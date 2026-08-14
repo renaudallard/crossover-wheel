@@ -16,7 +16,9 @@ WARNINGS = -Wall -Wextra -Wshadow -Wpointer-arith -Wstrict-prototypes \
 # include/t150/*.h leaves every object stale, which is how a corrected gain
 # constant once passed its own test suite unnoticed.
 CPPFLAGS += -Iinclude -Isrc -Isrc/probe -Isrc/t150d -D_POSIX_C_SOURCE=200809L -MMD -MP
-CFLAGS   += -std=c11 $(WARNINGS)
+# override, so that these survive a command line CFLAGS. Without it "make
+# CFLAGS=-O0" silently dropped the language standard and every warning flag.
+override CFLAGS += -std=c11 $(WARNINGS) $(EXTRA_CFLAGS)
 
 UNAME_S := $(shell uname -s)
 
@@ -89,7 +91,7 @@ DLL_SRCS   = src/dll/main.c src/dll/device.c src/dll/effect.c \
 # the bottle. git describe is factual and needs no version decision.
 DLL_VERSION := $(shell git describe --tags --always 2>/dev/null || echo unknown)
 DLL_CPPFLAGS = -Iinclude -Isrc/dll -DT150_PROXY_VERSION=\"$(DLL_VERSION)\"
-DLL_CFLAGS   = -O2 -std=c11 $(WARNINGS)
+DLL_CFLAGS   = -O2 -std=c11 $(WARNINGS) $(EXTRA_CFLAGS)
 DLL_LIBS     = -ldxguid -luuid -lole32 -lws2_32
 
 # The headers both ends of the wire protocol share. The cross build compiles
@@ -110,6 +112,7 @@ DLL_TARGET =
 endif
 
 ifeq ($(UNAME_S),Darwin)
+APP_TARGET = app
 all: probes tools daemon $(DLL_TARGET) test
 else
 all: daemon $(DLL_TARGET) test
@@ -248,9 +251,18 @@ test: $(TEST_BINS)
 
 check: test
 
+# Warnings as errors, everywhere they can be. EXTRA_CFLAGS rather than
+# re-exporting CFLAGS: a command line assignment overrides the += above, so
+# "make CFLAGS=... strict" used to hand the sub-make a CFLAGS with neither
+# -std=c11 nor a single warning flag in it, leaving -Werror with nothing to
+# promote while the target still claimed to be the strict one.
+#
+# It reaches the application too. That is 1200 lines of Objective-C with no
+# tests, which CI compiles in a separate step precisely because compiling it
+# is the whole of the automated confidence in it, and it was the one file
+# -Werror did not cover.
 strict:
-	@$(MAKE) --no-print-directory CFLAGS="$(CFLAGS) -Werror" \
-	    DLL_CFLAGS="$(DLL_CFLAGS) -Werror" all
+	@$(MAKE) --no-print-directory EXTRA_CFLAGS=-Werror all $(APP_TARGET)
 
 # The installer is a shell script rather than a make rule because half of what
 # it does is asking a person which bottle they mean, and because it has to
@@ -287,7 +299,7 @@ APP_RES	   = $(APP)/Contents/Resources
 # directory there: both ship to users as debris in an application nobody can
 # attach a debugger to anyway. It includes nothing but Cocoa, so it needs no
 # include path either.
-APP_CFLAGS = -O2 -fobjc-arc -Iinclude -Isrc $(WARNINGS)
+APP_CFLAGS = -O2 -fobjc-arc -Iinclude -Isrc $(WARNINGS) $(EXTRA_CFLAGS)
 
 ifeq ($(UNAME_S),Darwin)
 app: $(APP)

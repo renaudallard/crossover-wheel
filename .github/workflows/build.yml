@@ -25,8 +25,11 @@ jobs:
           fetch-tags: true
       - name: install the cross compiler
         run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+      # strict already builds the proxy when the cross compiler is present.
+      # Naming dll as well made it a second top level goal beside the
+      # recursive sub-make, so both built the same three PE targets.
       - name: build the proxy and its test
-        run: make strict dll
+        run: make strict
       - name: upload the proxy
         uses: actions/upload-artifact@v7
         with:
@@ -298,11 +301,14 @@ jobs:
           path: build/bin
       - name: build the menu bar app
         # The only check this GUI gets. Nothing on a runner can click a menu
-        # bar item, so compiling it under the same warnings as everything else
-        # is the whole of the automated confidence in it, and the app is a
-        # front end over install.sh precisely so that the part which can go
-        # wrong is tested elsewhere.
-        run: make app
+        # bar item, so compiling it is the whole of the automated confidence
+        # in it, and the app is a front end over install.sh precisely so that
+        # the part which can go wrong is tested elsewhere. strict compiles it
+        # with the same warnings as errors as everything else; the earlier
+        # "make strict" in this job builds it too, so this only has to catch
+        # the case where the proxy arriving from the artifact changes what is
+        # packaged.
+        run: make strict app
       - name: the app bundle carries what install.sh needs
         # install.sh resolves the binaries, the man pages and the proxy
         # relative to itself, so the bundle is only self contained if they are
