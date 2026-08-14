@@ -40,17 +40,32 @@ while kill -0 "$pid" 2>/dev/null; do
 	sleep 0.2
 done
 
+# The application quit before calling this, so nothing is running and nothing
+# is watching stderr. Every way out from here therefore has to end with an
+# application on screen again, or the person is left with a machine that has
+# the old version on disk, nothing in the menu bar, and no idea why.
+reopen()
+{
+	command -v open >/dev/null 2>&1 || return 0
+	[ -d "$1" ] || return 0
+	open "$1" || :
+}
+
 rm -rf "$old"
 
 if [ -d "$target" ] && ! mv "$target" "$old"; then
 	echo "cannot move the old application aside" >&2
+	reopen "$target"
 	exit 1
 fi
 
 if ! mv "$new" "$target"; then
 	# Put it back. Better the version they had than none at all.
-	[ -d "$old" ] && mv "$old" "$target"
+	if [ -d "$old" ]; then
+		mv "$old" "$target" || :
+	fi
 	echo "cannot move the new application in, the old one is back" >&2
+	reopen "$target"
 	exit 1
 fi
 
@@ -58,6 +73,6 @@ rm -rf "$old"
 
 # Nothing downloaded by the application carries the quarantine flag a browser
 # sets, so this one opens without any of the dialogs the first install needed.
-command -v open >/dev/null 2>&1 && open "$target"
+reopen "$target"
 
 exit 0
