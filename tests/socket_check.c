@@ -33,7 +33,14 @@
 
 #define DAEMON		"build/bin/t150d"
 #define ENDPOINT_DIR	"tmp"
-#define ENDPOINT	"tmp/socket_check.endpoint"
+
+/*
+ * One per run, because t150d now refuses to start while another holds the
+ * same endpoint. A run killed part way through leaves its daemon behind, and
+ * with a fixed path that daemon blocked every later run until somebody found
+ * and killed it.
+ */
+static char endpoint[64];
 
 #define STARTUP_MS	5000
 #define OUTPUT_MS	4000
@@ -75,7 +82,7 @@ read_endpoint(unsigned short *port, char *token, size_t tokenlen)
 		unsigned long p;
 		FILE *fp;
 
-		if ((fp = fopen(ENDPOINT, "r")) != NULL) {
+		if ((fp = fopen(endpoint, "r")) != NULL) {
 			int ok = 0;
 
 			/*
@@ -264,8 +271,11 @@ main(void)
 	int pipefd[2], fd, status;
 	pid_t pid;
 
+	(void)snprintf(endpoint, sizeof(endpoint),
+	    ENDPOINT_DIR "/socket_check.%ld.endpoint", (long)getpid());
+
 	(void)mkdir(ENDPOINT_DIR, 0700);
-	(void)unlink(ENDPOINT);
+	(void)unlink(endpoint);
 
 	if (pipe(pipefd) == -1) {
 		perror("pipe");
@@ -287,7 +297,7 @@ main(void)
 		 * and prints nothing, so without this every expectation below
 		 * fails on a Mac and passes everywhere else.
 		 */
-		execl(DAEMON, "t150d", "-n", "-e", ENDPOINT, (char *)NULL);
+		execl(DAEMON, "t150d", "-n", "-e", endpoint, (char *)NULL);
 		_exit(127);
 	}
 	(void)close(pipefd[1]);
@@ -498,7 +508,13 @@ out:
 	(void)kill(pid, SIGTERM);
 	(void)waitpid(pid, &status, 0);
 	(void)close(pipefd[0]);
-	(void)unlink(ENDPOINT);
+	(void)unlink(endpoint);
+	{
+		char lock[80];
+
+		(void)snprintf(lock, sizeof(lock), "%s.lock", endpoint);
+		(void)unlink(lock);
+	}
 
 	if (failures != 0) {
 		fprintf(stderr, "socket_check: %d failure(s)\n", failures);
