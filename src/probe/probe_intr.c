@@ -596,6 +596,21 @@ mode_switch(IOUSBDeviceInterface500 **dev)
 	printf("  attachment 0x%02x, model 0x%02x\n",
 	    buf[T150_RQ_MODEL_OFF_ATTACH], buf[T150_RQ_MODEL_OFF_MODEL]);
 
+	/*
+	 * The switch value selects the model, and this one belongs to the
+	 * T150: it means something else entirely to a T300RS or a TMX. Every
+	 * other place in this project that can send it says so first, and
+	 * probe_ep0 offers -V to override. This sent it to whatever T-series
+	 * wheel answered, without a word.
+	 */
+	if (buf[T150_RQ_MODEL_OFF_MODEL] != T150_MODEL ||
+	    buf[T150_RQ_MODEL_OFF_ATTACH] != T150_ATTACHMENT) {
+		printf("  not the T150 row, so the T150's switch value is not "
+		    "sent.\n  Use probe_ep0 -w -V <value> for another "
+		    "model.\n");
+		return -1;
+	}
+
 	memset(&req, 0, sizeof(req));
 	req.bmRequestType = T150_RQ_SWITCH_TYPE;
 	req.bRequest = T150_RQ_SWITCH;
