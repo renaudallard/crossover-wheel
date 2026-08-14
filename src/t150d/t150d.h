@@ -121,7 +121,19 @@ struct t150_wire {
 
 struct t150_slot {
 	uint8_t			used;
+	/*
+	 * What the game wants, and only that. It is cleared by a stop whether
+	 * or not the stop reached the wheel, because a refused stop is still a
+	 * stop the game asked for: leaving it set had the re-acquire replay
+	 * start the very force the game had asked to be rid of.
+	 */
 	uint8_t			playing;
+	/*
+	 * And what the wheel may still be doing about it. A stop the wheel
+	 * refused leaves this behind so the slot survives to be stopped again,
+	 * rather than being forgotten by a memset while the wheel pulls.
+	 */
+	uint8_t			stop_owed;
 	uint8_t			source_kind;	/* what the game asked for */
 	uint8_t			iterations;
 	uint8_t			dirty;		/* desired state is not on the wheel */

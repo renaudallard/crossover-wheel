@@ -366,6 +366,13 @@ expected to send
 often enough to stay ahead of this. The same safe state is entered when a
 client disconnects, when one displaces another, and on the way out.
 .Pp
+A stop the wheel will not take is owed rather than forgotten. The slot keeps
+its record, the daemon stays armed, and the stop is tried again on the
+emitter's cadence and on every watchdog wake until the wheel accepts it. What
+does go down immediately is the game's intent, so an effect the game stopped is
+never started again by the replay that follows a re-acquire, however the stop
+itself fared.
+.Pp
 A connection that never proved the token is the exception. Its input was
 never opened and it sent nothing to render, so there is nothing of its doing
 to undo, and it leaves without the wheel being written to at all. Anything on

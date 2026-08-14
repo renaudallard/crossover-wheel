@@ -259,6 +259,57 @@ control(struct t150_session *s, uint8_t slot, int play, uint8_t iterations)
 	return emit(s, pkt, n);
 }
 
+/*
+ * Stop one slot, and separate the two facts a stop used to conflate.
+ *
+ * The game's intent goes down whether or not the wheel heard, because a stop
+ * the wheel refused is still a stop the game asked for. Leaving playing set
+ * was what let session_replay_starts, which reads it as "the game wants this
+ * running", start the effect again after the wheel came back.
+ *
+ * What the refusal leaves is stop_owed, which keeps the slot alive so the
+ * next pass and the watchdog can try again. Every release path in this file
+ * goes through here, because the three that open-coded it disagreed: two
+ * checked the write and refused to clear the slot, and the other two ignored
+ * it and cleared the slot anyway, which forgot a wheel that was still pulling.
+ *
+ * Returns 0 when the wheel took the stop.
+ */
+static int
+slot_stop(struct t150_session *s, uint8_t slot)
+{
+	struct t150_slot *sl = &s->slots[slot];
+	int r = 0;
+
+	if (sl->playing || sl->stop_owed)
+		r = control(s, slot, 0, 0);
+
+	sl->playing = 0;
+	/*
+	 * Nothing says a parameter packet is inert on a stopped slot, no wheel
+	 * has ever been given one, and a pass that fired just after a stop
+	 * would be asking that question of a wheel someone is holding.
+	 */
+	sl->dirty = 0;
+	sl->stop_owed = r != 0;
+
+	return r;
+}
+
+/* Whether any slot is still waiting for a stop the wheel would not take. */
+static int
+stops_owed(const struct t150_session *s)
+{
+	size_t i;
+
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		if (s->slots[i].used && s->slots[i].stop_owed)
+			return 1;
+	}
+
+	return 0;
+}
+
 void
 t150_session_init(struct t150_session *s, struct t150_backend *be,
     const char *token)
@@ -305,11 +356,17 @@ session_safe_state(struct t150_session *s, const char *why)
 	 * safe state also cancels every pending emission. Moving either of
 	 * those out of the slot would quietly leave a pass ready to write a
 	 * force to a wheel that has just been made safe.
+	 *
+	 * A slot is only forgotten once its stop has actually reached the
+	 * wheel. Forgetting one whose stop was refused is how this used to
+	 * give up on the first failed write: used went to 0, so no later pass
+	 * and no later safe state would ever look at that slot again, and the
+	 * wheel kept pulling with nothing left in the daemon that could stop
+	 * it.
 	 */
 	for (i = 0; i < T150_SLOT_MAX; i++) {
-		if (s->slots[i].used && s->slots[i].playing)
-			(void)control(s, (uint8_t)i, 0, 0);
-		memset(&s->slots[i], 0, sizeof(s->slots[i]));
+		if (slot_stop(s, (uint8_t)i) == 0)
+			memset(&s->slots[i], 0, sizeof(s->slots[i]));
 	}
 	s->io_err = 0;
 	s->emit_failed = 0;
@@ -330,7 +387,13 @@ session_safe_state(struct t150_session *s, const char *why)
 	n = t150_enc_autocenter_enable(pkt, sizeof(pkt), 0);
 	(void)s->be->write(s->be->priv, pkt, n);
 
-	s->armed = 0;
+	/*
+	 * Disarming is what stops the watchdog evaluating, so it may only
+	 * happen once the wheel is actually safe. While a stop is still owed
+	 * the wheel may be holding a force, and staying armed is what brings
+	 * the watchdog back to try again.
+	 */
+	s->armed = stops_owed(s);
 }
 
 /*
@@ -700,24 +763,17 @@ do_stop(struct t150_session *s, const uint8_t *payload, size_t len, int destroy,
 	}
 
 	sl = &s->slots[payload[0]];
-	if (sl->playing && control(s, payload[0], 0, 0) != 0) {
-		reply_err(rep, T150_ERR_DEVICE_IO);
-		return;
-	}
 
 	/* The transition only, for the reason do_start says. */
 	if (s->verbose && sl->playing)
 		fprintf(stderr, "t150d: slot %u %s stopped\n", payload[0],
 		    kind_name(sl->ef.kind));
 
-	sl->playing = 0;
-	/*
-	 * Drop whatever was waiting to be written to this slot. Nothing says
-	 * a parameter packet is inert on a stopped slot, no wheel has ever
-	 * been given one, and a pass that fired just after a stop would be
-	 * asking that question of a wheel someone is holding.
-	 */
-	sl->dirty = 0;
+	if (slot_stop(s, payload[0]) != 0) {
+		reply_err(rep, T150_ERR_DEVICE_IO);
+		return;
+	}
+
 	if (destroy)
 		memset(sl, 0, sizeof(*sl));
 
@@ -799,15 +855,29 @@ do_reset(struct t150_session *s, struct t150_reply *rep)
 {
 	size_t i;
 
+	int failed = 0;
+
 	/*
 	 * DirectInput's reset stops and releases every effect. It says
 	 * nothing about the autocenter, which the game sets separately, so
 	 * unlike the watchdog this leaves it alone.
+	 *
+	 * Every slot is tried before anything is reported, so one refusal does
+	 * not leave the rest playing, and a slot whose stop was refused keeps
+	 * its record: releasing it here while the wheel still rendered it left
+	 * nothing in the daemon able to stop it, and answered OK while doing
+	 * so.
 	 */
 	for (i = 0; i < T150_SLOT_MAX; i++) {
-		if (s->slots[i].used && s->slots[i].playing)
-			(void)control(s, (uint8_t)i, 0, 0);
-		memset(&s->slots[i], 0, sizeof(s->slots[i]));
+		if (slot_stop(s, (uint8_t)i) != 0)
+			failed = 1;
+		else
+			memset(&s->slots[i], 0, sizeof(s->slots[i]));
+	}
+
+	if (failed) {
+		reply_err(rep, T150_ERR_DEVICE_IO);
+		return;
 	}
 
 	reply_ok(rep);
@@ -825,16 +895,23 @@ do_stop_all(struct t150_session *s, struct t150_reply *rep)
 {
 	size_t i;
 
+	int failed = 0;
+
+	/*
+	 * Every slot, then the answer. Returning from inside the loop left
+	 * every slot above the one that failed still playing, which is the
+	 * opposite of what STOPALL was asked to do.
+	 */
 	for (i = 0; i < T150_SLOT_MAX; i++) {
-		if (!s->slots[i].used || !s->slots[i].playing)
+		if (!s->slots[i].used)
 			continue;
-		if (control(s, (uint8_t)i, 0, 0) != 0) {
-			reply_err(rep, T150_ERR_DEVICE_IO);
-			return;
-		}
-		s->slots[i].playing = 0;
-		/* As in do_stop: nothing goes to a slot that just stopped. */
-		s->slots[i].dirty = 0;
+		if (slot_stop(s, (uint8_t)i) != 0)
+			failed = 1;
+	}
+
+	if (failed) {
+		reply_err(rep, T150_ERR_DEVICE_IO);
+		return;
 	}
 
 	reply_ok(rep);
@@ -1019,6 +1096,23 @@ session_emit(struct t150_session *s, uint64_t now_ms)
 	size_t i, done = 0;
 
 	s->emit_failed = 0;
+
+	/*
+	 * A stop the wheel would not take comes first, and on the emitter's
+	 * cadence rather than every tick, so a wheel that has gone does not
+	 * turn this into a spin. Nothing else retries one: the watchdog only
+	 * fires when the client has gone quiet, and a game that carries on
+	 * talking would keep it silent for as long as it ran.
+	 */
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		if (!s->slots[i].used || !s->slots[i].stop_owed)
+			continue;
+		if (slot_stop(s, (uint8_t)i) == 0)
+			memset(&s->slots[i], 0, sizeof(s->slots[i]));
+		else
+			s->emit_failed = 1;
+	}
+
 	for (i = 0; i < T150_SLOT_MAX && done < T150_EMIT_SLOTS; i++) {
 		size_t k = (s->next_slot + i) % T150_SLOT_MAX;
 		struct t150_slot *sl = &s->slots[k];
@@ -1156,7 +1250,7 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 	if (sliding && now_ms >= s->next_ramp_ms)
 		s->next_ramp_ms = now_ms + T150_RAMP_TICK_MS;
 
-	if (slots_dirty(s) && now_ms >= s->next_emit_ms)
+	if ((slots_dirty(s) || stops_owed(s)) && now_ms >= s->next_emit_ms)
 		session_emit(s, now_ms);
 
 	/*
@@ -1178,7 +1272,8 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 	if (sliding && s->next_ramp_ms > now_ms &&
 	    next > (unsigned int)(s->next_ramp_ms - now_ms))
 		next = (unsigned int)(s->next_ramp_ms - now_ms);
-	if (slots_dirty(s) && !s->emit_failed && s->next_emit_ms > now_ms &&
+	if ((slots_dirty(s) || stops_owed(s)) && !s->emit_failed &&
+	    s->next_emit_ms > now_ms &&
 	    next > (unsigned int)(s->next_emit_ms - now_ms))
 		next = (unsigned int)(s->next_emit_ms - now_ms);
 

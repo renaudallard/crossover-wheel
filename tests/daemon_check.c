@@ -868,14 +868,47 @@ test_updates_faster_than_the_emit_period_are_coalesced(void)
 static int write_fails;
 static int (*real_write)(void *priv, const uint8_t *buf, size_t len);
 
-/* The fake backend, with a switch for refusing every write. */
+/* Upload a full scale constant to a slot and start it. */
+static void
+load_and_play(uint8_t slot, uint64_t now)
+{
+	struct t150_effect ef;
+	uint8_t start[2];
+
+	constant(&ef, slot, 10000);
+	upload_at(&ef, now);
+	start[0] = slot;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, now, T150_OP_OK, T150_ERR_NONE);
+}
+
+/*
+ * The fake backend, with a switch for refusing every write and a counter for
+ * refusing one of them. Refusing all or none cannot reach the cases that
+ * matter most: a burst that fails part way through, which is what the
+ * per-packet bookkeeping in flush_slot and the per-slot loops in the release
+ * paths exist for.
+ */
+static int write_fail_at;	/* refuse this write only, counting from 1 */
+static int write_count;
+
 static int
 failing_write(void *priv, const uint8_t *buf, size_t len)
 {
-	if (write_fails)
+	write_count++;
+
+	if (write_fails || (write_fail_at != 0 && write_count == write_fail_at))
 		return -1;
 
 	return real_write(priv, buf, len);
+}
+
+/* Arm the counter: the next write is number one. */
+static void
+fail_write_number(int n)
+{
+	write_fail_at = n;
+	write_count = 0;
 }
 
 /*
@@ -911,6 +944,128 @@ test_write_failure_does_not_pin_the_poll_loop(void)
 	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
 	    "write 4: 03 0e 00 40\n"
 	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
+}
+
+/*
+ * A stop the wheel refuses must not be forgotten. The slot used to be wiped
+ * regardless, which set used to 0, and from that moment nothing in the daemon
+ * would look at it again: not the watchdog, not the disconnect path, not the
+ * way out. The wheel went on pulling with nothing left able to stop it.
+ */
+static void
+test_a_refused_stop_keeps_the_slot_and_retries(void)
+{
+	reset_session();
+	hello(0);
+	load_and_play(0, 0);
+	(void)tick(0);
+	drain_log();
+
+	/* The wheel stops taking writes, and the watchdog fires. */
+	write_fails = 1;
+	(void)tick(T150_WATCHDOG_MS);
+	write_fails = 0;
+	drain_log();
+
+	/*
+	 * The wheel comes back. Something has to try the stop again, and with
+	 * the client gone quiet the watchdog is what does.
+	 */
+	(void)tick(T150_WATCHDOG_MS * 2);
+	if (!log_contains("41 00 00 01"))
+		fail("a refused stop is never tried again");
+
+	/*
+	 * And once it is taken the slot is released and the session disarms,
+	 * so the retry stops rather than running for the rest of the session.
+	 */
+	drain_log();
+	(void)tick(T150_WATCHDOG_MS * 3);
+	expect_log("a stop the wheel took is not sent again", "");
+}
+
+/*
+ * A stop the wheel refused is still a stop the game asked for. Leaving the
+ * slot marked as playing had session_replay_starts, which reads that as "the
+ * game wants this running", start the very force the game had asked to be rid
+ * of as soon as the wheel came back.
+ */
+static void
+test_a_refused_stop_is_not_replayed_as_a_start(void)
+{
+	uint8_t slot = 0;
+
+	reset_session();
+	hello(0);
+	load_and_play(0, 0);
+	(void)tick(0);
+	drain_log();
+
+	/* The wheel goes; the game stops the effect and is told it failed. */
+	write_fails = 1;
+	frame(T150_OP_EFFECT_STOP, &slot, 1, 10, T150_OP_ERROR,
+	    T150_ERR_DEVICE_IO);
+	write_fails = 0;
+	drain_log();
+
+	/* The wheel comes back, which scrubs it and bumps the epoch. */
+	be.epoch++;
+	(void)tick(20);
+	(void)tick(30);
+	(void)tick(40);
+
+	if (log_contains("41 00 41"))
+		fail("the re-acquire started an effect the game had stopped");
+}
+
+/*
+ * STOPALL means every slot. Returning from inside the loop on the first
+ * refusal left every slot above it playing, which is the opposite of what was
+ * asked for.
+ */
+static void
+test_stop_all_tries_every_slot_before_reporting(void)
+{
+	reset_session();
+	hello(0);
+	load_and_play(0, 0);
+	load_and_play(1, 0);
+	(void)tick(0);
+	drain_log();
+
+	/* The wheel refuses the first stop and takes the second. */
+	fail_write_number(1);
+	frame(T150_OP_STOP_ALL, NULL, 0, 10, T150_OP_ERROR,
+	    T150_ERR_DEVICE_IO);
+	fail_write_number(0);
+
+	expect_log("the slot after the refused one is still stopped",
+	    "write 4: 41 01 00 01\n");
+}
+
+/*
+ * RESET was the one release path that ignored the write and answered OK. It
+ * then wiped the slot, so a refused stop left the wheel pulling and the game
+ * told that DISFFC_RESET had succeeded.
+ */
+static void
+test_reset_reports_a_stop_the_wheel_refused(void)
+{
+	reset_session();
+	hello(0);
+	load_and_play(0, 0);
+	(void)tick(0);
+	drain_log();
+
+	write_fails = 1;
+	frame(T150_OP_RESET, NULL, 0, 10, T150_OP_ERROR, T150_ERR_DEVICE_IO);
+	write_fails = 0;
+	drain_log();
+
+	/* The slot survived, so the retry can still reach it. */
+	(void)tick(20);
+	if (!log_contains("41 00 00 01"))
+		fail("reset forgot a slot whose stop the wheel refused");
 }
 
 /*
@@ -1467,6 +1622,10 @@ main(void)
 	test_emit_rate_is_bounded();
 	test_updates_faster_than_the_emit_period_are_coalesced();
 	test_write_failure_does_not_pin_the_poll_loop();
+	test_a_refused_stop_keeps_the_slot_and_retries();
+	test_a_refused_stop_is_not_replayed_as_a_start();
+	test_stop_all_tries_every_slot_before_reporting();
+	test_reset_reports_a_stop_the_wheel_refused();
 	test_device_error_is_reported_on_the_next_upload();
 	test_backend_epoch_reuploads_everything();
 	test_a_refused_start_is_replayed_when_the_wheel_returns();
