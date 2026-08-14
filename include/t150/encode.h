@@ -62,9 +62,11 @@ size_t	t150_enc_control(uint8_t *buf, size_t buflen, uint8_t slot, int play,
 	    uint8_t iterations);
 
 /*
- * The kind actually sent to the wheel for a given requested kind. Square and
- * triangle become sine, friction and inertia become damper, and ramp becomes
- * a constant the caller is responsible for re-sending as it slides. Refusing
+ * The kind actually sent to the wheel for a given requested kind. Friction and
+ * inertia become damper, ramp becomes a constant the caller is responsible for
+ * re-sending as it slides, and everything else is passed through. Square and
+ * triangle were downgraded to sine until RESEARCH.md A40 took both type codes
+ * from the vendor's own table; effect.h and t150.h have said so since. Refusing
  * instead would be worse: a game that gets DIERR_UNSUPPORTED from
  * CreateEffect may switch force feedback off altogether.
  */
