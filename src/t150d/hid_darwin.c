@@ -614,6 +614,33 @@ writer_main(void *arg)
 	return NULL;
 }
 
+/*
+ * Whether the writer is out of work, which is the emitter's cue that an early
+ * pass costs nothing: the packets it builds go straight out rather than behind
+ * a queue that is already longer than the wheel can drain.
+ *
+ * Answered from the queue alone. Whether the wheel is actually there is the
+ * writer's business and h->dev is the writer's to read, which is the whole of
+ * how this file stays thread safe. It does not change the answer either: with
+ * a writer, a packet handed over while the wheel is away is dropped by the
+ * thread that owns that decision, exactly as it is today.
+ */
+static int
+hid_idle(void *priv)
+{
+	struct hid_be *h = priv;
+	int empty;
+
+	if (!h->threaded)
+		return 0;
+
+	pthread_mutex_lock(&h->mtx);
+	empty = t150_wq_depth(&h->q) == 0;
+	pthread_mutex_unlock(&h->mtx);
+
+	return empty;
+}
+
 /* Queue it, and never block the caller. */
 static int
 queue_push(struct hid_be *h, const uint8_t *buf, size_t len)
@@ -871,6 +898,7 @@ t150_backend_hid(struct t150_backend *be, long vid, long pid,
 	be->name = threaded ? "macOS HID, threaded" : "macOS HID";
 	be->write = hid_write;
 	be->tick = hid_tick;
+	be->idle = hid_idle;
 	be->close = hid_close;
 	be->priv = h;
 

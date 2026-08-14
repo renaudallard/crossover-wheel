@@ -1195,6 +1195,33 @@ session_replay_starts(struct t150_session *s)
 	return failed;
 }
 
+/*
+ * Whether a pass may run ahead of its deadline.
+ *
+ * T150_EMIT_MS is a floor on how often the wheel is written to, and it was
+ * put there when every write was a synchronous IOKit call on the thread the
+ * game was waiting for: pacing the daemon was the only thing keeping a game's
+ * frame out of a burst of USB transfers. A backend with a writer thread paces
+ * itself instead, and says so by answering this, so the floor buys nothing
+ * while that thread has nothing in hand and costs up to a whole period of
+ * latency on a force the wheel could take right now.
+ *
+ * It reasserts itself the moment the writer falls behind, which is the case
+ * the floor was really for: a queue with anything in it is a wheel already
+ * taking packets as fast as it can, and a pass built now would only be
+ * coalesced into one already waiting.
+ *
+ * A pass that failed is never brought forward. The deadline is what stops a
+ * wheel that has gone turning the retry into a spin, and emit_failed is how
+ * session_emit says that happened.
+ */
+static int
+emit_now(const struct t150_session *s)
+{
+	return !s->emit_failed && s->be->idle != NULL &&
+	    s->be->idle(s->be->priv);
+}
+
 static int
 slots_dirty(const struct t150_session *s)
 {
@@ -1418,7 +1445,8 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 	if (sliding && now_ms >= s->next_ramp_ms)
 		s->next_ramp_ms = now_ms + T150_RAMP_TICK_MS;
 
-	if ((slots_dirty(s) || stops_owed(s)) && now_ms >= s->next_emit_ms)
+	if ((slots_dirty(s) || stops_owed(s)) &&
+	    (now_ms >= s->next_emit_ms || emit_now(s)))
 		session_emit(s, now_ms);
 
 	/*

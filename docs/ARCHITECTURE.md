@@ -128,8 +128,18 @@ records what a slot should hold, and a pass sends whatever differs from the
 bytes that slot last put on the wire. A pass runs at most once every
 `T150_EMIT_MS`, so a game updating faster than that has the superseded values
 dropped rather than queued: the wheel holds one value per slot and an
-intermediate one was replaced before it could be felt. The worst case a game
-pays is one emit period of added latency.
+intermediate one was replaced before it could be felt.
+
+That floor is skipped while the backend's writer thread has nothing in hand.
+It was put there when every write was a synchronous IOKit call on the thread
+the game was waiting for, and pacing the daemon was the only thing keeping a
+frame out of a burst of USB transfers; with `-w` the writer paces itself, so
+the floor buys nothing against an empty queue and costs up to a whole period
+on a force the wheel could take now. It reasserts itself the moment the queue
+has anything in it, which is the case it was really for, and a pass that
+failed is never brought forward: the deadline is what stops a wheel that has
+gone turning the retry into a spin. Without a writer, `-n` and the fake
+backend included, nothing answers the question and the floor always applies.
 
 Only effect parameters are coalesced, because they are state. Starts, stops,
 resets, the settings and every path that makes the wheel safe are events, go

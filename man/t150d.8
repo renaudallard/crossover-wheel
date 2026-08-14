@@ -211,6 +211,11 @@ the session holding it, keeps the slot owed and sends it again. Without that
 a refused packet was logged and dropped, and an effect could go missing, or a
 stop fail to arrive, with every layer reporting success.
 .Pp
+A writer that has nothing in hand also lets the emitter run ahead of its
+floor, which is worth up to four milliseconds on a force the wheel could take
+straight away. See
+.Sx THE EMITTER .
+.Pp
 That queue coalesces, and it has to. The emitter flushes up to four dirty
 slots every four milliseconds and a constant costs two packets, so a game
 holding three effects asks for about 1250 packets a second, while the fastest
@@ -324,6 +329,20 @@ rather than queued, because the wheel holds one value per slot and an
 intermediate value was replaced before it could be felt. A game that
 re-sends an effect it has not changed writes nothing at all: each slot keeps
 the exact bytes it last put on the wire and a pass compares against them.
+.Pp
+Under
+.Fl w
+that floor is skipped while the writer has nothing in hand. It was put there
+when every write was a synchronous transfer on the thread the game was
+waiting for, and pacing the daemon was the only thing keeping a frame out of
+a burst of them; a writer thread paces itself, so the floor buys nothing
+against an empty queue and costs up to a whole period on a force the wheel
+could take now. It comes back the moment the queue has anything in it, which
+is the case it was really for, and a pass that failed is never brought
+forward, because the deadline is what stops a wheel that has gone turning the
+retry into a spin. Without
+.Fl w
+nothing can answer the question and the floor always applies.
 .Pp
 Only the packet that moved is sent. A level, a coefficient or a phase is one
 packet; a change to the envelope, the duration or the effect's type is the

@@ -55,6 +55,18 @@ struct t150_backend {
 	 * backend has nothing to look for.
 	 */
 	void		(*tick)(void *priv, uint64_t now_ms);
+	/*
+	 * Whether a packet written now would reach the wheel without waiting
+	 * behind anything the backend is already holding.
+	 *
+	 * Only a backend with a writer thread can answer this, because it is
+	 * the only one that takes a packet and returns before the wheel has
+	 * it, and so the only one with a queue of its own to be empty. One
+	 * that writes on the calling thread leaves this NULL: an early pass
+	 * there would put a game's frame behind a USB transfer, which is the
+	 * cost the writer exists to remove.
+	 */
+	int		(*idle)(void *priv);
 };
 
 /* The logging backend, which drives nothing and records everything. */
@@ -100,6 +112,11 @@ int	t150_backend_hid(struct t150_backend *be, long vid, long pid,
  * every hardware run on record was paced slower. Raise it when a measurement
  * says it can be raised, and expect the argument for raising it to be a
  * driver who can feel the difference rather than a number that looks better.
+ *
+ * A backend with a writer thread paces itself, and a pass runs ahead of this
+ * whenever that thread has nothing in hand: see the idle callback above and
+ * emit_now in session.c. The floor is then what applies once the writer falls
+ * behind, which is the case it was really for.
  */
 #define T150_EMIT_MS		4u
 

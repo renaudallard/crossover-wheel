@@ -937,6 +937,93 @@ fail_write_number(int n)
 }
 
 /*
+ * The writer's answer to "have you anything in hand", which the real backend
+ * takes from its queue and this one is simply told.
+ */
+static int idle_answer;
+
+static int
+fake_idle(void *priv)
+{
+	(void)priv;
+
+	return idle_answer;
+}
+
+/*
+ * A backend whose writer is out of work lets a pass run ahead of the floor.
+ *
+ * The floor exists to keep a burst of synchronous USB transfers out of the
+ * frame a game is waiting on. A writer thread with an empty queue has neither
+ * the burst nor the frame to protect, so the update goes out now rather than
+ * up to a whole period later, and the floor comes straight back the moment
+ * that writer falls behind.
+ */
+static void
+test_an_idle_writer_emits_ahead_of_the_floor(void)
+{
+	struct t150_effect ef;
+
+	reset_session();
+	be.idle = fake_idle;
+	idle_answer = 1;
+	hello(0);
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+	drain_log();
+
+	/* Inside the floor, which is where an update would otherwise wait. */
+	ef.u.constant.magnitude = 5000;
+	upload_at(&ef, 1);
+	(void)tick(1);
+	expect_log("an idle writer takes the update at once",
+	    "write 4: 03 0e 00 20\n");
+
+	/* Behind again, and the floor is back. */
+	idle_answer = 0;
+	ef.u.constant.magnitude = 2500;
+	upload_at(&ef, 2);
+	(void)tick(2);
+	expect_log("a writer with work waits for the floor", "");
+
+	(void)tick(T150_EMIT_MS + 1);
+	expect_log("and the floor's own pass still carries it",
+	    "write 4: 03 0e 00 10\n");
+
+	be.idle = NULL;
+}
+
+/*
+ * Except after a pass that failed. The deadline is the only thing stopping a
+ * wheel that has gone from turning the retry into a spin, and an idle writer
+ * is exactly what a wheel that has gone looks like from the queue.
+ */
+static void
+test_a_failed_pass_is_not_brought_forward(void)
+{
+	struct t150_effect ef;
+
+	reset_session();
+	be.idle = fake_idle;
+	idle_answer = 1;
+	hello(0);
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	write_fails = 1;
+	(void)tick(0);
+	drain_log();
+
+	(void)tick(1);
+	expect_log("a failed pass is not retried ahead of its deadline", "");
+
+	write_fails = 0;
+	be.idle = NULL;
+}
+
+/*
  * A wheel that refuses every write must not turn the poll timeout into a
  * spin. The slot stays dirty so the state is not lost, but the retry rides on
  * the next frame or the next watchdog wake rather than on a four millisecond
@@ -2322,6 +2409,8 @@ main(void)
 	test_start_and_stop_are_logged_once_per_transition();
 	test_hello_states_the_settings();
 	test_only_the_packet_that_moved_is_sent();
+	test_an_idle_writer_emits_ahead_of_the_floor();
+	test_a_failed_pass_is_not_brought_forward();
 
 	(void)fclose(logfp);
 	free(logbuf);

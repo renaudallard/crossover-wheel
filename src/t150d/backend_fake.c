@@ -49,6 +49,7 @@ t150_backend_fake(struct t150_backend *be, FILE *fp)
 	be->write = fake_write;
 	be->close = NULL;
 	be->tick = NULL;	/* nothing to go looking for */
+	be->idle = NULL;	/* no queue of its own to be empty */
 	be->priv = fp;
 	/* Nothing here ever re-acquires anything, so this never moves. */
 	be->epoch = 0;

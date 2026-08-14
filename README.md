@@ -614,7 +614,12 @@ that arrives and is unwelcome.
 The daemon keeps what each slot should hold and writes it out from a pass
 that runs at most once every 4 ms, so a game updating a force faster than
 that has the superseded values dropped rather than queued, and a game
-re-sending an effect it has not changed writes nothing at all. Only effect
+re-sending an effect it has not changed writes nothing at all. Under `-w`
+that 4 ms floor is skipped while the writer's queue is empty: the floor was
+there to keep a game's frame out of a burst of synchronous USB transfers, and
+a writer thread paces itself, so against an empty queue it only delayed a
+force the wheel could have taken now. It comes back the moment the writer
+falls behind. Only effect
 parameters are treated this way. Starts, stops, resets, the settings and
 every path that makes the wheel safe are written the moment they arrive and
 are never merged, because those are things that happen rather than values
