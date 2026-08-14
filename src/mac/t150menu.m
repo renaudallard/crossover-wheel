@@ -1140,6 +1140,28 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
  * unprompted every time the application starts is noise, and noise trains
  * people to dismiss the dialog that matters.
  */
+/*
+ * A version with any leading v taken off, so that the two sides can be
+ * compared at all.
+ *
+ * The releases API answers with the tag, which is "v0.1.43". The bundle
+ * carries the same tag with the v already stripped, because the makefile
+ * strips it on the way into CFBundleShortVersionString. Comparing the two
+ * literally was therefore never equal, whatever version was installed, so the
+ * application announced an update every time it started and "Check for
+ * updates" never once said it was up to date.
+ */
+static NSString *
+version_number(NSString *v)
+{
+	if (v == nil)
+		return @"";
+	if ([v hasPrefix:@"v"])
+		return [v substringFromIndex:1];
+
+	return v;
+}
+
 - (void)lookForUpdate:(BOOL)announce
 {
 	NSString *mine = [[NSBundle mainBundle]
@@ -1178,7 +1200,8 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 
 		dispatch_async(dispatch_get_main_queue(), ^{
 			if (!announce && (latest.length == 0 ||
-			    [latest isEqualToString:mine]))
+			    [version_number(latest)
+			    isEqualToString:version_number(mine)]))
 				return;
 			[self showUpdate:latest mine:mine dmg:dmg sums:sums
 			    error:e];
@@ -1206,9 +1229,9 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	 * is the only question, and comparing them numerically would need a
 	 * parser for a format nothing enforces.
 	 */
-	if ([latest isEqualToString:mine]) {
+	if ([version_number(latest) isEqualToString:version_number(mine)]) {
 		a.messageText = [NSString stringWithFormat:
-		    @"Up to date (%@)", mine];
+		    @"Up to date (%@)", version_number(mine)];
 		a.informativeText = @"This is the newest release.";
 		[a addButtonWithTitle:@"OK"];
 		[a runModal];
