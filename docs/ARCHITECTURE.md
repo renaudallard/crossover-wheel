@@ -142,7 +142,7 @@ bytes that slot last put on the wire. A pass runs at most once every
 dropped rather than queued: the wheel holds one value per slot and an
 intermediate one was replaced before it could be felt.
 
-That floor is skipped while the backend's writer thread has nothing in hand.
+That floor is skipped while the backend's writer thread has no backlog.
 It was put there when every write was a synchronous IOKit call on the thread
 the game was waiting for, and pacing the daemon was the only thing keeping a
 frame out of a burst of USB transfers; with `-w` the writer paces itself, so

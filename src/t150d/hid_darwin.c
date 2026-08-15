@@ -615,15 +615,22 @@ writer_main(void *arg)
 }
 
 /*
- * Whether the writer is out of work, which is the emitter's cue that an early
- * pass costs nothing: the packets it builds go straight out rather than behind
- * a queue that is already longer than the wheel can drain.
+ * Whether the writer has a backlog, which is the emitter's cue that an early
+ * pass costs nothing: the packets it builds go out next rather than behind a
+ * queue that is already longer than the wheel can drain. A packet in flight
+ * does not count, because the pass this allows is exactly the one that should
+ * be building the next packet while the wheel takes that one.
  *
  * Answered from the queue alone. Whether the wheel is actually there is the
  * writer's business and h->dev is the writer's to read, which is the whole of
  * how this file stays thread safe. It does not change the answer either: with
  * a writer, a packet handed over while the wheel is away is dropped by the
  * thread that owns that decision, exactly as it is today.
+ *
+ * The threaded test is not the wiring test, which is the NULL hook: this
+ * function is not reachable without a writer. It is here because the queue and
+ * its mutex are only initialised when there is one, and reading them otherwise
+ * would be reading an uninitialised pthread_mutex_t.
  */
 static int
 hid_idle(void *priv)
@@ -898,7 +905,12 @@ t150_backend_hid(struct t150_backend *be, long vid, long pid,
 	be->name = threaded ? "macOS HID, threaded" : "macOS HID";
 	be->write = hid_write;
 	be->tick = hid_tick;
-	be->idle = hid_idle;
+	/*
+	 * Only with a writer, because a NULL hook is what the contract in
+	 * t150d.h makes mean "cannot answer", and this backend without -w
+	 * writes on the caller's thread like any other that leaves it NULL.
+	 */
+	be->idle = threaded ? hid_idle : NULL;
 	be->close = hid_close;
 	be->priv = h;
 

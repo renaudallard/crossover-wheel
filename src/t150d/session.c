@@ -1203,7 +1203,7 @@ session_replay_starts(struct t150_session *s)
  * game was waiting for: pacing the daemon was the only thing keeping a game's
  * frame out of a burst of USB transfers. A backend with a writer thread paces
  * itself instead, and says so by answering this, so the floor buys nothing
- * while that thread has nothing in hand and costs up to a whole period of
+ * while that thread has no backlog and costs up to a whole period of
  * latency on a force the wheel could take right now.
  *
  * It reasserts itself the moment the writer falls behind, which is the case

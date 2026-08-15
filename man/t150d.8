@@ -139,7 +139,7 @@ which the proxy reads through Wine's
 mapping.
 .It Fl p
 Keep the emitter to its four millisecond floor even when the writer has
-nothing in hand, as builds before this one did. The default lets a pass run
+no backlog, as builds before this one did. The default lets a pass run
 early against an empty queue, which is worth up to a whole period on a force
 the wheel could take straight away. This exists for the same reason
 .Fl t
@@ -221,7 +221,7 @@ the session holding it, keeps the slot owed and sends it again. Without that
 a refused packet was logged and dropped, and an effect could go missing, or a
 stop fail to arrive, with every layer reporting success.
 .Pp
-A writer that has nothing in hand also lets the emitter run ahead of its
+A writer with no backlog also lets the emitter run ahead of its
 floor, which is worth up to four milliseconds on a force the wheel could take
 straight away. See
 .Sx THE EMITTER .
@@ -343,7 +343,9 @@ the exact bytes it last put on the wire and a pass compares against them.
 .Pp
 Under
 .Fl w
-that floor is skipped while the writer has nothing in hand. It was put there
+that floor is skipped while the writer has no backlog. A transfer already in
+flight is not one: the pass this allows is the one that should be building the
+next packet while the wheel takes that one. It was put there
 when every write was a synchronous transfer on the thread the game was
 waiting for, and pacing the daemon was the only thing keeping a frame out of
 a burst of them; a writer thread paces itself, so the floor buys nothing

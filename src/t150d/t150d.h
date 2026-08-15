@@ -56,15 +56,23 @@ struct t150_backend {
 	 */
 	void		(*tick)(void *priv, uint64_t now_ms);
 	/*
-	 * Whether a packet written now would reach the wheel without waiting
-	 * behind anything the backend is already holding.
+	 * Whether the backend has a backlog: whether a packet handed over now
+	 * would go behind others still waiting rather than out next.
 	 *
-	 * Only a backend with a writer thread can answer this, because it is
+	 * Not whether the wheel is idle, which is a different question and not
+	 * the useful one. The writer takes a packet off its queue before it
+	 * writes it, so a transfer in flight leaves the queue empty and this
+	 * answers yes, and that is right: the pass that answer allows builds
+	 * the next packet while the wheel takes the current one, and it lands
+	 * at the front of an empty queue rather than behind anything.
+	 *
+	 * Only a backend with a writer thread can answer at all, because it is
 	 * the only one that takes a packet and returns before the wheel has
 	 * it, and so the only one with a queue of its own to be empty. One
-	 * that writes on the calling thread leaves this NULL: an early pass
-	 * there would put a game's frame behind a USB transfer, which is the
-	 * cost the writer exists to remove.
+	 * that writes on the calling thread leaves this NULL, so that a NULL
+	 * hook is the whole test: an early pass there would put a game's frame
+	 * behind a USB transfer, which is the cost the writer exists to
+	 * remove.
 	 */
 	int		(*idle)(void *priv);
 };
@@ -114,7 +122,7 @@ int	t150_backend_hid(struct t150_backend *be, long vid, long pid,
  * driver who can feel the difference rather than a number that looks better.
  *
  * A backend with a writer thread paces itself, and a pass runs ahead of this
- * whenever that thread has nothing in hand: see the idle callback above and
+ * whenever that thread has no backlog: see the idle callback above and
  * emit_now in session.c. The floor is then what applies once the writer falls
  * behind, which is the case it was really for.
  */

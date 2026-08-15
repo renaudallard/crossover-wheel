@@ -529,7 +529,7 @@ usage(void)
 	    "               ceiling is what a client's round trip can absorb\n"
 	    "  -n           drive nothing, log the packets instead\n"
 	    "  -p           keep the emitter to its four millisecond floor even\n"
-	    "               when the writer has nothing in hand, as builds\n"
+	    "               when the writer has no backlog, as builds\n"
 	    "               before this one did. The default lets a pass run\n"
 	    "               early against an empty queue, which is worth up to\n"
 	    "               a whole period. Here to compare the two by feel\n"
