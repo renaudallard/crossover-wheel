@@ -227,8 +227,9 @@ straight away. See
 .Sx THE EMITTER .
 .Pp
 That queue coalesces, and it has to. The emitter flushes up to four dirty
-slots every four milliseconds and a constant costs two packets, so a game
-holding three effects asks for about 1250 packets a second, while the fastest
+slots, at worst every four milliseconds and sooner while this queue is empty,
+and a constant costs two packets, so a game
+holding three effects asks for at least 1250 packets a second, while the fastest
 Thrustmaster's own driver ever puts two packets on that wire is 1.344
 milliseconds apart, or about 740 a second. A queue that merely stored the
 excess would spend the session full and deliver every force a fifth of a

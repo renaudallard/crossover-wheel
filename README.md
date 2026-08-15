@@ -620,13 +620,15 @@ there to keep a game's frame out of a burst of synchronous USB transfers, and
 a writer thread paces itself, so against an empty queue it only delayed a
 force the wheel could have taken now. It comes back the moment the writer
 falls behind, and `-p` keeps it whatever the writer says, for anyone who
-wants to feel the two against each other. Only effect
-parameters are treated this way. Starts, stops, resets, the settings and
-every path that makes the wheel safe are written the moment they arrive and
-are never merged, because those are things that happen rather than values
-that hold. A write that fails is reported on the next upload, which is the
-only frame that can carry it: an error answered to a keepalive would make the
-proxy drop its connection, and nothing reconnects.
+wants to feel the two against each other.
+
+Only effect parameters are treated this way. Starts, stops, resets, the
+settings and every path that makes the wheel safe are written the moment they
+arrive and are never merged, because those are things that happen rather than
+values that hold. A write that fails is reported on the next upload, which is
+the only frame that can carry it: an error answered to a keepalive would make
+the proxy drop its connection, and nothing reconnects. It is also why the
+proxy will not go more than `ASSUME_MS` without sending one.
 
 One consequence is visible in `-n`: a steady force prints three lines and
 then nothing, where it used to print three per update.
@@ -640,10 +642,10 @@ the physics thread sat flat at 20%, and with `-w` his `CPU OCCUPANCY` warning
 is gone.
 
 **The writer's queue coalesces, because the wheel is slower than the
-daemon.** The emitter flushes up to four dirty slots every 4 ms and a
-constant costs two packets, since Thrustmaster's own driver pairs each update
-with a control, so a game holding three effects asks for roughly 1250 packets
-a second. The fastest that same driver ever puts two packets on the wire, in
+daemon.** The emitter flushes up to four dirty slots, at worst every 4 ms and
+sooner while the queue is empty, and a constant costs two packets, since
+Thrustmaster's own driver pairs each update with a control, so a game holding
+three effects asks for at least 1250 packets a second. The fastest that same driver ever puts two packets on the wire, in
 `tmp/oldffb/directX_constforce.pcapng`, is 1.344 ms apart: about 740 a second.
 A queue that merely stored the difference spent the session full and delivered
 every force a fifth of a second late, which the tester felt as a wheel with no
