@@ -53,13 +53,19 @@ Add -f and it creates a real constant force and a real damper and plays them,
 with no game involved, so a game that asks wrongly can be told apart from a
 chain that does not deliver. Hold the wheel when you use -f.
 
+There is also -F, which is not for you. It runs a fixed sequence of effects
+without asking anybody anything, because it is driven by the build to check
+what the daemon was asked to write, and the answer it produces is in the
+daemon's log rather than in this tool's. It moves the wheel with no warning,
+which is exactly why -f asks and this one is separate.
+
 WHERE THE OUTPUT GOES
 
 Every run writes itself to a file under Z:\tmp, which is /tmp seen from macOS,
 as well as to the screen: probe_dinput-dump.log for the plain run,
--controls.log for -i, -ffb.log for -f and -controls-ffb.log if you pass both
-at once, so running all three leaves all three rather than each overwriting
-the last. Send those files rather than a copied terminal: they are complete,
+-controls.log for -i, -ffb.log for -f, -controls-ffb.log if you pass both at
+once and -sequence.log for -F, so running all of them leaves all of them
+rather than each overwriting the last. Send those files rather than a copied terminal: they are complete,
 they survive the window being closed, and -o puts a run somewhere else if you
 prefer.
 

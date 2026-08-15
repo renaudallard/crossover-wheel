@@ -9,11 +9,14 @@
  * screen of output here, and none of them needs a game or a game's saved
  * configuration to be in any particular state.
  *
- * Three things it does:
+ * Four things it does:
  *
  *   the dump         what the device and every one of its objects declare
  *   -i               work every control by name, one at a time, confirm each
  *                    identification, and end with a table of the whole wheel
+ *   -F               run a fixed sequence of effects with nobody watching,
+ *                    for a test rig: what it produces is the daemon's packet
+ *                    log rather than anything printed here
  *   -f               create two real force feedback effects, ask after
  *                    each whether the wheel moved, and write the answers
  *                    down, with no game involved at all
@@ -65,10 +68,13 @@
 #define LOG_CONTROLS	"Z:\\tmp\\probe_dinput-controls.log"
 #define LOG_FFB		"Z:\\tmp\\probe_dinput-ffb.log"
 #define LOG_BOTH	"Z:\\tmp\\probe_dinput-controls-ffb.log"
+#define LOG_SEQ		"Z:\\tmp\\probe_dinput-sequence.log"
 
 static const char *
-default_log(int want_id, int want_ff)
+default_log(int want_id, int want_ff, int want_seq)
 {
+	if (want_seq)
+		return LOG_SEQ;
 	if (want_id && want_ff)
 		return LOG_BOTH;
 	if (want_ff)
@@ -974,6 +980,143 @@ ffb_test(void)
 }
 
 /*
+ * The same path with nobody holding the wheel, driven to a script.
+ *
+ * Separate from ffb_test above rather than a mode inside it, because that one
+ * asks before it moves anything and must go on asking: a prompt that treats
+ * end of file as an answer is how an unattended wheel starts pulling at
+ * somebody, and the rule in this project is that it never does. This is the
+ * other case, a rig where no one can be surprised, and it says so by being a
+ * flag of its own.
+ *
+ * What it is for is the daemon's log rather than anything printed here. Each
+ * step is chosen because a specific fault in the proxy's upload cache shows up
+ * as a missing packet, and the run is separated into phases by a device gain
+ * set to full, which changes nothing and prints one packet the assertions can
+ * count from.
+ */
+static void
+seq_mark(void)
+{
+	DIPROPDWORD g;
+
+	memset(&g, 0, sizeof(g));
+	g.diph.dwSize = sizeof(g);
+	g.diph.dwHeaderSize = sizeof(g.diph);
+	g.diph.dwHow = DIPH_DEVICE;
+	g.dwData = DI_FFNOMINALMAX;
+	(void)IDirectInputDevice8_SetProperty(dev, DIPROP_FFGAIN, &g.diph);
+}
+
+static int
+ffb_sequence(void)
+{
+	DIEFFECT ef;
+	DICONSTANTFORCE cf;
+	DIRAMPFORCE rf;
+	DWORD axis = DIJOFS_X;
+	LONG dir = 0;
+	IDirectInputEffect *c = NULL, *r = NULL;
+	HRESULT hr;
+
+	out("\n--- scripted force feedback sequence ---\n");
+
+	memset(&cf, 0, sizeof(cf));
+	cf.lMagnitude = 8000;
+
+	memset(&ef, 0, sizeof(ef));
+	ef.dwSize = sizeof(ef);
+	ef.dwFlags = DIEFF_CARTESIAN | DIEFF_OBJECTOFFSETS;
+	ef.dwDuration = INFINITE;
+	ef.dwGain = DI_FFNOMINALMAX;
+	ef.dwTriggerButton = DIEB_NOTRIGGER;
+	ef.cAxes = 1;
+	ef.rgdwAxes = &axis;
+	ef.rglDirection = &dir;
+	ef.cbTypeSpecificParams = sizeof(cf);
+	ef.lpvTypeSpecificParams = &cf;
+
+	/* One: a constant, uploaded and started. */
+	seq_mark();
+	hr = IDirectInputDevice8_CreateEffect(dev, &GUID_ConstantForce, &ef,
+	    &c, NULL);
+	if (FAILED(hr) || c == NULL) {
+		out("  CreateEffect failed, 0x%08lx\n", (unsigned long)hr);
+		return -1;
+	}
+	out("  one: constant created and started\n");
+	(void)IDirectInputEffect_Start(c, 1, 0);
+	Sleep(60);
+
+	/*
+	 * Two: started again with nothing changed. The proxy skips the upload
+	 * here, and the start still has to arrive: a skip that swallowed it
+	 * would leave the wheel with nothing to play.
+	 */
+	seq_mark();
+	out("  two: started again unchanged\n");
+	(void)IDirectInputEffect_Start(c, 1, 0);
+	Sleep(60);
+
+	/* Three: the level moves, so the upload must not be skipped. */
+	seq_mark();
+	cf.lMagnitude = 4000;
+	(void)IDirectInputEffect_SetParameters(c, &ef, DIEP_TYPESPECIFICPARAMS);
+	out("  three: level moved to 4000\n");
+	(void)IDirectInputEffect_Start(c, 1, 0);
+	Sleep(60);
+
+	/*
+	 * Four: a ramp, left to run past its own duration, then started
+	 * again. Only an upload puts a ramp's level back to where it begins,
+	 * so a skipped one leaves the wheel replaying the level it slid to.
+	 */
+	memset(&rf, 0, sizeof(rf));
+	rf.lStart = 0;
+	rf.lEnd = 10000;
+	ef.dwDuration = 300 * 1000;
+	ef.cbTypeSpecificParams = sizeof(rf);
+	ef.lpvTypeSpecificParams = &rf;
+
+	seq_mark();
+	hr = IDirectInputDevice8_CreateEffect(dev, &GUID_RampForce, &ef, &r,
+	    NULL);
+	if (FAILED(hr) || r == NULL) {
+		out("  ramp CreateEffect failed, 0x%08lx\n", (unsigned long)hr);
+		IDirectInputEffect_Release(c);
+		return -1;
+	}
+	out("  four: ramp created and started\n");
+	(void)IDirectInputEffect_Start(r, 1, 0);
+	Sleep(500);
+
+	seq_mark();
+	out("  five: ramp started again after it had run\n");
+	(void)IDirectInputEffect_Start(r, 1, 0);
+	Sleep(60);
+
+	/*
+	 * Six: a device reset releases every slot, so the next start has to
+	 * carry the whole effect again rather than trust what the daemon had.
+	 */
+	seq_mark();
+	(void)IDirectInputDevice8_SendForceFeedbackCommand(dev, DISFFC_RESET);
+	out("  six: device reset, then the constant started again\n");
+	(void)IDirectInputEffect_Start(c, 1, 0);
+	Sleep(60);
+
+	seq_mark();
+	(void)IDirectInputEffect_Stop(c);
+	(void)IDirectInputEffect_Stop(r);
+	IDirectInputEffect_Release(c);
+	IDirectInputEffect_Release(r);
+
+	out("  the sequence is the daemon's log, not this one\n");
+
+	return 0;
+}
+
+/*
  * Two flags, parsed where they are used. This is the one tool here that
  * does not use getopt, so tests/usage_check.c does not cover it; it does not
  * need to, because there is no separate option string that can drift out of
@@ -983,7 +1126,7 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: probe_dinput [-i] [-f] [-o FILE]\n"
+	    "usage: probe_dinput [-i] [-f] [-F] [-o FILE]\n"
 	    "\n"
 	    "  -o FILE    write the run to FILE as well as to the screen\n"
 	    "             (default " LOG_DUMP ", one name per mode so\n"
@@ -994,6 +1137,10 @@ usage(void)
 	    "             confirming each, and print a table at the end\n"
 	    "  -f         then create two real effects, play them, and\n"
 	    "             write down whether you felt each\n"
+	    "  -F         then run a scripted sequence of effects without\n"
+	    "             asking anybody anything. For a test rig, where no\n"
+	    "             one can be surprised by a wheel that moves: what\n"
+	    "             it is for is the daemon's packet log, not this one\n"
 	    "\n"
 	    "Run it in the bottle. With the proxy installed it measures the\n"
 	    "proxy; add --dll dinput8=b to the wine command to measure\n"
@@ -1007,13 +1154,15 @@ main(int argc, char *argv[])
 	GUID inst;
 	HRESULT hr;
 	const char *logpath = NULL;
-	int i, want_id = 0, want_ff = 0;
+	int i, want_id = 0, want_ff = 0, want_seq = 0;
 
 	for (i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "-i") == 0)
 			want_id = 1;
 		else if (strcmp(argv[i], "-f") == 0)
 			want_ff = 1;
+		else if (strcmp(argv[i], "-F") == 0)
+			want_seq = 1;
 		else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc)
 			logpath = argv[++i];
 		else
@@ -1021,7 +1170,7 @@ main(int argc, char *argv[])
 	}
 
 	if (logpath == NULL)
-		logpath = default_log(want_id, want_ff);
+		logpath = default_log(want_id, want_ff, want_seq);
 
 	/*
 	 * A run that cannot be written down is worth less than one that can,
@@ -1122,6 +1271,8 @@ main(int argc, char *argv[])
 		identify();
 	if (want_ff)
 		(void)ffb_test();
+	if (want_seq)
+		(void)ffb_sequence();
 
 	(void)IDirectInputDevice8_Unacquire(dev);
 	IDirectInputDevice8_Release(dev);

@@ -284,6 +284,100 @@ jobs:
               { echo "the tool still reports the claim as contradicted" >&2
                 exit 1; }
 
+      - name: what reaches the wheel is what the game asked for
+        # The step above proves the proxy answered. This one proves the right
+        # bytes came out of the far end, which is a different question and the
+        # one nothing asked until now: the daemon has always printed every
+        # packet under -n and nobody ever looked at the output.
+        #
+        # Every assertion here corresponds to a fault that was found by
+        # reading rather than by testing, and each was confirmed to fire
+        # against a real daemon log with that fault simulated in it. The
+        # decisive one is the ramp: only an upload puts a ramp's level back to
+        # where it begins, so a proxy that skips it leaves the wheel replaying
+        # whatever level the slide had reached, which is full scale for a ramp
+        # that has run.
+        #
+        # -F is the unattended sequence. The attended self test, -f, asks
+        # before it moves anything and has to go on asking, so this is a flag
+        # of its own rather than a mode inside it.
+        timeout-minutes: 10
+        env:
+          WINEPREFIX: ${{ runner.temp }}/prefix
+          WINEDEBUG: -all
+          WINEDLLOVERRIDES: dinput8=n
+          T150_DEBUG: "1"
+        run: |
+          make daemon
+          ./build/bin/t150d -n -v -e "$RUNNER_TEMP/seq-endpoint" \
+              > "$RUNNER_TEMP/packets.log" 2>&1 &
+          daemon=$!
+          for i in $(seq 1 50); do
+              test -s "$RUNNER_TEMP/seq-endpoint" && break
+              sleep 0.2
+          done
+          test -s "$RUNNER_TEMP/seq-endpoint" ||
+              { echo "the daemon published no endpoint" >&2
+                kill $daemon; exit 1; }
+          export T150_ENDPOINT="Z:$RUNNER_TEMP/seq-endpoint"
+          set +e
+          wine "C:\\probe_dinput.exe" -F -o "Z:$RUNNER_TEMP/seq.log" \
+              < /dev/null
+          code=$?
+          set -e
+          kill $daemon 2>/dev/null || true
+          wait $daemon 2>/dev/null || true
+          test "$code" -eq 0 ||
+              { echo "the probe exited $code" >&2; exit 1; }
+
+          log=$RUNNER_TEMP/packets.log
+          echo "--- what the daemon was asked to write ---"
+          cat "$log"
+
+          # The session states the device gain when a client says hello, so
+          # counting markers from the top of the log is one out. Everything
+          # before the first effect upload is the handshake; from there each
+          # gain packet, which the sequence sends between phases and which
+          # changes nothing, ends a phase.
+          bad=0
+          blk() {
+              awk -v want="$1" '
+                  !started && /^write 9: 02 / { started = 1; n = 1 }
+                  !started                    { next }
+                  /^write 2: 43 80$/          { n++; next }
+                  n == want' "$log"
+          }
+          want() {
+              blk "$1" | grep -q "$2" ||
+                  { echo "MISS phase $1: $3" >&2; bad=1; }
+          }
+
+          want 1 '^write 9: 02 ' "the constant was never uploaded"
+          want 1 '^write 4: 41 .. 41 01$' "the constant was never played"
+
+          # Started again with nothing changed. Whether the proxy skips the
+          # upload is its own business and not a correctness property, so
+          # nothing is asserted about it. The start is not optional.
+          want 2 '^write 4: 41 .. 41 01$' "a start was lost when the upload was skipped"
+
+          want 3 '^write 4: 03 ' "a changed level never reached the wheel"
+
+          first=$(blk 5 | grep '^write 4: 03 ' | head -1)
+          case "$first" in
+          *' 00') ;;
+          '')     echo "MISS phase 5: the restarted ramp sent no level at all" >&2
+                  bad=1 ;;
+          *)      echo "MISS phase 5: the restarted ramp replayed '$first'," \
+                      "not its start value" >&2
+                  bad=1 ;;
+          esac
+
+          want 6 '^write 9: 02 ' "nothing was re-uploaded after a device reset"
+
+          test "$bad" -eq 0 ||
+              { echo "the packets above are not what the sequence asked for" >&2
+                exit 1; }
+
       - name: the proxy finds the endpoint the way it does on a Mac
         # Every other test hands the proxy the answer. The step above exports
         # T150_ENDPOINT and socket_check passes -e, so the discovery that runs
