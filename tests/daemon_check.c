@@ -1107,10 +1107,28 @@ test_a_failed_pass_is_not_brought_forward(void)
 	(void)tick(0);
 	drain_log();
 
+	/*
+	 * The writes are allowed again before the tick that must not happen,
+	 * and that is the whole test. Asserting an empty log while they are
+	 * still refused proves nothing, because a refused write logs nothing
+	 * either: this could not tell a pass that never ran from a pass that
+	 * ran and wrote nothing, and it passed with the guard it exists for
+	 * deleted.
+	 */
+	write_fails = 0;
+
 	(void)tick(1);
 	expect_log("a failed pass is not retried ahead of its deadline", "");
 
-	write_fails = 0;
+	/*
+	 * The deadline itself still carries it, so nothing is lost. The whole
+	 * set goes because the pass that failed recorded none of it.
+	 */
+	(void)tick(T150_EMIT_MS);
+	expect_log("and the deadline's own pass sends it",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 40\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n");
 	be.idle = NULL;
 }
 
