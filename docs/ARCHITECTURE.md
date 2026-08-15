@@ -114,8 +114,8 @@ four is worth two lines to rule out.
 The proxy does not send the frame at all when it would carry what the daemon
 already has. A `Start` uploads before it starts, so a game that starts an
 effect as often as it draws a frame pays two round trips for one of them to do
-anything; the second is skipped when the packed effect matches the last one the
-daemon acknowledged. It is skipped only while the connection is up and is the
+anything; the upload is skipped when the packed effect matches the last one the
+daemon acknowledged. Never the start, which is the one that does anything. It is skipped only while the connection is up and is the
 one the effect was uploaded to, the game has not reset the device since, no
 start or stop has been refused since, the effect is not a ramp, and the
 acknowledgement is under `ASSUME_MS` old. The first of those is also what keeps
