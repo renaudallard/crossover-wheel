@@ -854,7 +854,11 @@ test_emit_rate_is_bounded(void)
  *
  * Assetto Corsa's physics runs at 333 Hz, one update every three
  * milliseconds, which is faster than the four millisecond floor, so roughly
- * every other update is superseded and the wheel sees about 250 Hz.
+ * every other update is superseded and the wheel sees about 250 Hz. That is
+ * the floor's own arithmetic and this test holds it to it: the fake backend
+ * answers nothing about a writer, so no pass here is brought forward. A
+ * writer that is keeping up supersedes nothing, which is
+ * test_an_idle_writer_emits_ahead_of_the_floor.
  */
 static void
 test_updates_faster_than_the_emit_period_are_coalesced(void)

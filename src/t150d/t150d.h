@@ -112,8 +112,10 @@ int	t150_backend_hid(struct t150_backend *be, long vid, long pid,
  * the newest, which is what it would have wanted: the wheel holds one value
  * per slot, so an intermediate value was superseded before it could have
  * been felt. Assetto Corsa's physics runs at 333 Hz, one update every three
- * milliseconds, so about every other update is superseded and the wheel sees
- * roughly 250 Hz of a signal whose own bandwidth is lower again.
+ * milliseconds, so while this floor is the interval about every other update
+ * is superseded and the wheel sees roughly 250 Hz of a signal whose own
+ * bandwidth is lower again. With a writer that is keeping up it is not the
+ * interval and nothing is superseded, which is the paragraph at the end.
  *
  * Four milliseconds rather than the two a 500 Hz emitter would use, because
  * nothing here has ever measured what packet rate this wheel sustains and

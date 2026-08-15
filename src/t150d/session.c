@@ -1241,9 +1241,9 @@ slots_dirty(const struct t150_session *s)
 
 /*
  * Write out what changed, newest slot state only, at most T150_EMIT_SLOTS
- * slots and no sooner than T150_EMIT_MS after the last pass. Resumes where
- * the previous pass stopped so a storm on the low slots cannot starve the
- * high ones.
+ * slots and not before the deadline, which is T150_EMIT_MS after the last
+ * pass and which emit_now above may bring forward. Resumes where the previous
+ * pass stopped so a storm on the low slots cannot starve the high ones.
  */
 static void
 session_emit(struct t150_session *s, uint64_t now_ms)
