@@ -284,6 +284,66 @@ jobs:
               { echo "the tool still reports the claim as contradicted" >&2
                 exit 1; }
 
+      - name: the proxy finds the endpoint the way it does on a Mac
+        # Every other test hands the proxy the answer. The step above exports
+        # T150_ENDPOINT and socket_check passes -e, so the discovery that runs
+        # on every real machine is the one path nothing exercises, and it is
+        # the path that has actually failed in the field: RESEARCH.md A36,
+        # where every bottle's proxy looked in a home that does not exist
+        # while the daemon published under the real one. Its symptom is the
+        # worst shape this project has. The game runs perfectly, the proxy
+        # says it is staying out of the way, and nobody anywhere has force
+        # feedback.
+        #
+        # So the daemon gets no -e and the proxy gets no T150_ENDPOINT: the
+        # daemon publishes under HOME and the proxy has to find it through Z:,
+        # which every prefix maps to /. The home is deliberately not the Unix
+        # user's, so the USERNAME guess misses and the Z:\Users\* walk is what
+        # answers, which is the shape in a real bottle where the Windows user
+        # is "crossover" whoever owns the Mac.
+        timeout-minutes: 10
+        env:
+          WINEPREFIX: ${{ runner.temp }}/prefix
+          WINEDEBUG: -all
+          WINEDLLOVERRIDES: dinput8=n
+          T150_DEBUG: "1"
+        run: |
+          sudo mkdir -p /Users/macuser
+          sudo chown "$(id -u):$(id -g)" /Users/macuser
+          make daemon
+          HOME=/Users/macuser ./build/bin/t150d -n -v &
+          daemon=$!
+          ep="/Users/macuser/Library/Application Support/t150ffb/endpoint"
+          for i in $(seq 1 50); do
+              test -s "$ep" && break
+              sleep 0.2
+          done
+          test -s "$ep" ||
+              { echo "the daemon published nothing under HOME" >&2
+                kill $daemon; exit 1; }
+          set +e
+          out=$(wine "C:\\probe_dinput.exe" < /dev/null 2>&1)
+          code=$?
+          set -e
+          kill $daemon 2>/dev/null || true
+          wait $daemon 2>/dev/null || true
+          printf '%s\n' "$out"
+          test "$code" -eq 0 ||
+              { echo "exited $code, expected 0" >&2; exit 1; }
+          # The negative as well as the positive: a run that found the file by
+          # some accident of ordering must not pass quietly.
+          case "$out" in
+          *"no endpoint"*)
+              echo "the proxy did not find the endpoint it was left to look" \
+                   "for, which is the whole of what this step checks" >&2
+              exit 1 ;;
+          esac
+          case "$out" in
+          *"wrapped the wheel"*) ;;
+          *) echo "the proxy never wrapped the wheel, so the endpoint it" \
+                 "found reached nothing" >&2; exit 1 ;;
+          esac
+
   macos:
     name: probe tools
     # For the proxy only. The app bundle has to carry t150-dinput8.dll to be
