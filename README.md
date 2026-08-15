@@ -628,7 +628,9 @@ arrive and are never merged, because those are things that happen rather than
 values that hold. A write that fails is reported on the next upload, which is
 the only frame that can carry it: an error answered to a keepalive would make
 the proxy drop its connection, and nothing reconnects. It is also why the
-proxy will not go more than `ASSUME_MS` without sending one.
+proxy will not skip an upload once its last acknowledgement is `ASSUME_MS`
+old: skipping delays that report and nothing else carries it. The proxy sends
+no upload of its own, so the report waits on the game asking for one.
 
 One consequence is visible in `-n`: a steady force prints three lines and
 then nothing, where it used to print three per update.

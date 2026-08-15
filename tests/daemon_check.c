@@ -1003,8 +1003,9 @@ test_an_idle_writer_emits_ahead_of_the_floor(void)
  * as the ramp slides, and do_upload is the only thing that puts that level
  * back to where the ramp begins. A start on its own therefore sends no level
  * at all and the wheel replays the one it had slid to, which for a ramp that
- * has run its course is full scale. That is why upload() in src/dll/effect.c
- * never skips the upload for a ramp however unchanged its parameters are.
+ * has run its course is its end value: full scale for the ramp used here,
+ * which ends at T150_DI_MAX. That is why upload() in src/dll/effect.c never
+ * skips the upload for a ramp however unchanged its parameters are.
  */
 static void
 test_only_an_upload_puts_a_ramp_back_to_its_start(void)

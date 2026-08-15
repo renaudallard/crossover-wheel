@@ -126,8 +126,11 @@ steady force with nothing to restore it.
 The last two are the ones that cost measurement to find. A ramp is never
 skipped because the wheel has no ramp: the daemon renders one as a constant it
 re-computes as the ramp slides, and an upload is the only thing that puts that
-level back to the start, so a skipped upload left a restarted ramp replaying at
-full scale. And the age bound exists twice over: the daemon's watchdog clears
+level back to the start, so a skipped upload left a restarted ramp replaying
+whatever level it had slid to. For a ramp that has run its course that is its
+end value, which was full scale in the case measured.
+
+The age bound exists twice over: the daemon's watchdog clears
 its slots with the connection still open, and a write the wheel refuses is
 reported on the next `EFFECT_UPLOAD` and nothing else, so skipping uploads is
 also how long a failed write can go unreported.

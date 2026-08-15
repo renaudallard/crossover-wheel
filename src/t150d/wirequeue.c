@@ -2,10 +2,11 @@
  * wirequeue.c - packets waiting for a wheel that is slower than the daemon.
  *
  * The daemon can build force feedback packets faster than the wheel will
- * take them. Measured: the emitter flushes up to four dirty slots every four
- * milliseconds, and a constant costs two packets because Thrustmaster's own
- * driver pairs every update with a control, so a game holding three slots
- * asks for about 1250 packets a second. The fastest the vendor's driver ever
+ * take them. Measured: the emitter flushes up to four dirty slots, at worst
+ * every four milliseconds and sooner while this queue is empty, and a
+ * constant costs two packets because Thrustmaster's own driver pairs every
+ * update with a control, so a game holding three slots asks for at least 1250
+ * packets a second. The fastest the vendor's driver ever
  * puts two packets on that wire, in tmp/oldffb/directX_constforce.pcapng, is
  * 1.344 ms apart, so the wheel takes on the order of 740 a second.
  *
