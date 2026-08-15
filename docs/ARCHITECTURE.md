@@ -116,12 +116,21 @@ already has. A `Start` uploads before it starts, so a game that starts an
 effect as often as it draws a frame pays two round trips for one of them to do
 anything; the second is skipped when the packed effect matches the last one the
 daemon acknowledged. It is skipped only while the connection is up and is the
-one the effect was uploaded to, the game has not reset the device since, and
-the acknowledgement is newer than half the watchdog, because a watchdog that
-fired cleared the daemon's slots with the connection still open. The first of
-those is also what keeps the reconnect reachable: `t150_client_call` is where a
-restarted daemon is noticed, so a skip that bypassed a dead socket would leave
-a game repeating one steady force with nothing to restore it.
+one the effect was uploaded to, the game has not reset the device since, no
+start or stop has been refused since, the effect is not a ramp, and the
+acknowledgement is under `ASSUME_MS` old. The first of those is also what keeps
+the reconnect reachable: `t150_client_call` is where a restarted daemon is
+noticed, so a skip that bypassed a dead socket would leave a game repeating one
+steady force with nothing to restore it.
+
+The last two are the ones that cost measurement to find. A ramp is never
+skipped because the wheel has no ramp: the daemon renders one as a constant it
+re-computes as the ramp slides, and an upload is the only thing that puts that
+level back to the start, so a skipped upload left a restarted ramp replaying at
+full scale. And the age bound exists twice over: the daemon's watchdog clears
+its slots with the connection still open, and a write the wheel refuses is
+reported on the next `EFFECT_UPLOAD` and nothing else, so skipping uploads is
+also how long a failed write can go unreported.
 
 The daemon does not write to the wheel from the frame that arrives. A frame
 records what a slot should hold, and a pass sends whatever differs from the

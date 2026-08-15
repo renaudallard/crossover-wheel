@@ -145,6 +145,26 @@ t150_effect_all_stopped(void)
 static volatile LONG unload_gen;
 
 /*
+ * How long an effect may be assumed to still be on the daemon. Two separate
+ * things bound this and the smaller wins.
+ *
+ * The daemon's watchdog clears its slots with the connection still up, after
+ * T150_WATCHDOG_MS of silence from this process, so any bound under that
+ * proves no safe state has happened since the acknowledgement. A tenth of it
+ * leaves the margin between two processes' clocks irrelevant.
+ *
+ * A write the wheel refuses is the tighter one. The daemon has no frame to
+ * answer when an emission pass fails, so it holds the error for the next
+ * EFFECT_UPLOAD and reports it on nothing else, deliberately: an error
+ * answered to a keepalive would make this proxy drop its connection. Skipping
+ * uploads therefore delays the only news of a failed write there is, and this
+ * is how long that delay can be. Fifty milliseconds is three frames of a 60 Hz
+ * game, which is the slowest this is meant to serve, and still removes fifteen
+ * of every sixteen redundant uploads at Assetto Corsa's 333 Hz.
+ */
+#define ASSUME_MS	50u
+
+/*
  * A device level reset releases every slot without naming one, so nothing
  * else can tell an effect object that the copy the daemon held no longer
  * exists. Only a reset: DISFFC_STOPALL and a pause stop what is playing and
@@ -392,11 +412,9 @@ upload(struct effect_obj *e)
 	 *   naming one. That is the unload counter above, which
 	 *   t150_effect_all_unloaded moves.
 	 * - The daemon's watchdog fired and made the wheel safe, which clears
-	 *   its slots with the connection still up. It fires after
-	 *   T150_WATCHDOG_MS of silence from this process, and an upload the
-	 *   daemon answered is not silence, so an acknowledgement newer than
-	 *   the watchdog proves no safe state has happened since. Half of it,
-	 *   for the margin between two machines' clocks.
+	 *   its slots with the connection still up, or an emission pass failed
+	 *   and the daemon is holding the news for the next upload. Both are
+	 *   bounded by how old the acknowledgement is: see ASSUME_MS.
 	 *
 	 * A ramp is never skipped, because for a ramp the bytes being equal
 	 * does not mean the daemon's slot is. The wheel has no ramp, so the
@@ -414,7 +432,7 @@ upload(struct effect_obj *e)
 	gen = t150_client_state(&up);
 	if (up && e->sent_valid && e->gen == gen && e->sent_unload_gen == ugen &&
 	    e->ef.kind != T150_EFFECT_RAMP &&
-	    GetTickCount64() - e->sent_ms < T150_WATCHDOG_MS / 2 &&
+	    GetTickCount64() - e->sent_ms < ASSUME_MS &&
 	    memcmp(e->sent, buf, sizeof(buf)) == 0)
 		return 0;
 
