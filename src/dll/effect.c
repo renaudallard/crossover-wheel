@@ -382,7 +382,18 @@ upload(struct effect_obj *e)
 	if (t150_proto_pack_effect(buf, sizeof(buf), &e->ef) == 0)
 		return -1;
 
-	/* Before the call, so a reset that lands during it is not lost. */
+	/*
+	 * The counter is read twice on purpose and the two readings answer
+	 * different questions. This one is what the upload below is stamped
+	 * with, and it has to be taken before the call so that a reset landing
+	 * during it leaves the stamp behind the counter. The skip test takes
+	 * its own, as late as it can, because deciding on this one would be
+	 * deciding on a value read before a wait: t150_client_state takes the
+	 * same lock that a reset's own round trip holds for its whole length,
+	 * so a thread that arrives here just before another calls Unacquire
+	 * can sit in that lock for the duration of the reset and come out
+	 * still believing what it read on the way in.
+	 */
 	ugen = unload_gen;
 
 	/*
@@ -430,7 +441,8 @@ upload(struct effect_obj *e)
 	 * this applies to: session.c's tick touches no other slot's effect.
 	 */
 	gen = t150_client_state(&up);
-	if (up && e->sent_valid && e->gen == gen && e->sent_unload_gen == ugen &&
+	if (up && e->sent_valid && e->gen == gen &&
+	    e->sent_unload_gen == unload_gen &&
 	    e->ef.kind != T150_EFFECT_RAMP &&
 	    GetTickCount64() - e->sent_ms < ASSUME_MS &&
 	    memcmp(e->sent, buf, sizeof(buf)) == 0)
