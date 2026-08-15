@@ -1,5 +1,5 @@
 /*
- * usage_check - every option a probe advertises must be one it accepts.
+ * usage_check - every option a program advertises must be one it accepts.
  *
  * The probe tools are macOS only, so nothing on Linux ever runs them and CI
  * only ever compiles them. That leaves a whole class of bug invisible: an
@@ -27,11 +27,20 @@
 #define TOOL_SRC_DIR "src/tools"
 #endif
 
+#ifndef DAEMON_SRC_DIR
+#define DAEMON_SRC_DIR "src/t150d"
+#endif
+
 #define MAX_SRC		(256 * 1024)
 
 /*
- * Every macOS-only program, not just the probes. t150ctl and t150boot ship to
- * users and cannot run here either, so the same trap applies to them.
+ * Every program that takes options, not just the probes. t150ctl and t150boot
+ * ship to users and cannot run here either, so the same trap applies to them.
+ *
+ * t150d builds and runs here, which is not the same as being checked: nothing
+ * ran it with an option until this listed it, and the trap does not need macOS.
+ * An option can sit in usage() and in the switch with no letter in the getopt
+ * string, and the compiler stays quiet because the case is merely unreachable.
  */
 static const char *const sources[] = {
 	PROBE_SRC_DIR "/probe_hid.c",
@@ -39,7 +48,8 @@ static const char *const sources[] = {
 	PROBE_SRC_DIR "/probe_ep0.c",
 	PROBE_SRC_DIR "/probe_intr.c",
 	TOOL_SRC_DIR "/t150ctl.c",
-	TOOL_SRC_DIR "/t150boot.c"
+	TOOL_SRC_DIR "/t150boot.c",
+	DAEMON_SRC_DIR "/main.c"
 };
 
 static int failures;

@@ -235,11 +235,14 @@ $(BIN)/daemon_check: tests/daemon_check.c $(DAEMON_LIB_OBJS) $(LIB_OBJS) | $(BIN
 $(BIN)/socket_check: tests/socket_check.c $(LIB_OBJS) | $(BIN) $(DAEMON_BIN)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-# usage_check reads the probe sources rather than linking them, because the
-# probes themselves only build on macOS. It needs to know where they are.
+# usage_check reads the sources rather than linking them, because the probes
+# themselves only build on macOS. It needs to know where they are. The daemon
+# is in there too: it builds anywhere, which is not the same as having its
+# options checked anywhere.
 $(BIN)/usage_check: tests/usage_check.c | $(BIN)
 	$(CC) $(CPPFLAGS) -DPROBE_SRC_DIR='"$(CURDIR)/src/probe"' \
-	    -DTOOL_SRC_DIR='"$(CURDIR)/src/tools"' $(CFLAGS) \
+	    -DTOOL_SRC_DIR='"$(CURDIR)/src/tools"' \
+	    -DDAEMON_SRC_DIR='"$(CURDIR)/src/t150d"' $(CFLAGS) \
 	    -o $@ tests/usage_check.c $(LDFLAGS)
 
 # wirequeue_check drives the writer's queue, which lives with the daemon. The
