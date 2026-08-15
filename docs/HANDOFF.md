@@ -380,7 +380,12 @@ The author's global instructions apply. The project-specific ones:
 - `make strict` is what CI runs. Keep it clean.
 - The probe sources cannot be compiled on Linux. If you change them,
   type-check against stub headers before claiming they build, and say plainly
-  that CI is the first real compile.
+  that CI is the first real compile. `make check-mac` does exactly that for
+  the two that matter most, `src/mac/t150menu.m` and
+  `src/t150d/hid_darwin.c`, against `tests/stubs`; it needs clang. The rest,
+  `src/probe/*` and `src/mac/bootswitch.c`, still have nothing but reading,
+  because their IOKit surface would have to be guessed at and a wrong guess
+  gives a false pass.
 - Never claim the wheel works without a physical observation from the Mac. A
   successful return code is not an observation.
 - Update `README.md` and the man pages in the same commit as the change they

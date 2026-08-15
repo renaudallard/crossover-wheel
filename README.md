@@ -448,6 +448,15 @@ make probes
 `make strict` is the same with warnings as errors, and is what CI runs.
 `make help` lists the targets.
 
+`make check-mac` syntax checks the two sources that need Cocoa and IOKit,
+`src/mac/t150menu.m` and `src/t150d/hid_darwin.c`, against the fake headers in
+`tests/stubs`. It needs clang, it is not part of `all` or `strict`, and it
+proves only that those files parse and are warning clean under the same flags:
+nothing at all about behaviour. It exists because those two were otherwise
+checked by being read, and reading does not find what `-Werror` finds. A
+change that leaves a parameter unused is a hard failure of the macOS job, and
+therefore of the release that job builds, and one reached that job once.
+
 Development happens on Linux; the Mac is only needed to run the probes and
 the daemon. Because the probe sources cannot be compiled on Linux, CI builds
 them on `macos-latest` on every push and attaches them as an artifact, so a

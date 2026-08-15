@@ -103,7 +103,8 @@ DLL_LIBS     = -ldxguid -luuid -lole32 -lws2_32
 # longer agreed about the protocol.
 SHARED_HDRS = $(wildcard include/t150/*.h)
 
-.PHONY: all probes tools daemon dll test check strict clean help install app dmg
+.PHONY: all probes tools daemon dll test check check-mac strict clean help \
+        install app dmg
 
 ifeq ($(HAVE_DLL_CC),yes)
 DLL_TARGET = dll
@@ -139,6 +140,9 @@ help:
 	@echo "           pass arguments with INSTALL_ARGS, e.g."
 	@echo "           make install INSTALL_ARGS='-n -b Games'"
 	@echo "  strict   same as all, but warnings are errors (used by CI)"
+	@echo "  check-mac  syntax check the Cocoa and IOKit sources against"
+	@echo "           tests/stubs, so they can be checked off a Mac"
+	@echo "           (needs clang)"
 	@echo "  clean    remove the build directory"
 
 daemon: $(DAEMON_BIN)
@@ -267,6 +271,36 @@ test: $(TEST_BINS)
 	@sh $(CURDIR)/tests/update_check.sh
 
 check: test
+
+# Syntax check the two sources no build machine here can compile.
+#
+# src/mac/t150menu.m and src/t150d/hid_darwin.c need Cocoa and IOKit, so
+# anywhere but a Mac they were checked by being read, and reading does not find
+# what -Werror finds. An unused parameter left behind by a change is a hard
+# failure of the macOS job and therefore of the release that job builds, and it
+# reached that job once. tests/stubs holds fake headers declaring only what
+# these two files name; what this proves is that they parse and are warning
+# clean under the project's own flags, and nothing whatever about behaviour.
+#
+# clang rather than $(CC), because GCC's Objective-C front end cannot do
+# blocks and that file is full of them. -fobjc-runtime=macosx is the whole
+# trick for the .m: ARC is refused on the GNU runtime, and asking for a Darwin
+# target instead breaks every libc header the file includes.
+#
+# Not part of all or of strict. It needs a compiler that may not be installed,
+# and on a Mac the real build is a better check than any stub.
+STUBS = tests/stubs
+
+check-mac:
+	@command -v clang >/dev/null 2>&1 || { \
+	    echo "check-mac: needs clang (apt-get install clang)" >&2; exit 1; }
+	clang -fsyntax-only -x objective-c -fobjc-runtime=macosx-10.13 \
+	    -fobjc-arc -fblocks -I$(STUBS) -Iinclude -Isrc \
+	    $(WARNINGS) -Werror src/mac/t150menu.m
+	clang -fsyntax-only -std=c11 -I$(STUBS) -Iinclude -Isrc -Isrc/t150d \
+	    -D_POSIX_C_SOURCE=200809L -D_DARWIN_C_SOURCE -D__APPLE__ \
+	    $(WARNINGS) -Werror src/t150d/hid_darwin.c
+	@echo "check-mac: ok"
 
 # Warnings as errors, everywhere they can be. EXTRA_CFLAGS rather than
 # re-exporting CFLAGS: a command line assignment overrides the += above, so

@@ -1,0 +1,23 @@
+Fake system headers, so that the sources only a Mac can build can at least be
+syntax checked anywhere.
+
+src/mac/t150menu.m and src/t150d/hid_darwin.c need Cocoa and IOKit, which no
+build machine here has. Until this existed the only check those files had was
+being read, and reading does not find what -Werror finds: an unused parameter
+left behind by a change is a hard failure of the macOS job, and therefore of
+the release that job builds, and it reached that job once.
+
+These headers declare only the types, methods and constants those two files
+actually name, and they do nothing at all. What "make check-mac" proves is that
+the files parse and are warning clean under the project's own flags. It proves
+nothing whatever about behaviour.
+
+Adding to them is meant to be done from the compiler's own errors, one at a
+time. The one rule that matters: when clang says a selector is not declared,
+check the real API before declaring it here. A stub written to match the code
+rather than the framework turns this check into a mirror, which is worse than
+having no check, because it passes.
+
+Not covered: src/mac/bootswitch.c, whose IOUSBLib plug-in interfaces and
+IOUSBDevRequestTO would have to be guessed at, and a wrong guess gives a false
+answer. It is compiled by CI and by any Mac.
