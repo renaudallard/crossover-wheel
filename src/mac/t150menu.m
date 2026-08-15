@@ -52,6 +52,15 @@
 @property (assign) BOOL clientConnected;
 @property (assign) BOOL wheelSeen;
 @property (assign) BOOL wheelReady;
+/*
+ * Whether the daemon that just ended was meant to end. Everything that stops
+ * it on purpose clears this first, so the termination handler can tell a stop
+ * from a death: a death is the case where the wheel is left holding whatever
+ * force it was last given, and nothing but a new daemon takes that off it.
+ */
+@property (assign) BOOL daemonWanted;
+/* One restart, so a daemon that cannot stay up does not become a loop. */
+@property (assign) BOOL daemonRestarted;
 @end
 
 @implementation T150Menu
@@ -641,9 +650,12 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	(void)sender;
 
 	if (self.daemon != nil && self.daemon.isRunning) {
+		self.daemonWanted = NO;
 		[self.daemon terminate];
 		return;
 	}
+	/* Asked for by hand, so it gets its restart allowance back. */
+	self.daemonRestarted = NO;
 	[self startDaemon];
 }
 
@@ -726,6 +738,43 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 			weak.daemon = nil;
 			weak.daemonArgs = nil;
 			weak.clientConnected = NO;
+
+			/*
+			 * A daemon that was not asked to stop has died, and
+			 * the wheel is left holding whatever force it was
+			 * last given: the daemon puts it in a safe state on
+			 * its way out, and a death is precisely the exit that
+			 * does not. Nothing else notices. The menu said
+			 * "daemon stopped" and waited for somebody to open it
+			 * and press Start, which is not a thing a person is
+			 * doing while a wheel pulls at them mid race.
+			 *
+			 * Starting another one is the whole recovery, because
+			 * acquiring the wheel scrubs every slot: hid_darwin.c
+			 * does that on every acquire for exactly this case, a
+			 * wheel inherited from a daemon that died. Once only,
+			 * so a daemon that cannot stay up says so instead of
+			 * becoming a loop.
+			 */
+			if (weak.daemonWanted) {
+				int st = task.terminationStatus;
+
+				if (weak.daemonRestarted) {
+					[weak say:[NSString stringWithFormat:
+					    @"the daemon stopped by itself "
+					    "again (status %d); leaving it "
+					    "stopped\n", st]];
+				} else {
+					weak.daemonRestarted = YES;
+					[weak say:[NSString stringWithFormat:
+					    @"the daemon stopped by itself "
+					    "(status %d); starting it again "
+					    "so the wheel is released\n", st]];
+					[weak startDaemon];
+					return;
+				}
+			}
+
 			[weak refresh];
 		});
 	};
@@ -737,6 +786,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	}
 
 	self.daemon = t;
+	self.daemonWanted = YES;
 	self.daemonArgs = args;
 	self.clientConnected = NO;
 	[self refresh];
@@ -838,6 +888,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	 * launchd restart a daemon that exits immediately, for ever.
 	 */
 	if (self.daemon != nil && self.daemon.isRunning) {
+		self.daemonWanted = NO;
 		[self.daemon terminate];
 		[self.daemon waitUntilExit];
 	}
@@ -920,6 +971,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		return;
 	}
 
+	self.daemonWanted = NO;
 	[self.daemon terminate];
 	[self.daemon waitUntilExit];
 	[self startDaemon];
@@ -1580,6 +1632,7 @@ sha256_of(NSData *d)
 	self.watch = nil;
 
 	if (self.daemon != nil && self.daemon.isRunning) {
+		self.daemonWanted = NO;
 		[self.daemon terminate];
 		[self.daemon waitUntilExit];
 	}
@@ -1598,6 +1651,7 @@ sha256_of(NSData *d)
 	 * not to just exit.
 	 */
 	if (self.daemon != nil && self.daemon.isRunning) {
+		self.daemonWanted = NO;
 		[self.daemon terminate];
 		[self.daemon waitUntilExit];
 	}
