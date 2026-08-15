@@ -264,6 +264,7 @@ $(BIN)/%_check: tests/%_check.c $(LIB_OBJS) | $(BIN)
 test: $(TEST_BINS)
 	@for t in $(TEST_BINS); do "$$t" || exit 1; done
 	@sh $(CURDIR)/tests/install_check.sh
+	@sh $(CURDIR)/tests/update_check.sh
 
 check: test
 
