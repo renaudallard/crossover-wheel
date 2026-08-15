@@ -995,6 +995,71 @@ test_an_idle_writer_emits_ahead_of_the_floor(void)
 	be.idle = NULL;
 }
 
+/*
+ * Only an upload puts a ramp back to its start, which is a precondition the
+ * proxy has to honour rather than a behaviour of its own.
+ *
+ * The wheel has no ramp. The daemon renders one as a constant it re-computes
+ * as the ramp slides, and do_upload is the only thing that puts that level
+ * back to where the ramp begins. A start on its own therefore sends no level
+ * at all and the wheel replays the one it had slid to, which for a ramp that
+ * has run its course is full scale. That is why upload() in src/dll/effect.c
+ * never skips the upload for a ramp however unchanged its parameters are.
+ */
+static void
+test_only_an_upload_puts_a_ramp_back_to_its_start(void)
+{
+	struct t150_effect ef;
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	uint8_t start[2];
+	size_t i;
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_RAMP;
+	ef.slot = 2;
+	ef.duration = 300000;		/* 300 ms, so 400 is past the end */
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.ramp.start = 0;
+	ef.u.ramp.end = 10000;
+	start[0] = 2;
+	start[1] = 1;
+
+	/* Twice over: with the upload the proxy sends, and without it. */
+	for (i = 0; i < 2; i++) {
+		reset_session();
+		hello(0);
+		frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
+		    T150_ERR_NONE);
+		frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK,
+		    T150_ERR_NONE);
+		(void)tick(0);
+		(void)tick(400);
+		expect_log("the slide ends at full scale",
+		    "write 9: 02 54 00 00 00 00 00 00 00\n"
+		    "write 4: 03 46 00 00\n"
+		    "write 15: 01 02 00 40 2c 01 00 00 00 46 00 54 00 00 00\n"
+		    "write 4: 41 02 41 01\n"
+		    "write 4: 03 46 00 40\n");
+		drain_log();
+
+		if (i == 0) {
+			frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 410,
+			    T150_OP_OK, T150_ERR_NONE);
+			frame(T150_OP_EFFECT_START, start, 2, 410, T150_OP_OK,
+			    T150_ERR_NONE);
+			expect_log("an upload puts the ramp back to its start",
+			    "write 4: 03 46 00 00\nwrite 4: 41 02 41 01\n");
+		} else {
+			frame(T150_OP_EFFECT_START, start, 2, 410, T150_OP_OK,
+			    T150_ERR_NONE);
+			expect_log("a start alone sends no level, so the wheel "
+			    "keeps the one it slid to",
+			    "write 4: 41 02 41 01\n");
+		}
+	}
+}
+
 /* -p keeps the floor whatever the writer says, so the two can be compared. */
 static void
 test_strict_pace_keeps_the_floor(void)
@@ -2438,6 +2503,7 @@ main(void)
 	test_an_idle_writer_emits_ahead_of_the_floor();
 	test_a_failed_pass_is_not_brought_forward();
 	test_strict_pace_keeps_the_floor();
+	test_only_an_upload_puts_a_ramp_back_to_its_start();
 
 	(void)fclose(logfp);
 	free(logbuf);

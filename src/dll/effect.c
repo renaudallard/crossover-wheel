@@ -382,9 +382,23 @@ upload(struct effect_obj *e)
 	 *   daemon answered is not silence, so an acknowledgement newer than
 	 *   the watchdog proves no safe state has happened since. Half of it,
 	 *   for the margin between two machines' clocks.
+	 *
+	 * A ramp is never skipped, because for a ramp the bytes being equal
+	 * does not mean the daemon's slot is. The wheel has no ramp, so the
+	 * daemon renders one as a constant it re-computes on its own clock,
+	 * and an upload is the only thing that puts that level back to the
+	 * ramp's start. Skipping it left a ramp that was started again playing
+	 * whatever level it had slid to: measured against the session code, a
+	 * ramp from 0 to 10000 over 300 ms restarted after it had run sent the
+	 * play packet alone, so the wheel replayed the 0x40 it was still
+	 * holding, which is full scale, until the slicer corrected it up to
+	 * T150_RAMP_TICK_MS later. With the upload it sends 03 46 00 00 first,
+	 * which is the start value the game asked for. Ramps are the only kind
+	 * this applies to: session.c's tick touches no other slot's effect.
 	 */
 	gen = t150_client_state(&up);
 	if (up && e->sent_valid && e->gen == gen &&
+	    e->ef.kind != T150_EFFECT_RAMP &&
 	    GetTickCount64() - e->sent_ms < T150_WATCHDOG_MS / 2 &&
 	    memcmp(e->sent, buf, sizeof(buf)) == 0)
 		return 0;
