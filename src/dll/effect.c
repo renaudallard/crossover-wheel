@@ -27,6 +27,7 @@ struct effect_obj {
 	/* What the daemon last acknowledged, and when. See upload(). */
 	int			 sent_valid;
 	ULONGLONG		 sent_ms;
+	LONG			 sent_unload_gen;
 	uint8_t			 sent[T150_PROTO_EFFECT_LEN];
 	struct t150_effect	 ef;
 };
@@ -126,8 +127,24 @@ t150_effect_all_stopped(void)
 }
 
 /*
- * Every effect this process holds is gone from the daemon.
+ * How many times everything this process holds has been released from the
+ * daemon. An effect records which of those it uploaded under, so an upload
+ * that is skipped can only be skipped against the same one.
  *
+ * A counter rather than a sweep over the live effects, which is what this was.
+ * A sweep clears a flag that the effect's own upload sets a moment later, and
+ * the two are on different threads: a reset arriving between another thread's
+ * EFFECT_UPLOAD returning and its bookkeeping was lost outright, leaving that
+ * effect certain the daemon held a slot the reset had just released. Nothing
+ * then re-uploaded it, a start was refused, and the game's own recovery, which
+ * is to call Download again, was answered with a skip and DI_OK. The counter
+ * closes that: the value is read before the call and recorded after it, so a
+ * reset that lands in between leaves the record behind the counter and the
+ * next upload really goes.
+ */
+static volatile LONG unload_gen;
+
+/*
  * A device level reset releases every slot without naming one, so nothing
  * else can tell an effect object that the copy the daemon held no longer
  * exists. Only a reset: DISFFC_STOPALL and a pause stop what is playing and
@@ -140,14 +157,7 @@ t150_effect_all_stopped(void)
 void
 t150_effect_all_unloaded(void)
 {
-	size_t i;
-
-	for (i = 0; i < T150_SLOT_MAX; i++) {
-		struct effect_obj *e = live[i];
-
-		if (e != NULL)
-			e->sent_valid = 0;
-	}
+	(void)InterlockedIncrement(&unload_gen);
 }
 
 uint8_t
@@ -346,10 +356,14 @@ upload(struct effect_obj *e)
 {
 	uint8_t buf[T150_PROTO_EFFECT_LEN];
 	unsigned int gen;
+	LONG ugen;
 	int up;
 
 	if (t150_proto_pack_effect(buf, sizeof(buf), &e->ef) == 0)
 		return -1;
+
+	/* Before the call, so a reset that lands during it is not lost. */
+	ugen = unload_gen;
 
 	/*
 	 * A game that re-uploads an effect it has not changed pays a round
@@ -375,7 +389,8 @@ upload(struct effect_obj *e)
 	 * - The daemon was restarted. That is the generation, and the block
 	 *   below already exists to say the effect again over a new one.
 	 * - The game reset the device, which releases every slot without
-	 *   naming one. t150_effect_all_unloaded is called from there.
+	 *   naming one. That is the unload counter above, which
+	 *   t150_effect_all_unloaded moves.
 	 * - The daemon's watchdog fired and made the wheel safe, which clears
 	 *   its slots with the connection still up. It fires after
 	 *   T150_WATCHDOG_MS of silence from this process, and an upload the
@@ -397,7 +412,7 @@ upload(struct effect_obj *e)
 	 * this applies to: session.c's tick touches no other slot's effect.
 	 */
 	gen = t150_client_state(&up);
-	if (up && e->sent_valid && e->gen == gen &&
+	if (up && e->sent_valid && e->gen == gen && e->sent_unload_gen == ugen &&
 	    e->ef.kind != T150_EFFECT_RAMP &&
 	    GetTickCount64() - e->sent_ms < T150_WATCHDOG_MS / 2 &&
 	    memcmp(e->sent, buf, sizeof(buf)) == 0)
@@ -410,6 +425,7 @@ upload(struct effect_obj *e)
 	}
 	memcpy(e->sent, buf, sizeof(buf));
 	e->sent_ms = GetTickCount64();
+	e->sent_unload_gen = ugen;
 	e->sent_valid = 1;
 
 	gen = t150_client_state(NULL);
@@ -637,8 +653,10 @@ eff_SetParameters(IDirectInputEffect *self, const DIEFFECT *p, DWORD flags)
 	if (flags & DIEP_START) {
 		uint8_t start[2] = { (uint8_t)e->slot, 1 };
 
-		if (t150_client_call(T150_OP_EFFECT_START, start, 2) != 0)
+		if (t150_client_call(T150_OP_EFFECT_START, start, 2) != 0) {
+			e->sent_valid = 0;
 			return DIERR_NOTDOWNLOADED;
+		}
 		e->playing = 1;
 	}
 
@@ -683,8 +701,17 @@ eff_Start(IDirectInputEffect *self, DWORD iterations, DWORD flags)
 	if (start[1] == 0)
 		start[1] = 1;
 
-	if (t150_client_call(T150_OP_EFFECT_START, start, 2) != 0)
+	/*
+	 * A refused start is the daemon saying it does not hold this slot, so
+	 * whatever upload() believes it has is wrong. Clearing that is what
+	 * makes the answer below mean anything: DIERR_NOTDOWNLOADED invites
+	 * the game to call Download, and Download is upload(), which would
+	 * otherwise skip and report DI_OK without having said a word.
+	 */
+	if (t150_client_call(T150_OP_EFFECT_START, start, 2) != 0) {
+		e->sent_valid = 0;
 		return DIERR_NOTDOWNLOADED;
+	}
 	e->playing = 1;
 
 	return DI_OK;
@@ -703,8 +730,13 @@ eff_Stop(IDirectInputEffect *self)
 		 * describes that; DIERR_INPUTLOST claims the device went
 		 * away and sends the game into a reacquire loop it cannot
 		 * win. Either way the effect is not running.
+		 *
+		 * And whatever upload() believes the daemon holds is no longer
+		 * safe to skip against, for the same reason a refused start is
+		 * not: this is the daemon saying it does not have the slot.
 		 */
 		e->playing = 0;
+		e->sent_valid = 0;
 		return DIERR_NOTDOWNLOADED;
 	}
 	e->playing = 0;
