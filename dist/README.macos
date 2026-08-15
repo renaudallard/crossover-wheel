@@ -44,7 +44,9 @@ rather never think about it.
 
 "Copy the log" puts everything the daemon has printed on the clipboard, even
 when no window is open. If anything looks wrong, click that and paste it into
-a mail: it is how nearly every fault in this project has been found.
+a mail: it is how nearly every fault in this project has been found. It works
+whichever way the daemon was started: one started at login writes to
+~/Library/Logs/t150d.log and the menu reads that.
 
 It looks for a new version every time it starts, and says nothing unless there
 is one. "Check for updates..." in that menu asks on demand. Either way it

@@ -61,6 +61,8 @@
 @property (assign) BOOL daemonWanted;
 /* One restart, so a daemon that cannot stay up does not become a loop. */
 @property (assign) BOOL daemonRestarted;
+/* How far into the login agent's log file we have read. See readAgentLog. */
+@property (assign) unsigned long long agentLogAt;
 @end
 
 @implementation T150Menu
@@ -433,6 +435,14 @@
 	[self leaveBootMode];
 	self.wheelSeen = [self wheelPresent];
 	self.wheelReady = [self wheelUsable];
+
+	/*
+	 * A daemon of our own arrives through its pipe. One started at login
+	 * has to be read from the file its agent writes, and here is the only
+	 * clock this application has.
+	 */
+	if ([self daemonElsewhere])
+		[self readAgentLog];
 
 	if (self.wheelSeen != was || self.wheelReady != wasReady)
 		[self refresh];
@@ -818,21 +828,102 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 }
 
 /*
- * The login item has to carry the same settings the menu does. The same list
- * as our own child's, less the -v that only exists so this application can
- * read the daemon's own words, and with the daemon named first because
- * launchd wants the program in the arguments.
+ * The login item has to carry the same settings the menu does, with the daemon
+ * named first because launchd wants the program in the arguments.
+ *
+ * Including -v, which this used to strip on the reasoning that it only existed
+ * so the application could read the daemon's own words, and a login daemon is
+ * not our child to read. That was backwards. The agent's own plist sends the
+ * daemon's output to a file, so the words are still written down; stripping -v
+ * only meant there was nothing in the file to write. Start at login is the
+ * mode the README tells people to use, and it was the one mode with no log to
+ * send and no way for the menu to know whether a game had the wheel.
  */
 - (NSArray *)loginArguments
 {
 	NSMutableArray *a = [@[ [self daemonPath] ] mutableCopy];
 
-	for (NSString *arg in [self daemonArguments]) {
-		if (![arg isEqualToString:@"-v"])
-			[a addObject:arg];
-	}
+	[a addObjectsFromArray:[self daemonArguments]];
 
 	return a;
+}
+
+/* Where the login agent's plist sends the daemon's output. */
+- (NSString *)agentLogPath
+{
+	return [NSHomeDirectory() stringByAppendingPathComponent:
+	    @"Library/Logs/t150d.log"];
+}
+
+/*
+ * Read what a daemon that is not our child has said since we last looked.
+ *
+ * The child case reads a pipe, which is where clientConnected and the log the
+ * menu can copy both come from. A login daemon has neither, so the same two
+ * things came out empty: the menu bar glyph stopped at "the daemon is up"
+ * whatever a game did, and Copy the log copied nothing. It is the same words
+ * in both cases, only fetched differently, so the lines go through appendLog
+ * exactly as the child's do.
+ *
+ * By offset rather than by re-reading, so a long session is not re-parsed
+ * every two seconds, and an offset past the end means the file was replaced or
+ * truncated and the whole of it is new again.
+ */
+- (void)readAgentLog
+{
+	NSString *path = [self agentLogPath];
+	char buf[16 * 1024];
+	NSString *s;
+	off_t end;
+	ssize_t n;
+	int fd;
+
+	/*
+	 * Read with open and lseek rather than NSFileHandle, which is what the
+	 * lock check above already does and for a plainer reason here: the
+	 * seeking and reading methods of NSFileHandle carry deprecation
+	 * annotations, and this application is built with warnings as errors.
+	 */
+	if ((fd = open(path.fileSystemRepresentation, O_RDONLY)) == -1)
+		return;
+
+	if ((end = lseek(fd, 0, SEEK_END)) == -1) {
+		(void)close(fd);
+		return;
+	}
+
+	/* Shorter than we last saw means it was replaced or truncated. */
+	if (end < (off_t)self.agentLogAt)
+		self.agentLogAt = 0;
+
+	/*
+	 * A first look at a file launchd has been appending to for days starts
+	 * near its end. What this wants is the current state, and reading a
+	 * long history to arrive at it would only find the same answer slowly.
+	 */
+	if (self.agentLogAt == 0 && end > (off_t)sizeof(buf))
+		self.agentLogAt = (unsigned long long)end - sizeof(buf);
+
+	if (lseek(fd, (off_t)self.agentLogAt, SEEK_SET) == -1) {
+		(void)close(fd);
+		return;
+	}
+	n = read(fd, buf, sizeof(buf));
+	(void)close(fd);
+	if (n <= 0)
+		return;
+
+	/*
+	 * Bounded per look rather than per file: anything past this is read on
+	 * the next one, two seconds later, which is soon enough for a status
+	 * line and keeps a file of any size out of memory.
+	 */
+	self.agentLogAt += (unsigned long long)n;
+
+	s = [[NSString alloc] initWithBytes:buf length:(NSUInteger)n
+	    encoding:NSUTF8StringEncoding];
+	if (s.length > 0)
+		[self appendLog:s];
 }
 
 - (BOOL)loginEnabled
