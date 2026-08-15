@@ -56,6 +56,11 @@ release with no published checksum is refused rather than installed unchecked.
 You do not have to drag anything or answer any macOS dialog for an update,
 only for the very first install.
 
+An update replaces the application and not the bottle. The proxy lives inside
+CrossOver, and only the install puts it there, so after an update the menu
+checks your bottles and offers "Update the proxy in ..." for any that still
+hold an older one. It is the same install, opened on the bottle that needs it.
+
 If you make another CrossOver bottle later, "Install into a bottle..." in that
 menu adds the proxy to it. That is the only thing the app ever installs: it
 carries its own copy of the daemon and runs that, so nothing has to be put on

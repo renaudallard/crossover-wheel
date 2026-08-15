@@ -63,6 +63,11 @@
 @property (assign) BOOL daemonRestarted;
 /* How far into the login agent's log file we have read. See readAgentLog. */
 @property (assign) unsigned long long agentLogAt;
+/* Bottles whose proxy is not the one in this bundle. See checkBottleProxies. */
+@property (strong) NSArray<NSString *> *staleBottles;
+@property (strong) NSMenuItem *proxyItem;
+/* Which bottle the setup window should open on, when the menu named one. */
+@property (strong) NSString *pendingBottle;
 @end
 
 @implementation T150Menu
@@ -156,6 +161,88 @@
 	return found;
 }
 
+/*
+ * Which bottles hold a proxy that is not the one in this bundle.
+ *
+ * The two halves of this stack ship together and only one of them is ever
+ * updated. "Check for updates" replaces the application, and update.sh moves a
+ * bundle and nothing else, so somebody who takes an in-app update runs the new
+ * daemon against whatever proxy was copied into their bottle the day they first
+ * pressed Install. The proxy changed in 0.2.1 and again in 0.2.2, and nothing
+ * anywhere said so.
+ *
+ * No record is needed to find them, because the bottle is the record.
+ * install.sh copies the file from Resources verbatim, so a bottle whose
+ * dinput8.dll carries the marker but does not match the bundle's byte for byte
+ * is one this application installed into and has since outgrown. A dinput8
+ * that is not ours is somebody else's business and is left alone, which is the
+ * same test install.sh makes with is_our_proxy.
+ */
+- (NSArray<NSString *> *)bottlesWithOldProxy
+{
+	NSData *mine = [NSData dataWithContentsOfFile:
+	    [self resource:@"t150-dinput8.dll"]];
+	NSData *marker = [@"T150_ENDPOINT"
+	    dataUsingEncoding:NSASCIIStringEncoding];
+	NSMutableArray *old = [NSMutableArray array];
+	NSString *root = [self bottleRoot];
+
+	if (mine == nil || mine.length == 0)
+		return old;
+
+	for (NSString *name in [self findBottles]) {
+		NSString *dll = [[root stringByAppendingPathComponent:name]
+		    stringByAppendingPathComponent:
+		    @"drive_c/windows/system32/dinput8.dll"];
+		NSData *there = [NSData dataWithContentsOfFile:dll];
+
+		if (there == nil)
+			continue;
+		if ([there rangeOfData:marker options:0
+		    range:NSMakeRange(0, there.length)].location == NSNotFound)
+			continue;
+		if (![there isEqualToData:mine])
+			[old addObject:name];
+	}
+
+	return old;
+}
+
+/*
+ * Asked when the menu opens rather than on the timer, because it reads both
+ * files whole and the answer only has to be right at the moment somebody is
+ * looking at it.
+ */
+- (void)checkBottleProxies
+{
+	self.staleBottles = [self bottlesWithOldProxy];
+}
+
+/*
+ * Open on the bottle the menu named, when it named one. A hint and not a
+ * decision: the list is still there and still changeable, and pressing Install
+ * does what it has always done.
+ */
+- (void)selectPendingBottle
+{
+	if (self.pendingBottle == nil)
+		return;
+	if ([self.bottles indexOfItemWithTitle:self.pendingBottle] >= 0)
+		[self.bottles selectItemWithTitle:self.pendingBottle];
+	self.pendingBottle = nil;
+}
+
+/*
+ * Offer the install the person already knows, on the bottle that needs it,
+ * rather than a second path into the same script. Which bottle is a hint to
+ * the setup window; everything the install itself decides stays in install.sh.
+ */
+- (void)updateProxy:(id)sender
+{
+	self.pendingBottle = self.staleBottles.firstObject;
+	[self openSetup:sender];
+}
+
 #pragma mark - the menu
 
 - (void)applicationDidFinishLaunching:(NSNotification *)n
@@ -213,6 +300,12 @@
 	[m addItem:ac];
 
 	[m addItem:[NSMenuItem separatorItem]];
+
+	self.proxyItem = [[NSMenuItem alloc] initWithTitle:@""
+	    action:@selector(updateProxy:) keyEquivalent:@""];
+	self.proxyItem.target = self;
+	self.proxyItem.hidden = YES;
+	[m addItem:self.proxyItem];
 
 	NSMenuItem *s = [[NSMenuItem alloc] initWithTitle:
 	    @"Install into a bottle…"
@@ -370,6 +463,18 @@
 	self.runItem.enabled = !elsewhere;
 	self.runItem.title = elsewhere ? @"The daemon is already running"
 	    : (running ? @"Stop the daemon" : @"Start the daemon");
+
+	/*
+	 * Only when there is one, because a row that is always there is a row
+	 * nobody reads. The bottles are named: somebody with several needs to
+	 * know which of them a game will still find the old proxy in.
+	 */
+	self.proxyItem.hidden = self.staleBottles.count == 0;
+	if (self.staleBottles.count > 0)
+		self.proxyItem.title = [NSString stringWithFormat:
+		    @"Update the proxy in %@…",
+		    [self.staleBottles componentsJoinedByString:@", "]];
+
 	self.loginItem.state = [self loginEnabled] ? NSControlStateValueOn
 	    : NSControlStateValueOff;
 }
@@ -385,6 +490,7 @@
 	(void)menu;
 	self.wheelSeen = [self wheelPresent];
 	self.wheelReady = [self wheelUsable];
+	[self checkBottleProxies];
 	[self refresh];
 }
 
@@ -1078,6 +1184,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		/* A bottle may have been made since this was last opened. */
 		[self.bottles removeAllItems];
 		[self.bottles addItemsWithTitles:[self findBottles]];
+		[self selectPendingBottle];
 		[NSApp activateIgnoringOtherApps:YES];
 		[self.setup makeKeyAndOrderFront:nil];
 		return;
@@ -1126,6 +1233,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	self.bottles = [[NSPopUpButton alloc]
 	    initWithFrame:NSMakeRect(24, 372, 340, 26) pullsDown:NO];
 	[self.bottles addItemsWithTitles:[self findBottles]];
+	[self selectPendingBottle];
 	[v addSubview:self.bottles];
 
 	self.install = [NSButton buttonWithTitle:@"Install"

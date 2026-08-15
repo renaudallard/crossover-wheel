@@ -127,6 +127,12 @@ Open and dragging the first install did. The old copy is moved aside and only
 removed once the new one is in place, so a failure leaves the version you had
 rather than nothing at all.
 
+**An update replaces the application and not the bottle.** The proxy lives
+inside CrossOver and only the install puts it there, so the menu checks: when a
+bottle holds a proxy that is not the one in the application, it offers *Update
+the proxy in* that bottle, by name. That is the install you already know,
+opened on the bottle that needs it.
+
 **Two settings the wheel keeps for itself** are in that menu too, because no
 game can ask for either: DirectInput has no property for a wheel's rotation or
 its centring spring, so on Windows they live in the vendor's control panel.
