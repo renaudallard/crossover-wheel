@@ -1162,7 +1162,7 @@ ffb_sequence(void)
 }
 
 /*
- * Two flags, parsed where they are used. This is the one tool here that
+ * Three flags, parsed where they are used. This is the one tool here that
  * does not use getopt, so tests/usage_check.c does not cover it; it does not
  * need to, because there is no separate option string that can drift out of
  * step with the usage text the way probe_intr's -H once did.
@@ -1176,7 +1176,8 @@ usage(void)
 	    "  -o FILE    write the run to FILE as well as to the screen\n"
 	    "             (default " LOG_DUMP ", one name per mode so\n"
 	    "             runs do not overwrite each other: -controls.log,\n"
-	    "             -ffb.log, and -controls-ffb.log for both)\n"
+	    "             -ffb.log, -controls-ffb.log for both, and\n"
+	    "             -sequence.log for -F)\n"
 	    "  no flags   dump the device and every object it declares\n"
 	    "  -i         then work every control by name, one at a time,\n"
 	    "             confirming each, and print a table at the end\n"
