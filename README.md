@@ -551,8 +551,10 @@ leaving it running in the menu bar is enough; the daemon does it too on its
 own scan. From a terminal it is `t150boot`, before the game rather than after.
 
 **`t150boot`** takes the wheel out of boot mode, which is where it starts and
-where sleep, wake and every replug put it back. Nothing else works until it
-has run:
+where sleep, wake and every replug put it back. Nothing else works until that
+switch has happened, which is not the same as needing this: the daemon sends
+it on every acquire and on its own rescan, and the application on its timer
+and on wake, so this is the terminal route rather than a required step:
 
 ```sh
 ./build/bin/t150boot
@@ -577,6 +579,11 @@ Autocenter is a progressive spring rather than a constant pull, so a low
 setting stiffens the wheel without recentring it. Only `autocenter 0` releases
 it; see [`t150ctl(1)`](man/t150ctl.1) for why the protocol's separate enable
 flag releases nothing.
+
+What `t150ctl` sets by hand lasts until the daemon next takes the wheel, which
+scrubs it. The value that survives a game letting go and a replug is the
+daemon's own: `-a` for the spring and `-r` for the range, which it restates on
+every acquire, and which the menu's two rows are.
 
 ## Running the daemon
 
