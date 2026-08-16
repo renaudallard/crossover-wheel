@@ -38,6 +38,15 @@ typedef NSUInteger NSStringEncoding;
 #define NSUTF8StringEncoding ((NSStringEncoding)4)
 #define NSASCIIStringEncoding ((NSStringEncoding)1)
 
+/*
+ * What makes clang check a format string against its arguments. Real
+ * Foundation puts NS_FORMAT_FUNCTION on every one of these; without it the
+ * whole -Wformat group is silently off for every +stringWithFormat: in the
+ * tree, and a mistake that is -Werror on a Mac passes here. That is the exact
+ * failure this stub exists to prevent, so the attribute is not optional.
+ */
+#define T150_NS_FORMAT(f, a) __attribute__((format(__NSString__, f, a)))
+
 typedef NSUInteger NSDataSearchOptions;
 typedef NSUInteger NSJSONReadingOptions;
 
@@ -67,12 +76,12 @@ typedef NSInteger NSComparisonResult;
 @property (readonly) NSUInteger length;
 @property (readonly) const char *fileSystemRepresentation;
 @property (readonly) NSInteger integerValue;
-+ (instancetype)stringWithFormat:(NSString *)fmt, ...;
++ (instancetype)stringWithFormat:(NSString *)fmt, ... T150_NS_FORMAT(1, 2);
 + (instancetype)stringWithUTF8String:(const char *)s;
 - (instancetype)initWithData:(NSData *)d encoding:(NSStringEncoding)e;
 - (instancetype)initWithBytes:(const void *)b length:(NSUInteger)n
     encoding:(NSStringEncoding)e;
-- (instancetype)initWithFormat:(NSString *)fmt, ...;
+- (instancetype)initWithFormat:(NSString *)fmt, ... T150_NS_FORMAT(1, 2);
 - (BOOL)isEqualToString:(NSString *)s;
 - (BOOL)hasPrefix:(NSString *)s;
 - (BOOL)hasSuffix:(NSString *)s;
@@ -94,7 +103,7 @@ typedef NSInteger NSComparisonResult;
 - (void)appendString:(NSString *)s;
 - (void)setString:(NSString *)s;
 - (void)deleteCharactersInRange:(NSRange)r;
-- (void)appendFormat:(NSString *)fmt, ...;
+- (void)appendFormat:(NSString *)fmt, ... T150_NS_FORMAT(1, 2);
 @end
 
 typedef struct {
@@ -275,7 +284,6 @@ typedef struct {
 + (NSColor *)labelColor;
 + (NSColor *)clearColor;
 + (NSColor *)textBackgroundColor;
-@property (readonly) id CGColor;
 @end
 
 @interface NSFont : NSObject
@@ -303,7 +311,6 @@ extern NSString * const NSForegroundColorAttributeName;
 @interface CALayer : NSObject
 @property CGFloat cornerRadius;
 @property BOOL masksToBounds;
-@property (strong) NSColor *backgroundColor;
 @end
 
 @interface NSView : NSObject
