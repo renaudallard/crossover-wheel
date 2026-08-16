@@ -84,10 +84,15 @@ By hand:
                       before you start the daemon.
   t150d -v -w         start this before the game, and leave it running.
 
-The proxy looks for the daemon once, when the game creates its wheel, and
-never again, so the order matters. -w writes to the wheel from a separate
-thread, which is what stops a game reporting 100% CPU; it is not the default
-only because it is newer than the rest.
+The proxy looks for the daemon when the game creates its wheel, and again on
+any later call if it has lost it, at most once a second. So a daemon started
+late, or restarted under a running game, is picked up within a frame or two
+and the game gets its force feedback back by itself. Starting it first is
+still the simplest thing to do.
+
+-w writes to the wheel from a separate thread, which is what stops a game
+reporting 100% CPU. The menu bar application always passes it; it is not the
+daemon's own default only because it is newer than the rest.
 
 SET YOUR GAME TO 1080 DEGREES
 
