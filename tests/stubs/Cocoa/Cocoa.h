@@ -147,6 +147,7 @@ typedef struct {
 @end
 
 @interface NSDictionary : NSObject
++ (instancetype)dictionaryWithContentsOfFile:(NSString *)p;
 + (instancetype)dictionaryWithObjects:(const id *)o forKeys:(const id *)k
     count:(NSUInteger)n;
 - (id)objectForKeyedSubscript:(id)k;

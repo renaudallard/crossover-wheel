@@ -387,6 +387,12 @@
 	 * something newer than this.
 	 */
 	[self lookForUpdate:NO];
+
+	/*
+	 * An argument list that changed between releases reaches nobody who
+	 * already has the feature on until the plist itself is rewritten.
+	 */
+	[self migrateLoginAgent];
 }
 
 /*
@@ -1030,6 +1036,42 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	    encoding:NSUTF8StringEncoding];
 	if (s.length > 0)
 		[self appendLog:s];
+}
+
+/*
+ * Bring a login item written by an older version up to date.
+ *
+ * writeLoginAgent runs in two places only: turning the feature on, and
+ * changing the rotation or the spring while it is on. So an argument list that
+ * changes between releases reaches nobody who already had the feature
+ * switched on, and the plist on their disk goes on starting the daemon the old
+ * way for ever. That is not hypothetical: this release restored -v to that
+ * list, which is what puts anything at all in the log the menu reads, and
+ * without this every existing user would have kept an empty one while the
+ * README told them it worked.
+ *
+ * The file is rewritten and the running job is left alone. Reloading it would
+ * mean booting the agent out and back in, which stops and starts the daemon,
+ * and doing that behind a running game takes the wheel off it. The next login
+ * is soon enough for a log, and toggling the item does it now for anyone who
+ * wants it now.
+ */
+- (void)migrateLoginAgent
+{
+	NSDictionary *have;
+
+	if (![self loginEnabled])
+		return;
+
+	have = [NSDictionary dictionaryWithContentsOfFile:[self agentPath]];
+	if ([[have objectForKey:@"ProgramArguments"]
+	    isEqualToArray:[self loginArguments]])
+		return;
+
+	if ([self writeLoginAgent])
+		[self say:@"the login item was written by an older version, "
+		    "and has been brought up to date. It takes effect at the "
+		    "next login, or now if you switch it off and on\n"];
 }
 
 - (BOOL)loginEnabled
