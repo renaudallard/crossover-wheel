@@ -3,9 +3,10 @@
        alt="crossover-wheel. Force feedback for the Thrustmaster T150 in games
             running under CrossOver on macOS: no kext, no DriverKit extension,
             no SIP change, no root. A game in the bottle reaches the
-            t150-dinput8.dll proxy over DirectInput 8, which forwards
-            everything but force feedback to the t150d daemon on 127.0.0.1,
-            which writes to the wheel with SetReport."/>
+            t150-dinput8.dll proxy over DirectInput 8. The proxy passes
+            everything but force feedback through to CrossOver's own dinput8,
+            and sends the force feedback to the t150d daemon on 127.0.0.1,
+            which writes it to the wheel with SetReport."/>
 </p>
 
 <p align="center">
@@ -52,15 +53,18 @@ setup as the benchmark.
 | --- | --- |
 | Force feedback in a game | **works** |
 | Unplug and replug mid race | **works** |
-| Restarting the daemon under a running game | **works** |
+| Restarting the daemon under a running game | the proxy reconnects and says the effects again, never felt on hardware |
 | Pedals, steering range, boot mode, sleep and wake | **works** |
 | A small knock when the wheel is left standing at four positions | the wheel's own damper loop, [A46](docs/RESEARCH.md) |
 | The application and its installer | **compiled, never clicked** |
 
 That last line is meant literally. Nothing on a build machine can press a menu
-bar item, so the application is the one part of this that reaches a user
-untested. Everything it does to a bottle happens through `install.sh`, which
-is checked against a synthetic CrossOver tree on every build.
+bar item, so the menu is the one part of this that reaches a user unused. What
+it does rather than shows is checked: everything it does to a bottle happens
+through `install.sh`, and the self updater through `dist/update.sh`, and both
+are driven against synthetic trees on every build. `make check-mac` compiles
+the application's own source against stub frameworks so that at least it
+cannot reach a release with a warning in it.
 
 **Picking this up?** [`docs/RESEARCH.md`](docs/RESEARCH.md) is the evidence
 behind every claim here, including the routes that were investigated and are
