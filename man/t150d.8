@@ -10,7 +10,7 @@
 .Op Fl a Ar force
 .Op Fl e Ar endpoint
 .Op Fl g Ar ms
-.Op Fl p
+.Op Fl E
 .Op Fl r Ar degrees
 .Op Fl t
 .Op Fl w
@@ -137,15 +137,19 @@ different path runs alongside. The default is
 which the proxy reads through Wine's
 .Pa Z:
 mapping.
-.It Fl p
-Keep the emitter to its four millisecond floor even when the writer has
-no backlog, as builds before this one did. The default lets a pass run
-early against an empty queue, which is worth up to a whole period on a force
-the wheel could take straight away. This exists for the same reason
-.Fl t
-does: it changes the hot path of something that works, and the only way to
-know whether it is an improvement is to feel both on a wheel. See
-.Sx THE EMITTER .
+.It Fl E
+Let an emission pass run ahead of its four millisecond floor when the writer
+has no backlog. Off.
+.Pp
+It was the default in 0.2.2, 0.2.3 and 0.2.4, and went back to off because it
+is the only change to how this daemon drives the wheel in about thirty
+releases and force feedback began stopping mid session in the release that
+introduced it, with the wheel found back at its boot identity. Nothing proves
+the two are connected and the measurement to settle it has not been made, but
+nobody has ever felt this help either, so the suspicion is not worth carrying
+by default. See
+.Sx THE EMITTER
+and RESEARCH.md A51.
 .It Fl r Ar degrees
 Lock to lock, 270 to 1080, applied whenever a client takes the wheel and
 again after the wheel has been re-acquired. Unset leaves the wheel's own
@@ -221,9 +225,11 @@ the session holding it, keeps the slot owed and sends it again. Without that
 a refused packet was logged and dropped, and an effect could go missing, or a
 stop fail to arrive, with every layer reporting success.
 .Pp
-A writer with no backlog also lets the emitter run ahead of its
-floor, which is worth up to four milliseconds on a force the wheel could take
-straight away. See
+A writer with no backlog can also let the emitter run ahead of its floor,
+which is worth up to four milliseconds on a force the wheel could take
+straight away. That is
+.Fl E
+and it is off. See
 .Sx THE EMITTER .
 .Pp
 That queue coalesces, and it has to. The emitter flushes up to four dirty
@@ -343,9 +349,11 @@ the exact bytes it last put on the wire and a pass compares against them.
 .Pp
 Under
 .Fl w
+and
+.Fl E
 that floor is skipped while the writer has no backlog. A transfer already in
 flight is not one: the pass this allows is the one that should be building the
-next packet while the wheel takes that one. It was put there
+next packet while the wheel takes that one. The floor was put there
 when every write was a synchronous transfer on the thread the game was
 waiting for, and pacing the daemon was the only thing keeping a frame out of
 a burst of them; a writer thread paces itself, so the floor buys nothing
@@ -355,9 +363,9 @@ is the case it was really for, and a pass that failed is never brought
 forward, because the deadline is what stops a wheel that has gone turning the
 retry into a spin. Without
 .Fl w
-nothing can answer the question and the floor always applies, and
-.Fl p
-keeps it whatever the writer says.
+nothing can answer the question and the floor always applies. Without
+.Fl E
+it applies anyway: see that option for why it is off.
 .Pp
 Only the packet that moved is sent. A level, a coefficient or a phase is one
 packet; a change to the envelope, the duration or the effect's type is the

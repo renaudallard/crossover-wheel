@@ -692,13 +692,20 @@ that arrives and is unwelcome.
 The daemon keeps what each slot should hold and writes it out from a pass
 that runs at most once every 4 ms, so a game updating a force faster than
 that has the superseded values dropped rather than queued, and a game
-re-sending an effect it has not changed writes nothing at all. Under `-w`
-that 4 ms floor is skipped while the writer's queue is empty: the floor was
-there to keep a game's frame out of a burst of synchronous USB transfers, and
-a writer thread paces itself, so against an empty queue it only delayed a
-force the wheel could have taken now. It comes back the moment the writer
-falls behind, and `-p` keeps it whatever the writer says, for anyone who
-wants to feel the two against each other.
+re-sending an effect it has not changed writes nothing at all.
+
+**`-E` lets that floor be skipped while the writer's queue is empty, and it is
+off.** The floor is there to keep a game's frame out of a burst of synchronous
+USB transfers, and a writer thread paces itself, so against an empty queue the
+floor only delays a force the wheel could have taken now. That was the default
+in 0.2.2, 0.2.3 and 0.2.4 and is not now: it is the only change to how this
+daemon drives the wheel in about thirty releases, and force feedback began
+stopping mid session in the release that introduced it, with the wheel found
+back at its boot identity, which is what a device does when it resets itself.
+Nothing proves the two are connected and the measurement to settle it has not
+been made. But nobody has ever felt the early pass help either, so it is not
+worth carrying that suspicion by default. See
+[A51](docs/RESEARCH.md).
 
 Only effect parameters are treated this way. Starts, stops, resets, the
 settings and every path that makes the wheel safe are written the moment they

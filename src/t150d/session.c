@@ -1215,14 +1215,17 @@ session_replay_starts(struct t150_session *s)
  * wheel that has gone turning the retry into a spin, and emit_failed is how
  * session_emit says that happened.
  *
- * -p keeps to the floor whatever the backend says, and exists for the same
- * reason -t does: this changes the hot path of something that works, and the
- * only way to know whether it is an improvement is to feel both on a wheel.
+ * Off unless -E asks for it. It was the default in 0.2.2, 0.2.3 and 0.2.4 and
+ * is not now: it is the only change to how this daemon drives the wheel in
+ * about thirty releases, and force feedback began stopping mid session in the
+ * release that introduced it, with the wheel found back at its boot identity.
+ * Nothing proves the two are connected, and nobody has ever felt this help
+ * either, so the suspicion is not worth carrying by default. RESEARCH.md A51.
  */
 static int
 emit_now(const struct t150_session *s)
 {
-	return !s->strict_pace && !s->emit_failed && s->be->idle != NULL &&
+	return s->early_pass && !s->emit_failed && s->be->idle != NULL &&
 	    s->be->idle(s->be->priv);
 }
 

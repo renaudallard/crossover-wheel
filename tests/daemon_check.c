@@ -971,6 +971,7 @@ test_an_idle_writer_emits_ahead_of_the_floor(void)
 	reset_session();
 	be.idle = fake_idle;
 	idle_answer = 1;
+	sess.early_pass = 1;
 	hello(0);
 
 	constant(&ef, 0, 10000);
@@ -1065,16 +1066,16 @@ test_only_an_upload_puts_a_ramp_back_to_its_start(void)
 	}
 }
 
-/* -p keeps the floor whatever the writer says, so the two can be compared. */
+/* The floor is what applies unless -E asks for the early pass. */
 static void
-test_strict_pace_keeps_the_floor(void)
+test_the_floor_holds_unless_asked_otherwise(void)
 {
 	struct t150_effect ef;
 
 	reset_session();
 	be.idle = fake_idle;
 	idle_answer = 1;
-	sess.strict_pace = 1;
+	sess.early_pass = 0;
 	hello(0);
 
 	constant(&ef, 0, 10000);
@@ -1085,9 +1086,8 @@ test_strict_pace_keeps_the_floor(void)
 	ef.u.constant.magnitude = 5000;
 	upload_at(&ef, 1);
 	(void)tick(1);
-	expect_log("-p waits for the floor even with an idle writer", "");
+	expect_log("the floor holds unless -E asks otherwise", "");
 
-	sess.strict_pace = 0;
 	be.idle = NULL;
 }
 
@@ -1104,6 +1104,7 @@ test_a_failed_pass_is_not_brought_forward(void)
 	reset_session();
 	be.idle = fake_idle;
 	idle_answer = 1;
+	sess.early_pass = 1;
 	hello(0);
 
 	constant(&ef, 0, 10000);
@@ -2525,7 +2526,7 @@ main(void)
 	test_only_the_packet_that_moved_is_sent();
 	test_an_idle_writer_emits_ahead_of_the_floor();
 	test_a_failed_pass_is_not_brought_forward();
-	test_strict_pace_keeps_the_floor();
+	test_the_floor_holds_unless_asked_otherwise();
 	test_only_an_upload_puts_a_ramp_back_to_its_start();
 
 	(void)fclose(logfp);

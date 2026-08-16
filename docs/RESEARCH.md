@@ -1836,10 +1836,23 @@ and a replug are the three causes on record and any of them would explain it.
 What has to be ruled out before anything is built on this is whether the
 daemon provokes it: 0.2.2 let the emitter run at a game's own rate rather than
 at its four millisecond floor, the rate this wheel sustains has never been
-measured, and every hardware session before that one was paced slower. `-p`
-restores the old pacing and is the comparison to run. **Until that is done,
-nothing here should be treated as a hardware quirk rather than as something
-this software may be doing.**
+measured, and every hardware session before that one was paced slower. **Until
+that is settled, nothing here should be treated as a hardware quirk rather than
+as something this software may be doing.**
+
+**The fallback was reported again on 0.2.5, so 0.2.6 puts the floor back as the
+default and the early pass behind `-E`.** That is not a fix and it is not a
+diagnosis, and it should not be written up as either: the comparison that would
+settle it is one person running the same game on both settings for long enough
+to be sure, and it has not been run. It is a choice about which way round to
+carry an unresolved suspicion. The early pass costs at most four milliseconds
+on a force the wheel could take at once, nobody has ever reported feeling it,
+and it is the only change to how this daemon drives the wheel in about thirty
+releases; the fault it is suspected of takes the wheel out of a session
+entirely. A change nobody can feel is not worth defending against a fault
+everybody can, so it went back to off. If the fallback happens on 0.2.6 as
+well, that rules the emitter out and the question is open again with the
+default already where it should be.
 
 ---
 

@@ -123,10 +123,19 @@ int	t150_backend_hid(struct t150_backend *be, long vid, long pid,
  * says it can be raised, and expect the argument for raising it to be a
  * driver who can feel the difference rather than a number that looks better.
  *
- * A backend with a writer thread paces itself, and a pass runs ahead of this
+ * A backend with a writer thread paces itself, so a pass can run ahead of this
  * whenever that thread has no backlog: see the idle callback above and
- * emit_now in session.c. The floor is then what applies once the writer falls
- * behind, which is the case it was really for.
+ * emit_now in session.c. That is off unless -E asks for it, and it was the
+ * default for exactly three releases.
+ *
+ * It went back to being off because it is the only change to how this daemon
+ * drives the wheel in about thirty releases, and force feedback started
+ * stopping mid session in the release that introduced it, with the wheel found
+ * back at its boot identity. That is what a device does when it resets itself.
+ * Nothing proves the two are connected and the measurement to settle it has
+ * not been made, but the early pass has never been shown to help anybody
+ * either, so it is not worth carrying that suspicion by default. RESEARCH.md
+ * A51.
  */
 #define T150_EMIT_MS		4u
 
@@ -220,7 +229,7 @@ struct t150_session {
 	uint32_t		 client_autocenter;
 	int			 client_set_autocenter;
 	int			 always_triple;	/* -t: re-send the set on any change */
-	int			 strict_pace;	/* -p: never emit ahead of the floor */
+	int			 early_pass;	/* -E: may emit ahead of the floor */
 	uint8_t			 next_slot;	/* where the next pass resumes */
 	uint8_t			 io_err;	/* a write failed, owed to the next upload */
 	uint8_t			 replay_starts;	/* the wheel came back, re-start what was playing */
