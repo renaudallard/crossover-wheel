@@ -1808,6 +1808,39 @@ pushed during calibration, so any fixed correction is wrong for the next
 person. This is the same trap as A41's pedals, where a correction aimed at
 something the game had already resolved made it worse.
 
+**A51. The wheel returned to the boot identity during a session, which
+nothing had recorded it doing.** Reported on hardware 2026-08-16: force
+feedback stopped after some time, the application had to be started more than
+once before it worked again, and the wheel's name had changed to "Thrustmaster
+FFB Wheel".
+
+That name is the observation. It is the product string of `044f:b65d`, the
+boot identity every T-series wheel shares (see the enumeration table at the
+top of this section), so the wheel was no longer at `0xb677` when force
+feedback stopped. Everything else in the report follows from that without
+needing another cause: the device the daemon holds had gone, so its writes had
+nowhere to land; the daemon re-sends the switch on its own scan and the
+application on its timer, but the wheel takes seconds to come back (A50), so a
+restart that lands inside those seconds looks like a failure and the next one
+works.
+
+**The game does not recover with it.** A game binds to the device it
+enumerated, and a wheel that leaves the bus and returns is a new one, so
+force feedback cannot come back to a game that was already running however
+well the daemon recovers. Restarting the application is not enough; the game
+has to go too. That is the same fault the README warns about for a wheel
+plugged in after a game starts, arriving in the middle of a session instead.
+
+**Why it fell back is not known, and that is the open question.** Sleep, wake
+and a replug are the three causes on record and any of them would explain it.
+What has to be ruled out before anything is built on this is whether the
+daemon provokes it: 0.2.2 let the emitter run at a game's own rate rather than
+at its four millisecond floor, the rate this wheel sustains has never been
+measured, and every hardware session before that one was paced slower. `-p`
+restores the old pacing and is the comparison to run. **Until that is done,
+nothing here should be treated as a hardware quirk rather than as something
+this software may be doing.**
+
 ---
 
 ## B. How CrossOver handles HID and force feedback
