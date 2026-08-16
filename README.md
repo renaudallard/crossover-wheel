@@ -98,6 +98,14 @@ daemon to launchd and starts it now, turning it off stops the one that is
 running. Only one daemon runs at a time, so if one was started some other way
 the menu says so and leaves it alone rather than starting a second beside it.
 
+**A daemon that dies rather than being stopped leaves the wheel holding its
+last force**, because putting the wheel back into a safe state is something it
+does on its way out and a death is exactly the exit that does not. The menu
+starts another one and says so in the log, since taking the wheel scrubs every
+effect slot and that is the whole recovery. Once only: if the second one dies
+too it says that and leaves it stopped, because a daemon that cannot stay up
+is a fault to read rather than a loop to run.
+
 | icon | meaning |
 | --- | --- |
 | thin hub | the daemon is stopped, no wheel is plugged in, or the wheel is still starting up |
@@ -112,11 +120,13 @@ against something it can no longer find. The menu says *wheel starting up, not
 ready for a game* until the switch has happened, which takes a few seconds and
 which the app and the daemon both do by themselves.
 
-**Copy the log** puts everything the daemon has printed on the clipboard,
-whether or not a window is open to show it. That log is how nearly every fault
-in this project was found, so if something looks wrong it is the thing worth
-sending. It works in either mode: a daemon the app started is read from its
-pipe, and one started at login is read from `~/Library/Logs/t150d.log`, which
+**Copy the log** puts what the daemon has printed on the clipboard, whether or
+not a window is open to show it. A long tail of it rather than the whole
+history, which is what the session you are describing needs. That log is how
+nearly every fault in this project was found, so if something looks wrong it
+is the thing worth sending. It works in either mode: a daemon the app started
+is read from its pipe, and one started at login is read from
+`~/Library/Logs/t150d.log`, which
 is where the login item sends it. Nothing else would ever shorten that file,
 so the application empties it once it passes a few megabytes: what a log is
 for here is the session you are about to describe.
@@ -140,8 +150,9 @@ the proxy in* that bottle, by name. That is the install you already know,
 opened on the bottle that needs it.
 
 **Two settings the wheel keeps for itself** are in that menu too, because no
-game can ask for either: DirectInput has no property for a wheel's rotation or
-its centring spring, so on Windows they live in the vendor's control panel.
+game can ask for either as you want it. DirectInput has no property for a
+wheel's rotation at all, and its centring spring property is only on or off,
+with no strength. On Windows both live in the vendor's control panel.
 
 - **Rotation** sets lock to lock: 270, 360, 540, 720, 900 or 1080 degrees. Set
   it to whatever your game's own steering setting says. **1080 is the wheel's
@@ -151,13 +162,20 @@ its centring spring, so on Windows they live in the vendor's control panel.
   you"; whatever is chosen is reapplied after a replug.
 - **Centring spring** is for games that send **no** force feedback at all,
   where the wheel would otherwise stay limp. Off by default, because a game
-  that does send forces has the spring fighting them.
+  that does send forces has the spring fighting them. A game that turns the
+  spring off holds it off for as long as it is connected, since that much
+  DirectInput does have; the setting here is what the wheel returns to once
+  the game lets go.
 
 Both are written straight to the wheel and remembered, because the wheel
 forgets them when it is unplugged and the daemon is the only thing that
-notices a replug. The spring is also what the wheel returns to whenever a game
-lets go, rather than being released outright: that used to undo the setting on
-the first game that exited, so it survived one game at most.
+notices a replug. Remembering means restarting the daemon with the new value,
+so while a game is connected the menu deliberately does not: the wheel has the
+setting at once, and says so, but the daemon restates the old one after a
+replug until it is restarted. The spring is also what the wheel returns to
+whenever a game lets go, rather than being released outright: that used to
+undo the setting on the first game that exited, so it survived one game at
+most.
 
 **Made a new bottle since?** *Install into a bottle…* in that menu puts the
 proxy into it, and that is the only thing the application ever installs. The
