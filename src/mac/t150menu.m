@@ -912,6 +912,15 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	if (![t launchAndReturnError:&err]) {
 		[self say:[NSString stringWithFormat:
 		    @"cannot start the daemon: %@\n", err.localizedDescription]];
+		/*
+		 * The menu is showing whatever was true before this was
+		 * called, which for a start that failed is a daemon and
+		 * possibly a game. Only the success path below refreshed, so
+		 * the glyph kept saying so; the termination handler makes
+		 * that reachable by calling this and returning rather than
+		 * refreshing itself.
+		 */
+		[self refresh];
 		return;
 	}
 
