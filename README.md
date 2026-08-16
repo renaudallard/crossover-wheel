@@ -461,8 +461,10 @@ than this project:
   `probe_hid` reports no matches.
 
 Commands below are written as `./build/bin/...` because that is where a source
-build puts them. After `install.sh` they are on your PATH, so `t150d` and
-`t150ctl` work as written without a path at all.
+build puts them. `install.sh` puts them in `$PREFIX/bin`, which is
+`~/.local/bin` unless you say otherwise, and tells you how to add that to your
+PATH if it is not already there, which on macOS it is not. Once it is, `t150d`
+and `t150ctl` work as written without a path at all.
 
 ## Building
 
@@ -472,14 +474,12 @@ On Linux, which builds and tests everything portable:
 make
 ```
 
-On macOS, which additionally builds the probe tools:
+On macOS the same `make` additionally builds the four probes and the two
+command line tools, because the default target names them there.
 
-```sh
-make
-make probes
-```
-
-`make strict` is the same with warnings as errors, and is what CI runs.
+`make strict` is the same with warnings as errors, and is what CI runs. On
+macOS it also builds `crossover-wheel.app`, deliberately: compiling that
+Objective-C is the whole of the automated confidence in the application.
 `make help` lists the targets.
 
 `make check-mac` syntax checks the two sources that need Cocoa and IOKit,
@@ -507,6 +507,17 @@ twenty one controls, and the job fails if a control does not land where the
 data format puts it. That check exists because the probe first shipped
 reading buttons at their enumeration offset, which is a different number and
 can be negative.
+
+The Wine job also builds and runs the daemon, so the proxy has something to
+answer, and the job fails if the proxy does not wrap the wheel. Two things
+follow from that. It drives a scripted sequence of real effects through the
+proxy and checks the daemon's own packet log against what the sequence asked
+for, which is the only place the bytes that reach a wheel are checked by
+anything. And it runs the proxy once with nothing telling it where the daemon
+is, so the search through `Z:\Users` that every real bottle depends on is
+exercised rather than assumed: that path has failed in the field, and its
+symptom is a game that runs perfectly while nobody anywhere has force
+feedback.
 
 ## Setting the wheel up
 
