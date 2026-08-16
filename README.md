@@ -1010,11 +1010,15 @@ downgraded rather than refused, because a game that gets a refusal from
 ## Prior art
 
 - [scarburato/t150_driver](https://github.com/scarburato/t150_driver) and
-  [hid-tminit](https://github.com/scarburato/hid-tminit), the Linux drivers
-  **every wire constant here is traced back to**. This project did not work
-  the T150's protocol out; it read it there, checked it against
-  Thrustmaster's own Windows driver, and found four things to correct
-  ([`docs/RESEARCH.md`](docs/RESEARCH.md) A40).
+  [hid-tminit](https://github.com/scarburato/hid-tminit), **where nearly every
+  wire constant here comes from**. This project did not work the T150's
+  protocol out; it read it there, checked it against Thrustmaster's own
+  Windows driver, and found four things to correct
+  ([`docs/RESEARCH.md`](docs/RESEARCH.md) A40). The exceptions are the
+  waveform type codes, which appear in neither driver: `0x4020` and `0x4021`
+  were inferred from being contiguous with the codes that are known, and one
+  of them was then confirmed to oscillate on hardware. Which is square and
+  which is triangle is still open.
 
 Work on other wheels, including the commercial product that ships this same
 architecture, is in [`docs/RESEARCH.md`](docs/RESEARCH.md) section F.
