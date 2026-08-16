@@ -46,7 +46,8 @@ rather never think about it.
 when no window is open. If anything looks wrong, click that and paste it into
 a mail: it is how nearly every fault in this project has been found. It works
 whichever way the daemon was started: one started at login writes to
-~/Library/Logs/t150d.log and the menu reads that.
+~/Library/Logs/t150d.log and the menu reads that. That file is emptied once it
+passes a few megabytes, since nothing else would ever shorten it.
 
 It looks for a new version every time it starts, and says nothing unless there
 is one. "Check for updates..." in that menu asks on demand. Either way it

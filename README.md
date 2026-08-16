@@ -113,7 +113,9 @@ whether or not a window is open to show it. That log is how nearly every fault
 in this project was found, so if something looks wrong it is the thing worth
 sending. It works in either mode: a daemon the app started is read from its
 pipe, and one started at login is read from `~/Library/Logs/t150d.log`, which
-is where the login item sends it.
+is where the login item sends it. Nothing else would ever shorten that file,
+so the application empties it once it passes a few megabytes: what a log is
+for here is the session you are about to describe.
 
 **Updates install themselves.** The application looks for a new release every
 time it starts, and says nothing unless there is one; *Check for updates* in

@@ -35,6 +35,14 @@
 
 #define AGENT_LABEL	@"it.allard.t150d"
 
+/*
+ * How large the login agent's log may get before this empties it. Four
+ * megabytes is many hours of driving at the one line a second the effect
+ * parameters cost, and small enough that nothing anybody sends by mail is
+ * unwieldy. See readAgentLog.
+ */
+#define AGENT_LOG_MAX	(4 * 1024 * 1024)
+
 @interface T150Menu : NSObject <NSApplicationDelegate, NSWindowDelegate,
     NSMenuDelegate>
 @property (strong) NSStatusItem *item;
@@ -1031,6 +1039,24 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	 * line and keeps a file of any size out of memory.
 	 */
 	self.agentLogAt += (unsigned long long)n;
+
+	/*
+	 * Nothing else will ever shorten this file. launchd truncates it when
+	 * it creates it and never again, the daemon appends for as long as it
+	 * runs, and with -v it has a line for every client, every safe state
+	 * and, while a game drives, one a second for the effect parameters. On
+	 * a machine left alone that is a file in somebody's home directory
+	 * growing without end, which is a thing this application put there and
+	 * therefore a thing it has to bound.
+	 *
+	 * Emptied rather than rotated, because what a log is for here is the
+	 * session somebody is about to describe, and a kept copy of a race from
+	 * a fortnight ago has never once been wanted. The daemon holds the file
+	 * open for append, so its next line lands at the start again.
+	 */
+	if (end > AGENT_LOG_MAX && truncate(path.fileSystemRepresentation, 0)
+	    == 0)
+		self.agentLogAt = 0;
 
 	s = [[NSString alloc] initWithBytes:buf length:(NSUInteger)n
 	    encoding:NSUTF8StringEncoding];
