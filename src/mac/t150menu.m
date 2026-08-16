@@ -183,8 +183,8 @@
  * install.sh copies the file from Resources verbatim, so a bottle whose
  * dinput8.dll carries the marker but does not match the bundle's byte for byte
  * is one this application installed into and has since outgrown. A dinput8
- * that is not ours is somebody else's business and is left alone, which is the
- * same test install.sh makes with is_our_proxy.
+ * that is not ours is somebody else's business and is left alone, tested the
+ * way install.sh tests it.
  */
 - (NSArray<NSString *> *)bottlesWithOldProxy
 {
@@ -205,6 +205,15 @@
 		NSData *there = [NSData dataWithContentsOfFile:dll];
 
 		if (there == nil)
+			continue;
+		/*
+		 * Both halves of install.sh's is_our_proxy, and it says why
+		 * both matter: this repository's own README names
+		 * T150_ENDPOINT, so the marker alone says yes to a text file.
+		 * A dinput8 that is not a PE at all is not ours to offer to
+		 * replace, whatever it has inside it.
+		 */
+		if (there.length < 2 || memcmp(there.bytes, "MZ", 2) != 0)
 			continue;
 		if ([there rangeOfData:marker options:0
 		    range:NSMakeRange(0, there.length)].location == NSNotFound)
