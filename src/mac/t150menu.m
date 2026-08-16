@@ -928,11 +928,25 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
  */
 - (void)appendLog:(NSString *)s
 {
-	if ([s containsString:@"said hello"])
-		self.clientConnected = YES;
-	if ([s containsString:@"client went away"] ||
-	    [s containsString:@"safe state: shutting down"])
-		self.clientConnected = NO;
+	/*
+	 * Line by line, so the last thing that happened is what is believed.
+	 *
+	 * Asking the whole string for each marker in turn answers a different
+	 * question: whether it appears anywhere, in which case a chunk holding
+	 * a game leaving and a later game arriving ends on "no game", because
+	 * the departure is tested second and wins whatever the order. The
+	 * pipe made that nearly impossible, since it delivers a line at a
+	 * time. Reading the login agent's file does not: the first look hands
+	 * over as much as sixteen kilobytes, and every hello and goodbye
+	 * launchd has collected arrives in one string.
+	 */
+	for (NSString *line in [s componentsSeparatedByString:@"\n"]) {
+		if ([line containsString:@"said hello"])
+			self.clientConnected = YES;
+		else if ([line containsString:@"client went away"] ||
+		    [line containsString:@"safe state: shutting down"])
+			self.clientConnected = NO;
+	}
 
 	[self say:s];
 	[self refresh];
