@@ -586,6 +586,7 @@ throughout:
 
 ```sh
 ./build/bin/t150d -v
+t150d: wheel autocentre released: sent
 t150d: wheel 044f:b677 open
 t150d: listening on 127.0.0.1:49713, endpoint .../t150ffb/endpoint
 t150d: backend macOS HID
@@ -598,11 +599,20 @@ switch**, which it sends itself when it finds nothing at the firmware id, so
 `t150boot` is only needed before the daemon is running rather than on every
 plug-in.
 
+It does refuse to start beside another daemon already holding the same
+endpoint, and refuses before it touches the wheel: taking the wheel scrubs
+every effect slot, so a second daemon would do that to a running game before
+discovering it was not wanted. Give each one its own `-e` to run two on
+purpose.
+
 `crossover-wheel.app` starts and stops the same daemon from the menu bar, with
-`-v -w`, and shows what it prints as an icon: the hub fills when it holds the
-wheel and fills completely when a game is pulling on it. It runs the daemon as
-its own child rather than connecting to it, because a second client can
-displace the first and that would throw a game off the wheel.
+`-v -w` and whatever the Rotation and Centring spring rows are set to, and
+shows what it knows as an icon. The two halves of that come from different
+places: whether the wheel is there it finds out itself, by the same IOKit
+lookup `t150boot` uses, on its own timer; whether a game is pulling on it is
+read from what the daemon prints. It runs the daemon as its own child rather
+than connecting to it, because a second client can displace the first and that
+would throw a game off the wheel.
 
 `-n` drives nothing and prints every packet instead, in the same form
 `probe_setreport` prints, so the two can be compared directly. That is the
@@ -689,10 +699,23 @@ settings and every path that makes the wheel safe are written the moment they
 arrive and are never merged, because those are things that happen rather than
 values that hold. A write that fails is reported on the next upload, which is
 the only frame that can carry it: an error answered to a keepalive would make
-the proxy drop its connection, and nothing reconnects. It is also why the
+the proxy drop its connection for an error that is not one. It is also why the
 proxy will not skip an upload once its last acknowledgement is `ASSUME_MS`
 old: skipping delays that report and nothing else carries it. The proxy sends
 no upload of its own, so the report waits on the game asking for one.
+
+**The proxy skips an upload that would carry what the daemon already has.**
+Every `Start` uploads first, so a game that starts an effect as often as it
+draws a frame pays two round trips on its own thread for one of them to do
+anything, and the daemon answers the first by comparing the same bytes and
+sending the wheel nothing. It is bounded, and each bound is there for a
+reason found the hard way: only while the connection is up and is the one the
+effect was uploaded to, only if the game has not reset the device since, only
+if no start or stop has been refused since, never for a ramp, and only while
+the acknowledgement is younger than `ASSUME_MS`. A ramp is the interesting
+one: the wheel has none, so the daemon renders it as a constant it recomputes
+as the ramp slides, and an upload is the only thing that puts that level back
+to where the ramp begins.
 
 One consequence is visible in `-n`: a steady force prints three lines and
 then nothing, where it used to print three per update.
@@ -759,9 +782,12 @@ the daemon's side that looks exactly like one the wheel ignores.
 is the one place the daemon knowingly gives a game less than it asked for.**
 The T150's own condition loop is unstable at the top of its range. Measured by
 hand with no game, no daemon and no proxy: a damper at 100 makes the wheel buzz
-wherever it is left standing, 99 still buzzes, 90 buzzes more slowly, 80 is
-quiet. An oscillation that slows as the gain falls is the wheel fighting
-itself, not a resonance.
+where it is left standing, 99 still buzzes, 90 buzzes more slowly, 80 is
+quiet. Not everywhere, and the pattern is the interesting part: it was found
+at 0, 135, 270 and 405 degrees, an eighth of the wheel's nominal travel apart,
+three of them unprompted and the fourth confirmed when asked (A46). An
+oscillation that slows as the gain falls is the wheel fighting itself, not a
+resonance.
 
 The encoding is not what is wrong; Thrustmaster's own divisor reaches 100 for
 the same request, so the wheel dislikes a value that is faithfully encoded.
