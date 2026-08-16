@@ -791,6 +791,15 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	if (self.daemon != nil && self.daemon.isRunning) {
 		self.daemonWanted = NO;
 		[self.daemon terminate];
+		/*
+		 * Waited for, as every other stop in this file is. The daemon
+		 * holds its endpoint lock until it has finished making the
+		 * wheel safe, and a second one refuses to start while it does:
+		 * without this, Stop followed by Start is a race that the user
+		 * loses by pressing the second one too quickly, and what they
+		 * see is a daemon that will not start for no stated reason.
+		 */
+		[self.daemon waitUntilExit];
 		return;
 	}
 	/* Asked for by hand, so it gets its restart allowance back. */
