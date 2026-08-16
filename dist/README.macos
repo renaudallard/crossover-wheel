@@ -99,9 +99,9 @@ SET YOUR GAME TO 1080 DEGREES
 No game can tell a wheel what rotation range to be at: on Windows that number
 lives in Thrustmaster's control panel, and a game simply assumes the wheel is
 already at whatever the game's own setting says. Something else has to set it,
-which is what the menu's Rotation rows and t150ctl range are for. This wheel is 1080 and games
-often default to 900, so out of the box they disagree and the car responds to
-your hands by 900/1080 of what it means to.
+which is what the menu's Rotation rows and t150ctl range are for. This wheel
+is 1080 and games often default to 900, so out of the box they disagree and
+the car responds to your hands by 900/1080 of what it means to.
 
 Set the game to 1080 and they agree. t150ctl range moves the wheel instead,
 if you would rather drive at a shorter range: set both to the same number.
@@ -126,6 +126,26 @@ in its startup mode, switch it, and wait for it to come back, and the wheel
 does its own calibration sweep before it will answer anything. Most of that
 wait is the wheel rather than the software. You do not have to restart
 anything: the menu bar icon fills in again once it has the wheel.
+
+IF FORCE FEEDBACK STOPS AND THE WHEEL CHANGES ITS NAME
+
+If force feedback stops after a while and the wheel is now called
+"Thrustmaster FFB Wheel", the wheel has gone back to the startup mode every
+T-series wheel shares, so it is no longer the T150 the daemon was writing to.
+Sleep, wake and a replug all do this.
+
+The daemon and the menu bar item both send the switch to bring it back on
+their own, but the wheel takes a few seconds, so a restart that lands inside
+those seconds looks like it did nothing.
+
+Restart the game as well. A game binds to the wheel it found when it started,
+and a wheel that leaves and comes back is a new one as far as the game is
+concerned, so force feedback cannot return to a game that was already running
+however well the daemon recovers.
+
+If you see this, whether it started with 0.2.2 is the useful thing to put in a
+report: that release changed how fast the daemon writes to the wheel, and what
+rate this wheel is happy with has never been measured.
 
 IF THE WHEEL EVER MOVES ON ITS OWN
 
