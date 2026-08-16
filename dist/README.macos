@@ -91,9 +91,10 @@ only because it is newer than the rest.
 
 SET YOUR GAME TO 1080 DEGREES
 
-Nothing can tell a wheel what rotation range to be at: on Windows that number
+No game can tell a wheel what rotation range to be at: on Windows that number
 lives in Thrustmaster's control panel, and a game simply assumes the wheel is
-already at whatever the game's own setting says. This wheel is 1080 and games
+already at whatever the game's own setting says. Something else has to set it,
+which is what the menu's Rotation rows and t150ctl range are for. This wheel is 1080 and games
 often default to 900, so out of the box they disagree and the car responds to
 your hands by 900/1080 of what it means to.
 

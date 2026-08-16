@@ -228,8 +228,10 @@ t150d -v -w       # start before the game, leave it running
 None of that is needed if you use the menu bar item.
 
 **Set the game's own steering rotation to 1080 degrees**, which is what this
-wheel is. Nothing can tell a wheel what range to be at, so a game left at its
-default of 900 steers by 900/1080 of what it means to.
+wheel is, or set the wheel to whatever the game is at with **Rotation** in the
+menu. No game can tell a wheel what range to be at, so the two have to be made
+to agree by hand, and a game left at its default of 900 against a wheel at
+1080 steers by 900/1080 of what it means to.
 
 If the game calibrates and reports about 1030 rather than 1080, that is
 expected and needs no correcting. The wheel's limit is a force rather than a
