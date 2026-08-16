@@ -903,8 +903,14 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 			 * wheel inherited from a daemon that died. Once only,
 			 * so a daemon that cannot stay up says so instead of
 			 * becoming a loop.
+			 *
+			 * Not when somebody else holds the endpoint. A daemon
+			 * that exited because another one already had the lock
+			 * left no wheel unattended, and a replacement cannot
+			 * start either, so restarting spends the one allowance
+			 * on a certainty and then reports having given up.
 			 */
-			if (weak.daemonWanted) {
+			if (weak.daemonWanted && ![weak daemonElsewhere]) {
 				int st = task.terminationStatus;
 
 				if (weak.daemonRestarted) {
