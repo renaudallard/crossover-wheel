@@ -56,15 +56,19 @@ setup as the benchmark.
 | Restarting the daemon under a running game | the proxy reconnects and says the effects again, never felt on hardware |
 | Pedals, steering range, boot mode, sleep and wake | **works** |
 | A small knock when the wheel is left standing at four positions | the wheel's own damper loop, [A46](docs/RESEARCH.md) |
-| The application and its installer | **compiled, never clicked** |
+| The application, when you click it | **no automated test can, and its faults come from use** |
 
 That last line is meant literally. Nothing on a build machine can press a menu
-bar item, so the menu is the one part of this that reaches a user unused. What
-it does rather than shows is checked: everything it does to a bottle happens
-through `install.sh`, and the self updater through `dist/update.sh`, and both
-are driven against synthetic trees on every build. `make check-mac` compiles
-the application's own source against stub frameworks so that at least it
-cannot reach a release with a warning in it.
+bar item, so no test here exercises the application the way a person does, and
+that is where its faults have come from instead: it has been changed thirty
+five times, and the two most recent are somebody reporting that Stop followed
+by Start would not start.
+
+What it does rather than what it shows is checked. Everything it does to a
+bottle happens through `install.sh`, and the self updater through
+`dist/update.sh`, and both are driven against synthetic trees on every build.
+`make check-mac` compiles the application's own source against stub frameworks,
+so at least it cannot reach a release with a warning in it.
 
 **Picking this up?** [`docs/RESEARCH.md`](docs/RESEARCH.md) is the evidence
 behind every claim here, including the routes that were investigated and are
@@ -325,7 +329,7 @@ in-bottle bus driver was considered and rejected.
 | `probe_dinput.exe` the in-bottle probe | run on hardware in test 27: it mapped the wheel, walked all twenty one controls with a person answering, and played two effects that were felt. Also runs under Wine in CI against a wheel shaped uinput device |
 | build, CI, docs, man pages | working |
 | `install.sh` | installs both halves, tested against a synthetic CrossOver tree; the bottle half has only been run for real by hand |
-| `crossover-wheel.app` | the menu bar item and graphical installer. **Compiled by CI and never clicked**: it is a front end over `install.sh`, which is where anything that can go wrong lives |
+| `crossover-wheel.app` | the menu bar item and graphical installer. **Compiled by CI, and no test presses any of it**: it is a front end over `install.sh`, which is where anything that can go wrong lives |
 | `t150ctl`, `t150boot` | working on hardware, including the rotation range, which visibly shortens and restores the wheel's travel |
 
 The encoders turn a normalized effect into the wheel's packets and are the
