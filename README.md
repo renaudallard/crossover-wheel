@@ -834,7 +834,7 @@ process has its `system32` redirected to `syswow64`, where this is not, and
 Wine skips a file whose machine does not match in any case. `file "<game>.exe"`
 says which one you have. There is no i386 build.
 
-Two files and one registry value:
+Two files, one registry value and one line in the bottle's own configuration:
 
 ```sh
 CX_ROOT="/Applications/CrossOver.app/Contents/SharedSupport/CrossOver"
@@ -904,9 +904,18 @@ leaves a trace:
 
 That is the bottle's `cxbottle.conf`, which every launch reads, including
 from the CrossOver window; from a terminal, `--env` sets the same things for
-one run. The `SDL_JOYSTICK_HIDAPI` line is what puts the wheel in the
-bottle at all, see the input path section. The proxy's `OutputDebugString`
-lines also surface in a terminal run with `--debugmsg +debugstr`.
+one run. The `SDL_JOYSTICK_HIDAPI` line is what puts the wheel in the bottle
+at all, and `install.sh` writes that one for you, keeping a
+`.crossover-wheel.bak` beside it; the SDL that CrossOver 26 bundles drops
+Thrustmaster wheels without it (RESEARCH.md B11).
+
+**Leave `T150_DEBUG` and `T150_LOG` off unless you are diagnosing
+something.** With logging on the proxy writes a line for every
+`GetCapabilities` a game makes, which is one per poll: test 30 produced 84146
+lines in a session (A41).
+
+The proxy's `OutputDebugString` lines also surface in a terminal run with
+`--debugmsg +debugstr`.
 
 `T150_PEDALS` turns on the pedal corrections, and the default is none of
 them: input is forwarded untouched. The T150 labels its pedals against the
@@ -928,7 +937,8 @@ these settings when it wraps the wheel.
 the whole chain and nothing else. Two lines say it worked: `dinput8.dll` as
 `native`, which is the proxy, and `dinput8_orig.dll` as `builtin`, which is
 the implementation behind it, with the builtin's own imports (`hid.dll`,
-`setupapi.dll`, `comctl32.dll`) loading between the two. That is exactly
+`setupapi.dll`, `comctl32.dll`, `oleaut32.dll`) loading between the two. That
+is exactly
 what a passing run printed on real hardware in test 14.
 
 The failure signature is `dinput8_orig.dll` loading as `native`: the tag
@@ -947,9 +957,8 @@ overwrites `system32` files that are still placeholders. `dinput8_orig.dll`
 stays at the Wine version it was copied from, so copy it again after an
 upgrade.
 
-All of this has run in a real bottle, with a game driving a wheel through it.
-If a chain-load ever does not resolve, the fallbacks are in
-[`docs/HANDOFF.md`](docs/HANDOFF.md) under M4.
+All of this has run in a real bottle, with a game driving a wheel through it,
+and CI resolves the same chain in a Wine prefix on every push.
 
 ## Scope
 
