@@ -291,12 +291,18 @@ jobs:
         # packet under -n and nobody ever looked at the output.
         #
         # Every assertion here corresponds to a fault that was found by
-        # reading rather than by testing, and each was confirmed to fire
-        # against a real daemon log with that fault simulated in it. The
-        # decisive one is the ramp: only an upload puts a ramp's level back to
-        # where it begins, so a proxy that skips it leaves the wheel replaying
-        # whatever level the slide had reached, which is full scale for a ramp
-        # that has run.
+        # reading rather than by testing. The decisive one is the ramp: only an
+        # upload puts a ramp's level back to where it begins, so a proxy that
+        # skips it leaves the wheel replaying whatever level the slide had
+        # reached, which is full scale for a ramp that has run.
+        #
+        # The steps that matter are inside the proxy's own ASSUME_MS window,
+        # which is what makes them tests of the proxy rather than of the
+        # daemon: with a stale acknowledgement the proxy uploads whatever the
+        # cache would have decided, and phases five and seven would pass with
+        # the ramp exemption and the reset counter both deleted. Two phases,
+        # four and six, exist only to give the effect a fresh acknowledgement
+        # before the phase that needs one, and assert nothing.
         #
         # -F is the unattended sequence. The attended self test, -f, asks
         # before it moves anything and has to go on asking, so this is a flag
@@ -362,17 +368,19 @@ jobs:
 
           want 3 '^write 4: 03 ' "a changed level never reached the wheel"
 
-          first=$(blk 5 | grep '^write 4: 03 ' | head -1)
-          case "$first" in
-          *' 00') ;;
-          '')     echo "MISS phase 5: the restarted ramp sent no level at all" >&2
-                  bad=1 ;;
-          *)      echo "MISS phase 5: the restarted ramp replayed '$first'," \
-                      "not its start value" >&2
-                  bad=1 ;;
-          esac
+          # Phase five asks whether the upload ARRIVED, which is the proxy's
+          # half of this, rather than what the daemon did with it, which is
+          # daemon_check's. The wheel has no ramp, so the daemon says it is
+          # sending one as a constant every time it takes one, and that line
+          # appears exactly when an upload does.
+          #
+          # Not the level packet, which was the first thing tried and is
+          # wrong: an upload puts a ramp back to its start, and if the ramp is
+          # already at its start there is nothing to write and a correct proxy
+          # produces no packet at all.
+          want 5 'effect 2 sent as 1' "the ramp was not uploaded again when restarted"
 
-          want 6 '^write 9: 02 ' "nothing was re-uploaded after a device reset"
+          want 7 '^write 9: 02 ' "nothing was re-uploaded after a device reset"
 
           test "$bad" -eq 0 ||
               { echo "the packets above are not what the sequence asked for" >&2

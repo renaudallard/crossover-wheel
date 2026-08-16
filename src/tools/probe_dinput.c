@@ -980,6 +980,25 @@ ffb_test(void)
 }
 
 /*
+ * How long the sequence waits between steps.
+ *
+ * Under the proxy's ASSUME_MS, which is what makes the steps mean anything:
+ * that constant is how long the proxy will assume an effect it uploaded is
+ * still on the daemon, and a step that waits longer than it is answered by a
+ * fresh upload whatever the cache would have decided. The first version of
+ * this waited 60 against an ASSUME_MS of 50, so every step took the same path
+ * and the sequence tested none of what its comments claimed.
+ *
+ * Twenty rather than something smaller because the daemon's emitter has a four
+ * millisecond floor and a pass has to have happened before the next step asks
+ * about it.
+ */
+#define SEQ_WARM_MS	20
+
+/* How long the ramp runs, so a step can start it again after it has ended. */
+#define SEQ_RAMP_MS	300
+
+/*
  * The same path with nobody holding the wheel, driven to a script.
  *
  * Separate from ffb_test above rather than a mode inside it, because that one
@@ -1046,17 +1065,17 @@ ffb_sequence(void)
 	}
 	out("  one: constant created and started\n");
 	(void)IDirectInputEffect_Start(c, 1, 0);
-	Sleep(60);
+	Sleep(SEQ_WARM_MS);
 
 	/*
-	 * Two: started again with nothing changed. The proxy skips the upload
-	 * here, and the start still has to arrive: a skip that swallowed it
-	 * would leave the wheel with nothing to play.
+	 * Two: started again with nothing changed, inside the window, so the
+	 * proxy's cache skips the upload. The start still has to arrive: a
+	 * skip that swallowed it would leave the wheel with nothing to play.
 	 */
 	seq_mark();
 	out("  two: started again unchanged\n");
 	(void)IDirectInputEffect_Start(c, 1, 0);
-	Sleep(60);
+	Sleep(SEQ_WARM_MS);
 
 	/* Three: the level moves, so the upload must not be skipped. */
 	seq_mark();
@@ -1064,17 +1083,19 @@ ffb_sequence(void)
 	(void)IDirectInputEffect_SetParameters(c, &ef, DIEP_TYPESPECIFICPARAMS);
 	out("  three: level moved to 4000\n");
 	(void)IDirectInputEffect_Start(c, 1, 0);
-	Sleep(60);
+	Sleep(SEQ_WARM_MS);
 
 	/*
-	 * Four: a ramp, left to run past its own duration, then started
-	 * again. Only an upload puts a ramp's level back to where it begins,
-	 * so a skipped one leaves the wheel replaying the level it slid to.
+	 * Four: a ramp, left to run past its own duration and then started
+	 * again. Nothing is asserted here. What it is for is the state the
+	 * next step needs: a ramp whose upload the proxy has just
+	 * acknowledged, so the only thing that can make it upload again is the
+	 * rule that a ramp is never skipped.
 	 */
 	memset(&rf, 0, sizeof(rf));
 	rf.lStart = 0;
 	rf.lEnd = 10000;
-	ef.dwDuration = 300 * 1000;
+	ef.dwDuration = SEQ_RAMP_MS * 1000;
 	ef.cbTypeSpecificParams = sizeof(rf);
 	ef.lpvTypeSpecificParams = &rf;
 
@@ -1083,27 +1104,51 @@ ffb_sequence(void)
 	    NULL);
 	if (FAILED(hr) || r == NULL) {
 		out("  ramp CreateEffect failed, 0x%08lx\n", (unsigned long)hr);
+		(void)IDirectInputEffect_Stop(c);
 		IDirectInputEffect_Release(c);
 		return -1;
 	}
-	out("  four: ramp created and started\n");
+	out("  four: ramp created, run out, and started again\n");
 	(void)IDirectInputEffect_Start(r, 1, 0);
-	Sleep(500);
-
-	seq_mark();
-	out("  five: ramp started again after it had run\n");
+	Sleep(SEQ_RAMP_MS + SEQ_WARM_MS);
 	(void)IDirectInputEffect_Start(r, 1, 0);
-	Sleep(60);
+	Sleep(SEQ_WARM_MS);
 
 	/*
-	 * Six: a device reset releases every slot, so the next start has to
+	 * Five: stopped, then started again inside the window.
+	 *
+	 * A stop is what a game does between races, and it leaves the proxy's
+	 * record of the upload standing, so this is exactly the shape where an
+	 * unchanged effect is started again with the cache warm. For a ramp
+	 * the upload has to go anyway, and whether it did is what the daemon's
+	 * log says next.
+	 */
+	seq_mark();
+	out("  five: ramp stopped and started again\n");
+	(void)IDirectInputEffect_Stop(r);
+	(void)IDirectInputEffect_Start(r, 1, 0);
+	Sleep(SEQ_WARM_MS);
+
+	/*
+	 * Six: the constant's turn to have a fresh acknowledgement, for the
+	 * same reason as four. Nothing is asserted.
+	 */
+	seq_mark();
+	out("  six: constant started again\n");
+	(void)IDirectInputEffect_Start(c, 1, 0);
+	Sleep(SEQ_WARM_MS);
+
+	/*
+	 * Seven: a device reset releases every slot, so the next start has to
 	 * carry the whole effect again rather than trust what the daemon had.
+	 * Inside the window and with nothing changed, only the proxy noticing
+	 * the reset can make that happen.
 	 */
 	seq_mark();
 	(void)IDirectInputDevice8_SendForceFeedbackCommand(dev, DISFFC_RESET);
-	out("  six: device reset, then the constant started again\n");
+	out("  seven: device reset, then the constant started again\n");
 	(void)IDirectInputEffect_Start(c, 1, 0);
-	Sleep(60);
+	Sleep(SEQ_WARM_MS);
 
 	seq_mark();
 	(void)IDirectInputEffect_Stop(c);
