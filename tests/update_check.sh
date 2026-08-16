@@ -33,6 +33,19 @@ fail()
 	failures=$((failures + 1))
 }
 
+# Two cases below force a failed move in by taking write permission off a
+# directory, and root ignores directory write permission, so there they would
+# report a failure of update.sh where the only thing that failed is the way
+# the case sets itself up. Skipped out loud rather than left to pass or fail
+# by accident: a build as root is an ordinary thing in a container.
+as_root=0
+[ "$(id -u)" = 0 ] && as_root=1
+
+skip()
+{
+	printf 'SKIP %s\n' "$*" >&2
+}
+
 # A bundle is a directory with a name inside it, which is how a swap that put
 # the wrong one in place is told from one that worked.
 make_bundle()
@@ -105,6 +118,11 @@ test_a_swap_that_works()
 # exactly where it is wanted.
 test_a_failed_move_in_puts_the_old_one_back()
 {
+	if [ "$as_root" = 1 ]; then
+		skip "a failed move in: root ignores the write permission"
+		return
+	fi
+
 	build_tree
 	chmod a-w "$work/staged"
 
@@ -151,6 +169,11 @@ test_a_stale_previous_copy_does_not_block_the_swap()
 # $target/crossover-wheel.app where nothing looks for it.
 test_a_stale_copy_and_a_failed_move_in_still_restore_the_application()
 {
+	if [ "$as_root" = 1 ]; then
+		skip "a stale copy and a failed move in: root ignores it too"
+		return
+	fi
+
 	build_tree
 	make_bundle "$work/apps/crossover-wheel.app.crossover-wheel-previous" \
 	    stale
@@ -180,14 +203,22 @@ test_a_missing_new_application_changes_nothing()
 
 	bundle_is "$work/apps/crossover-wheel.app" old ||
 	    fail "a missing new application disturbed the target"
+	[ ! -s "$work/open.log" ] ||
+	    fail "a missing new application still moved the target aside"
 }
 
 test_the_arguments_are_checked()
 {
 	build_tree
 	if run_update "$work/staged/crossover-wheel.app"; then
-		fail "two arguments were accepted"
+		fail "one argument was accepted"
 	fi
+
+	# set -eu ends the script on an unset $2 whether or not the guard is
+	# there, so a non-zero exit proves nothing about the guard. Only its
+	# own message does.
+	grep -q "^usage: " "$work/err.log" ||
+	    fail "one argument was refused by set -u rather than by the check"
 }
 
 # It must not swap while the application it is replacing is still running: a
