@@ -658,19 +658,14 @@ re-acquired: the proxy sends `DIPROP_FFGAIN` once and cannot send it again, so
 restoring full scale after a replug used to undo the driver's chosen strength
 for the rest of the session, silently.
 
-**The rotation range is `-r`, because no game can ask for it.** DirectInput
+**The rotation range is `-r`, because no game can ask for it, and the game's
+setting and the wheel's own range have to be the same number.** DirectInput
 has no property for wheel rotation: on Windows it is set in the vendor's
-control panel and the game assumes the wheel is already there, so a game
-whose settings say 900 degrees reaches nothing and scales its steering for a
-range the wheel is not at.
-
-**The game's rotation setting and the wheel's own range must be the same
-number, and the easiest way is to change the game.** DirectInput has no
-property for wheel rotation, so a game cannot move a wheel; it assumes the
-wheel is already at whatever its own setting says. **The T150 is 1080 degrees
-and Assetto Corsa defaults to 900**, so out of the box they disagree, and the
-car responds to a given movement of the hands by 900/1080 of what the game
-intends.
+control panel and a game assumes the wheel is already there, so a game whose
+settings say 900 degrees reaches nothing and scales its steering for a range
+the wheel is not at. **The T150 is 1080 degrees and Assetto Corsa defaults to
+900**, so out of the box they disagree, and the car responds to a given
+movement of the hands by 900/1080 of what the game intends.
 
 **Set the game to 1080.** That costs one setting and needs nothing from this
 daemon. Measured: the tester did exactly that and reported "the range is
