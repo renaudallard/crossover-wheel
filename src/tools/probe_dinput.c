@@ -957,7 +957,21 @@ ffb_test(void)
 		return -1;
 	}
 
-	(void)ready("Now the damper. Turn the wheel while it runs.");
+	/*
+	 * Asked, not told. ready() answers 0 when it has established that no
+	 * question can reach anybody, and its own contract says the
+	 * identification walk may carry on unattended while driving the wheel
+	 * may not: the damper resists turning, and starting one after proving
+	 * nobody can be warned is the single thing here that could hurt. The
+	 * constant above is gated on exactly this and the second effect threw
+	 * the answer away.
+	 */
+	if (!ready("Now the damper. Turn the wheel while it runs.")) {
+		out("  nobody could be warned about the damper, so it was not "
+		    "started.\n");
+		IDirectInputEffect_Release(e);
+		return -1;
+	}
 
 	hr = IDirectInputEffect_Start(e, 1, 0);
 	out("  damper: Start %s (0x%08lx)\n",
