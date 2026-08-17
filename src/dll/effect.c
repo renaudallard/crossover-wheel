@@ -36,6 +36,8 @@ struct effect_obj {
 	 * stop-everything for it, and that lost which effects had been running.
 	 */
 	int			 paused;
+	/* When the last Start went, so a finite effect's own end can be known. */
+	ULONGLONG		 started_ms;
 	int			 logged;	/* the first Start is logged, not every one */
 	unsigned int		 gen;		/* the connection this was uploaded to */
 	/* What the daemon last acknowledged, and when. See upload(). */
@@ -767,6 +769,7 @@ eff_SetParameters(IDirectInputEffect *self, const DIEFFECT *p, DWORD flags)
 		}
 		e->playing = 1;
 		e->iterations = 1;	/* DIEP_START is one pass of it */
+		e->started_ms = GetTickCount64();
 	}
 
 	return DI_OK;
@@ -823,6 +826,7 @@ eff_Start(IDirectInputEffect *self, DWORD iterations, DWORD flags)
 		return DIERR_NOTDOWNLOADED;
 	}
 	e->playing = 1;
+	e->started_ms = GetTickCount64();
 
 	return DI_OK;
 }
@@ -857,9 +861,30 @@ eff_Stop(IDirectInputEffect *self)
 static HRESULT WINAPI
 eff_GetEffectStatus(IDirectInputEffect *self, DWORD *out)
 {
+	struct effect_obj *e = from_iface(self);
+
 	if (out == NULL)
 		return E_POINTER;
-	*out = from_iface(self)->playing ? DIEGES_PLAYING : 0;
+
+	/*
+	 * An effect with a length of its own ends when that runs out, and
+	 * nothing on the wire says so: the wheel is given the length and stops
+	 * by itself, the daemon knows, and the protocol has no way to tell the
+	 * proxy. So the same arithmetic is done here, from the Start this
+	 * object made and the duration it holds.
+	 *
+	 * Without it the flag was set by Start and cleared only by Stop, an
+	 * Unload or a device level command, so a finite effect said
+	 * DIEGES_PLAYING for the rest of the process. That breaks the standard
+	 * idiom exactly: a game that fires a kerb effect with "if it is not
+	 * playing, start it" fires it once and is silent from then on.
+	 */
+	if (e->playing && e->ef.duration != T150_DURATION_INFINITE &&
+	    e->ef.duration != 0 &&
+	    GetTickCount64() - e->started_ms >= e->ef.duration / 1000)
+		e->playing = 0;
+
+	*out = e->playing ? DIEGES_PLAYING : 0;
 
 	return DI_OK;
 }
