@@ -1108,6 +1108,47 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
  * every two seconds, and an offset past the end means the file was replaced or
  * truncated and the whole of it is new again.
  */
+/*
+ * Walk the whole log once, so the connected state starts out true rather than
+ * merely recent. Only the markers matter here, so nothing is shown and nothing
+ * is kept: appendLog does that for everything read afterwards.
+ */
+- (void)seedFromAgentLog:(int)fd upTo:(off_t)end
+{
+	char buf[16 * 1024];
+	off_t at = 0;
+	ssize_t n;
+
+	if (lseek(fd, 0, SEEK_SET) == -1)
+		return;
+
+	while (at < end && (n = read(fd, buf, sizeof(buf))) > 0) {
+		ssize_t whole = n;
+		NSString *s;
+
+		/* Whole lines only, for the reason readAgentLog gives. */
+		while (whole > 0 && buf[whole - 1] != '\n')
+			whole--;
+		if (whole <= 0)
+			whole = n;	/* no line end at all; take it as it is */
+
+		at += whole;
+		s = [[NSString alloc] initWithBytes:buf length:(NSUInteger)whole
+		    encoding:NSUTF8StringEncoding];
+		for (NSString *line in [s componentsSeparatedByString:@"\n"]) {
+			if ([line containsString:@"said hello"])
+				self.clientConnected = YES;
+			else if ([line containsString:@"client went away"] ||
+			    [line containsString:@"safe state: shutting down"])
+				self.clientConnected = NO;
+		}
+		if (lseek(fd, at, SEEK_SET) == -1)
+			return;
+	}
+
+	self.agentLogAt = (unsigned long long)at;
+}
+
 - (void)readAgentLog
 {
 	NSString *path = [self agentLogPath];
@@ -1136,12 +1177,24 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		self.agentLogAt = 0;
 
 	/*
-	 * A first look at a file launchd has been appending to for days starts
-	 * near its end. What this wants is the current state, and reading a
-	 * long history to arrive at it would only find the same answer slowly.
+	 * A first look reads the whole file, however long launchd has been
+	 * appending to it.
+	 *
+	 * It used to start at the last sixteen kilobytes, on the reasoning
+	 * that what this wants is the current state and a long history only
+	 * arrives at it slowly. That is true of the log and false of the one
+	 * fact taken from it: whether a game holds the wheel is decided by the
+	 * last "said hello" or "client went away" line, and under -v the
+	 * daemon writes an effect parameter line every second while a game
+	 * drives, so ten minutes of driving pushes the hello that started it
+	 * far outside that window. The flag then read NO with a game on the
+	 * wheel, and daemonSettingsChanged uses it to decide whether a restart
+	 * is safe: the answer was silently the dangerous one.
+	 *
+	 * The file is bounded at AGENT_LOG_MAX, and this is once per launch.
 	 */
 	if (self.agentLogAt == 0 && end > (off_t)sizeof(buf))
-		self.agentLogAt = (unsigned long long)end - sizeof(buf);
+		[self seedFromAgentLog:fd upTo:end];
 
 	if (lseek(fd, (off_t)self.agentLogAt, SEEK_SET) == -1) {
 		(void)close(fd);
