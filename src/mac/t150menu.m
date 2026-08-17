@@ -44,6 +44,14 @@
 #define AGENT_LOG_MAX	(4 * 1024 * 1024)
 
 /*
+ * How long a replacement daemon has to run before the one restart allowance is
+ * given back. Long enough that a daemon failing at startup cannot spend it
+ * over and over, short enough that two unrelated deaths in one session are
+ * each recovered from.
+ */
+#define HEALTHY_SECS	60.0
+
+/*
  * Which of the wheel's identities is on the bus.
  *
  * Four answers rather than the two booleans this used to keep, because those
@@ -84,8 +92,14 @@ typedef enum {
  * force it was last given, and nothing but a new daemon takes that off it.
  */
 @property (assign) BOOL daemonWanted;
-/* One restart, so a daemon that cannot stay up does not become a loop. */
+/*
+ * One restart, so a daemon that cannot stay up does not become a loop. Given
+ * back once a replacement has run for HEALTHY_SECS without dying, because a
+ * daemon that died this morning is not a reason to leave a wheel pulling this
+ * afternoon.
+ */
 @property (assign) BOOL daemonRestarted;
+@property (strong) NSTimer *healthy;
 /* How far into the login agent's log file we have read. See readAgentLog. */
 @property (assign) unsigned long long agentLogAt;
 /* Bottles whose proxy is not the one in this bundle. See checkBottleProxies. */
@@ -877,6 +891,11 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	t.standardError = p;
 
 	__weak __typeof__(self) weak = self;
+
+	/* A restart replaces the last one's probation with its own. */
+	[self.healthy invalidate];
+	self.healthy = nil;
+
 	p.fileHandleForReading.readabilityHandler = ^(NSFileHandle *fh) {
 		NSData *d = fh.availableData;
 
@@ -981,6 +1000,22 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	self.daemonWanted = YES;
 	self.daemonArgs = args;
 	self.clientConnected = NO;
+	/*
+	 * The allowance comes back once a replacement has proved it can stay
+	 * up, rather than being spent for the life of the application.
+	 *
+	 * It is cleared here on a timer instead of at launch, because a daemon
+	 * that dies immediately would otherwise clear it by being restarted and
+	 * the loop this guards against is exactly that. One death at ten in the
+	 * morning used to disarm the whole recovery, so a death mid race five
+	 * hours later printed a line into a window nobody had open and left the
+	 * wheel holding its last force.
+	 */
+	self.healthy = [NSTimer scheduledTimerWithTimeInterval:HEALTHY_SECS
+	    repeats:NO block:^(NSTimer *timer) {
+		(void)timer;
+		weak.daemonRestarted = NO;
+	}];
 	[self refresh];
 }
 
@@ -2012,6 +2047,8 @@ sha256_of(NSData *d)
 
 	[self.watch invalidate];
 	self.watch = nil;
+	[self.healthy invalidate];
+	self.healthy = nil;
 
 	if (self.daemon != nil && self.daemon.isRunning) {
 		self.daemonWanted = NO;
@@ -2026,6 +2063,8 @@ sha256_of(NSData *d)
 
 	[self.watch invalidate];
 	self.watch = nil;
+	[self.healthy invalidate];
+	self.healthy = nil;
 
 	/*
 	 * Stop the daemon we started rather than orphaning it. Its own
