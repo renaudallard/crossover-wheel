@@ -43,6 +43,13 @@
 int	t150_client_start(void);
 
 /*
+ * Whether a daemon is listening, without saying anything to it. Enumeration
+ * wants only this, and asking with a full connect meant asking with the token,
+ * which is what lets the daemon displace whoever holds the wheel.
+ */
+int	t150_client_listening(void);
+
+/*
  * Which connection this is, and whether it is up, under one lock rather than
  * two. An effect that uploaded to an older one has to say itself again,
  * because the daemon on the other end of a new connection has never heard of

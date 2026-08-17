@@ -301,9 +301,17 @@ di_EnumDevices(IDirectInput8W *self, DWORD type, LPDIENUMDEVICESCALLBACKW cb,
 	 * among them, enumerate again without the filter and offer just the
 	 * wheel. Anything else the second pass finds is dropped, so the game
 	 * sees exactly what it asked for plus the one device we can drive.
+	 *
+	 * Asked rather than connected. This used to call t150_client_start,
+	 * which says HELLO with the token, and the token is precisely what
+	 * authorises the daemon to displace whoever holds the wheel. So a
+	 * second DirectInput program in the same bottle - a launcher, a wheel
+	 * settings utility, another game sitting at its menu - threw the
+	 * running game off the wheel by doing nothing worse than listing
+	 * devices. The proxy lives in system32, so every one of them has it.
 	 */
 	if ((flags & DIEDFL_FORCEFEEDBACK) && !ctx.saw_wheel && !ctx.stopped &&
-	    t150_client_start() == 0) {
+	    t150_client_listening() == 0) {
 		ctx.wheel_only = 1;
 		hr = IDirectInput8_EnumDevices(d->inner, type,
 		    (void *)enum_thunk, &ctx, flags & ~DIEDFL_FORCEFEEDBACK);

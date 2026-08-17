@@ -446,6 +446,66 @@ out:
 	return ok ? 0 : -1;
 }
 
+/*
+ * Whether a daemon is listening, asked without saying anything to it.
+ *
+ * Enumeration needs the answer and nothing else: it decides whether to offer
+ * the wheel as a force feedback device, and it may run in a process that will
+ * never create one. Asking with a full connect was asking with the token, and
+ * the token is exactly what authorises the daemon to displace whoever holds
+ * the wheel, so a second DirectInput program merely listing devices threw the
+ * running game off it.
+ *
+ * A connect that says nothing cannot do that. The daemon gives it the pending
+ * slot, waits PEND_MS for a HELLO that never comes and drops it, having
+ * written nothing to the wheel on its account; and where no client is
+ * connected at all it takes the client slot and is let go the same way, since
+ * a session that never reached the wheel is owed nothing on the way out.
+ */
+static int
+t150_client_probe(void)
+{
+	char token[T150_TOKEN_LEN + 1];
+	struct sockaddr_in sa;
+	unsigned short port;
+	WSADATA wsa;
+	SOCKET s;
+	int ok;
+
+	if (!started) {
+		if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
+			return -1;
+		started = 1;
+	}
+	if (read_endpoint(&port, token, sizeof(token)) != 0)
+		return -1;
+	if ((s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == INVALID_SOCKET)
+		return -1;
+
+	memset(&sa, 0, sizeof(sa));
+	sa.sin_family = AF_INET;
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	sa.sin_port = htons(port);
+
+	ok = connect(s, (struct sockaddr *)&sa, sizeof(sa)) == 0;
+	(void)closesocket(s);
+
+	return ok ? 0 : -1;
+}
+
+int
+t150_client_listening(void)
+{
+	int r;
+
+	EnterCriticalSection(&lock);
+	/* Already talking to one is the same answer and costs nothing. */
+	r = online ? 0 : t150_client_probe();
+	LeaveCriticalSection(&lock);
+
+	return r;
+}
+
 int
 t150_client_start(void)
 {
