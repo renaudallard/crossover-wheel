@@ -236,9 +236,18 @@ t150_effect_all_paused(void)
 	for (i = 0; i < T150_SLOT_MAX; i++) {
 		struct effect_obj *e = live[i];
 
-		if (e == NULL)
+		if (e == NULL || !e->playing)
 			continue;
-		e->paused = e->playing;
+		/*
+		 * Only from playing to paused, never the other way. Reading
+		 * the flag it had just cleared is what a second pause did, and
+		 * DirectInput puts no restriction on sending one: a game that
+		 * loses focus and sends DISFFC_PAUSE and then
+		 * DISFFC_SETACTUATORSOFF, which this file handles as one
+		 * branch, went through here twice and the second pass threw
+		 * away everything the continue was meant to restore.
+		 */
+		e->paused = 1;
 		e->playing = 0;
 	}
 	LeaveCriticalSection(&registry);
@@ -990,10 +999,19 @@ eff_Stop(IDirectInputEffect *self)
 		 * not: this is the daemon saying it does not have the slot.
 		 */
 		e->playing = 0;
+		e->paused = 0;
 		e->sent_valid = 0;
 		return DIERR_NOTDOWNLOADED;
 	}
 	e->playing = 0;
+	/*
+	 * And it is not owed back by a continue. The pause records what was
+	 * running so DISFFC_CONTINUE can restore it, and a game is free to
+	 * stop an effect while paused - on a menu, which is exactly when a
+	 * game is paused. Leaving the record standing had the continue start
+	 * a force the player had just turned off.
+	 */
+	e->paused = 0;
 
 	return DI_OK;
 }
@@ -1043,6 +1061,7 @@ eff_Unload(IDirectInputEffect *self)
 
 	(void)t150_client_call(T150_OP_EFFECT_DESTROY, &slot, 1);
 	e->playing = 0;
+	e->paused = 0;		/* nor after the game has unloaded it */
 	/* The daemon has no copy to compare the next upload against. */
 	e->sent_valid = 0;
 
