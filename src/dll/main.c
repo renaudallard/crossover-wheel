@@ -18,6 +18,8 @@
 
 void	t150_client_init_lock(void);
 void	t150_client_free_lock(void);
+void	t150_effect_init_lock(void);
+void	t150_effect_free_lock(void);
 
 /*
  * What this DLL exports. Declared here because the compiler is right to
@@ -590,6 +592,7 @@ DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved)
 		(void)DisableThreadLibraryCalls(inst);
 		InitializeCriticalSection(&load_lock);
 		t150_client_init_lock();
+		t150_effect_init_lock();
 		break;
 	case DLL_PROCESS_DETACH:
 		/*

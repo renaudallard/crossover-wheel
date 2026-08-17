@@ -65,25 +65,93 @@ from_iface(IDirectInputEffect *p)
  * game that walks its effects to stop them that it has finished a job it
  * never started.
  *
- * Written with an interlocked exchange for the same reason the slot map is:
- * two game threads may create and release effects at once.
+ * Under a lock rather than an interlocked write, which is what this had. Two
+ * game threads may create and release effects at once, and DirectInput permits
+ * it; an atomic store makes the slot's publication indivisible and gives a
+ * reader nothing, because a reader that has already loaded the pointer holds
+ * one the writer knows nothing about. eff_Release clears the entry and frees
+ * the object three lines later, so a walk that had just read that slot could
+ * write into freed memory.
+ *
+ * The lock is only ever held around the array. Anything that has to talk to
+ * the daemon takes a reference under it and lets go first, because
+ * eff_Release makes a round trip of its own and the two locks would otherwise
+ * be taken in both orders.
  */
-static struct effect_obj *volatile live[T150_SLOT_MAX];
+static struct effect_obj *live[T150_SLOT_MAX];
+static CRITICAL_SECTION registry;
+
+void	t150_effect_init_lock(void);
+void	t150_effect_free_lock(void);
+
+void
+t150_effect_init_lock(void)
+{
+	InitializeCriticalSection(&registry);
+}
+
+void
+t150_effect_free_lock(void)
+{
+	DeleteCriticalSection(&registry);
+}
 
 static void
 remember(struct effect_obj *e)
 {
-	if (e->slot >= 0 && e->slot < (int)T150_SLOT_MAX)
-		(void)InterlockedExchangePointer((void *volatile *)&live[e->slot],
-		    e);
+	if (e->slot < 0 || e->slot >= (int)T150_SLOT_MAX)
+		return;
+	EnterCriticalSection(&registry);
+	live[e->slot] = e;
+	LeaveCriticalSection(&registry);
 }
 
-static void
-forget(struct effect_obj *e)
+/*
+ * Drop one reference, and take the object out of the registry if that was the
+ * last one.
+ *
+ * Both under the lock, because the registry is what hands references out.
+ * Decrementing outside it left a window in which a walk could find the object,
+ * take a reference to it, and go on using it while the thread that reached
+ * zero was freeing it.
+ */
+static LONG
+release_and_forget(struct effect_obj *e)
 {
-	if (e->slot >= 0 && e->slot < (int)T150_SLOT_MAX)
-		(void)InterlockedExchangePointer((void *volatile *)&live[e->slot],
-		    NULL);
+	LONG r;
+
+	EnterCriticalSection(&registry);
+	r = InterlockedDecrement(&e->refs);
+	if (r == 0 && e->slot >= 0 && e->slot < (int)T150_SLOT_MAX &&
+	    live[e->slot] == e)
+		live[e->slot] = NULL;
+	LeaveCriticalSection(&registry);
+
+	return r;
+}
+
+/*
+ * Everything live, each with a reference held, so the caller can work on them
+ * with the lock let go. Returns how many it put in out, and every one of them
+ * has to be released afterwards.
+ */
+static size_t
+registry_snapshot(struct effect_obj **out, const struct t150_device *dev)
+{
+	size_t i, n = 0;
+
+	EnterCriticalSection(&registry);
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		struct effect_obj *e = live[i];
+
+		if (e == NULL || (dev != NULL && e->dev != dev))
+			continue;
+		(void)InterlockedIncrement(&e->refs);
+		out[n++] = e;
+	}
+	LeaveCriticalSection(&registry);
+
+	return n;
 }
 
 /*
@@ -97,15 +165,16 @@ HRESULT
 t150_effect_enum(struct t150_device *dev,
     LPDIENUMCREATEDEFFECTOBJECTSCALLBACK cb, LPVOID ref)
 {
-	size_t i;
+	struct effect_obj *seen[T150_SLOT_MAX];
+	size_t n, i;
+	int stop = 0;
 
-	for (i = 0; i < T150_SLOT_MAX; i++) {
-		struct effect_obj *e = live[i];
+	n = registry_snapshot(seen, dev);
 
-		if (e == NULL || e->dev != dev)
-			continue;
-		if (cb(&e->iface, ref) == DIENUM_STOP)
-			break;
+	for (i = 0; i < n; i++) {
+		if (!stop && cb(&seen[i]->iface, ref) == DIENUM_STOP)
+			stop = 1;
+		IDirectInputEffect_Release(&seen[i]->iface);
 	}
 
 	return DI_OK;
@@ -134,6 +203,7 @@ t150_effect_all_stopped(void)
 {
 	size_t i;
 
+	EnterCriticalSection(&registry);
 	for (i = 0; i < T150_SLOT_MAX; i++) {
 		struct effect_obj *e = live[i];
 
@@ -143,6 +213,7 @@ t150_effect_all_stopped(void)
 		/* A reset or a stop-all is not a pause: nothing is owed back. */
 		e->paused = 0;
 	}
+	LeaveCriticalSection(&registry);
 }
 
 /*
@@ -161,6 +232,7 @@ t150_effect_all_paused(void)
 {
 	size_t i;
 
+	EnterCriticalSection(&registry);
 	for (i = 0; i < T150_SLOT_MAX; i++) {
 		struct effect_obj *e = live[i];
 
@@ -169,19 +241,25 @@ t150_effect_all_paused(void)
 		e->paused = e->playing;
 		e->playing = 0;
 	}
+	LeaveCriticalSection(&registry);
 }
 
 void
 t150_effect_all_continued(void)
 {
-	size_t i;
+	struct effect_obj *seen[T150_SLOT_MAX];
+	size_t n, i;
 
-	for (i = 0; i < T150_SLOT_MAX; i++) {
-		struct effect_obj *e = live[i];
+	n = registry_snapshot(seen, NULL);
+
+	for (i = 0; i < n; i++) {
+		struct effect_obj *e = seen[i];
 		uint8_t start[2];
 
-		if (e == NULL || !e->paused)
+		if (!e->paused) {
+			IDirectInputEffect_Release(&e->iface);
 			continue;
+		}
 		e->paused = 0;
 
 		/*
@@ -197,6 +275,8 @@ t150_effect_all_continued(void)
 			e->playing = 1;
 		else
 			e->sent_valid = 0;
+
+		IDirectInputEffect_Release(&e->iface);
 	}
 }
 
@@ -624,13 +704,12 @@ static ULONG WINAPI
 eff_Release(IDirectInputEffect *self)
 {
 	struct effect_obj *e = from_iface(self);
-	LONG r = InterlockedDecrement(&e->refs);
+	LONG r = release_and_forget(e);
 
 	if (r == 0) {
 		uint8_t slot = (uint8_t)e->slot;
 
 		(void)t150_client_call(T150_OP_EFFECT_DESTROY, &slot, 1);
-		forget(e);
 		t150_slot_free(e->slot);
 		/* Balances the reference taken in t150_effect_create. */
 		IDirectInputDevice8_Release((IDirectInputDevice8W *)e->dev);
