@@ -280,8 +280,8 @@ $(BIN)/%_check: tests/%_check.c $(LIB_OBJS) | $(BIN)
 # script takes from the environment for exactly this.
 test: $(TEST_BINS)
 	@for t in $(TEST_BINS); do "$$t" || exit 1; done
-	@sh $(CURDIR)/tests/install_check.sh
-	@sh $(CURDIR)/tests/update_check.sh
+	@sh "$(CURDIR)/tests/install_check.sh"
+	@sh "$(CURDIR)/tests/update_check.sh"
 
 check: test
 
@@ -349,7 +349,7 @@ strict:
 # it does is asking a person which bottle they mean, and because it has to
 # work the same from an extracted release where there is no Makefile at all.
 install:
-	@sh $(CURDIR)/install.sh $(INSTALL_ARGS)
+	@sh "$(CURDIR)/install.sh" $(INSTALL_ARGS)
 
 # crossover-wheel.app: the menu bar item and the graphical installer.
 #
