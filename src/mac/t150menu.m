@@ -1153,6 +1153,33 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		return;
 
 	/*
+	 * Stop at the last complete line and leave the rest for the next look.
+	 *
+	 * appendLog decides whether a game holds the wheel by what each line
+	 * says, and a read of a fixed size lands wherever it lands: a chunk
+	 * ending in the middle of "said hello" matched nothing, and its other
+	 * half came back two seconds later with nothing to match either. So a
+	 * game connecting or going away could be missed outright and the menu
+	 * would show the wrong one until the next such line. It is also what
+	 * makes the UTF-8 decode below safe, since the daemon writes ASCII and
+	 * a split can only fall between lines.
+	 */
+	{
+		ssize_t whole = n;
+
+		while (whole > 0 && buf[whole - 1] != '\n')
+			whole--;
+		/*
+		 * Unless the whole read holds no line end at all. The daemon
+		 * never writes a line that long, but a file something else has
+		 * touched could, and stopping here for ever would be worse
+		 * than one split.
+		 */
+		if (whole > 0)
+			n = whole;
+	}
+
+	/*
 	 * Bounded per look rather than per file: anything past this is read on
 	 * the next one, two seconds later, which is soon enough for a status
 	 * line and keeps a file of any size out of memory.
