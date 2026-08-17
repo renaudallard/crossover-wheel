@@ -1176,7 +1176,13 @@ test_a_queued_stop_the_wheel_refused_keeps_the_slot(void)
 	/* And the retry really goes out once the wheel takes writes again. */
 	deferred_run();
 	drain_log();
-	sess.epoch = be.epoch;	/* the re-teach is the next test's business */
+	/*
+	 * The dropped packet is what the next test is about, so this one takes
+	 * the count and leaves. It is the count, not the epoch: an epoch bump
+	 * means the wheel was scrubbed and must be taught everything again,
+	 * and nothing here bumps one.
+	 */
+	sess.lost = atomic_load(&be.lost);
 	sess.last_frame_ms = T150_WATCHDOG_MS;
 	(void)tick(T150_WATCHDOG_MS + T150_EMIT_MS);
 	deferred_run();
