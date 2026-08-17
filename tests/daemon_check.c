@@ -1676,6 +1676,63 @@ test_the_end_of_an_effect_counts_delay_and_iterations(void)
 	    "write 4: 41 00 00 01\n");
 }
 
+/*
+ * A game still animating a ramp after its own end does not get the wheel
+ * thrown back to the ramp's beginning.
+ *
+ * The tick stops an effect when its duration is up, which clears playing, and
+ * the proxy never skips a ramp upload, so those uploads go on arriving. Keyed
+ * on whether the slot was playing, do_upload then found false and rewound the
+ * level; for a release that beginning is the full force the game had spent the
+ * whole slide winding down.
+ */
+static void
+test_an_upload_after_the_end_does_not_rewind_a_ramp(void)
+{
+	struct t150_effect ef;
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	uint8_t start[2];
+	uint64_t t;
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_RAMP;
+	ef.slot = 2;
+	ef.duration = 200000;		/* 200 ms */
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.ramp.start = 10000;	/* a release, from full force */
+	ef.u.ramp.end = 0;
+	start[0] = 2;
+	start[1] = 1;
+
+	reset_session();
+	hello(0);
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
+	    T150_ERR_NONE);
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+
+	/* Run it out, keeping the client alive so only the end stops it. */
+	for (t = 0; t <= 260; t += 20) {
+		frame(T150_OP_KEEPALIVE, NULL, 0, t, T150_OP_OK, T150_ERR_NONE);
+		(void)tick(t);
+	}
+	if (sess.slots[2].playing)
+		fail("the ramp should have been stopped at its end");
+	drain_log();
+
+	/*
+	 * The game has not noticed and keeps sending the same effect. Nothing
+	 * may go back to the wheel at the ramp's start value.
+	 */
+	for (t = 280; t <= 400; t += 20) {
+		frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), t, T150_OP_OK,
+		    T150_ERR_NONE);
+		(void)tick(t);
+	}
+	if (strstr(logbuf + consumed, "write 4: 03 46 00 40\n") != NULL)
+		fail("an upload after the end put full force back on the wheel");
+}
+
 /* The floor is what applies unless -E asks for the early pass. */
 static void
 test_the_floor_holds_unless_asked_otherwise(void)
@@ -3142,6 +3199,7 @@ main(void)
 	test_the_floor_holds_unless_asked_otherwise();
 	test_a_start_puts_a_ramp_back_to_its_start();
 	test_an_upload_does_not_rewind_a_running_ramp();
+	test_an_upload_after_the_end_does_not_rewind_a_ramp();
 	test_a_finished_ramp_stops_pinning_the_timeout();
 	test_the_end_of_an_effect_counts_delay_and_iterations();
 	test_an_inherited_stop_is_released_across_a_re_acquire();
