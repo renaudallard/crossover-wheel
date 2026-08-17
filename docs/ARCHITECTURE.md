@@ -142,16 +142,24 @@ bytes that slot last put on the wire. A pass runs at most once every
 dropped rather than queued: the wheel holds one value per slot and an
 intermediate one was replaced before it could be felt.
 
-That floor is skipped while the backend's writer thread has no backlog.
-It was put there when every write was a synchronous IOKit call on the thread
-the game was waiting for, and pacing the daemon was the only thing keeping a
-frame out of a burst of USB transfers; with `-w` the writer paces itself, so
-the floor buys nothing against an empty queue and costs up to a whole period
-on a force the wheel could take now. It reasserts itself the moment the queue
-has anything in it, which is the case it was really for, and a pass that
-failed is never brought forward: the deadline is what stops a wheel that has
-gone turning the retry into a spin. Without a writer, `-n` and the fake
-backend included, nothing answers the question and the floor always applies.
+That floor can be skipped while the backend's writer thread has no backlog,
+and `-E` is what asks for it. It was put there when every write was a
+synchronous IOKit call on the thread the game was waiting for, and pacing the
+daemon was the only thing keeping a frame out of a burst of USB transfers; with
+`-w` the writer paces itself, so the floor buys nothing against an empty queue
+and costs up to a whole period on a force the wheel could take now. It
+reasserts itself the moment the queue has anything in it, which is the case it
+was really for, and a pass that failed is never brought forward: the deadline
+is what stops a wheel that has gone turning the retry into a spin. Without a
+writer, `-n` and the fake backend included, nothing answers the question at
+all.
+
+**`-E` is off, so in every shipped configuration the floor applies to every
+pass.** The application launches the daemon as `-v -w`. The early pass was the
+default in 0.2.2, 0.2.3 and 0.2.4 and went back to off in 0.2.6: force feedback
+began stopping mid session in the release that introduced it, with the wheel
+found back at its boot identity, and nothing has been measured that connects
+the two. See RESEARCH.md A51 before reasoning about latency from this section.
 
 Only effect parameters are coalesced, because they are state. Starts, stops,
 resets, the settings and every path that makes the wheel safe are events, go
