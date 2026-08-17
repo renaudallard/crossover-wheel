@@ -939,6 +939,8 @@ hid_close(void *priv)
 			fprintf(stderr, "t150d: the writer merged %u packet(s) "
 			    "into fresher ones and refused %u\n",
 			    h->q.merged, h->q.dropped);
+		(void)pthread_cond_destroy(&h->cv);
+		(void)pthread_mutex_destroy(&h->mtx);
 	}
 
 	drop_device(h);
@@ -994,13 +996,24 @@ t150_backend_hid(struct t150_backend *be, long vid, long pid,
 		fprintf(stderr, "t150d: no wheel yet, will keep looking\n");
 
 	if (threaded) {
+		/*
+		 * Unwound by hand rather than by hid_close, which only knows
+		 * to take these down once h->threaded says a writer exists,
+		 * and that is not set until the thread is really running.
+		 */
 		t150_wq_init(&h->q);
-		if (pthread_mutex_init(&h->mtx, NULL) != 0 ||
-		    pthread_cond_init(&h->cv, NULL) != 0) {
+		if (pthread_mutex_init(&h->mtx, NULL) != 0) {
+			hid_close(h);
+			return -1;
+		}
+		if (pthread_cond_init(&h->cv, NULL) != 0) {
+			(void)pthread_mutex_destroy(&h->mtx);
 			hid_close(h);
 			return -1;
 		}
 		if (pthread_create(&h->thread, NULL, writer_main, h) != 0) {
+			(void)pthread_cond_destroy(&h->cv);
+			(void)pthread_mutex_destroy(&h->mtx);
 			hid_close(h);
 			return -1;
 		}
