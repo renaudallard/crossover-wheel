@@ -17,6 +17,7 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -230,6 +231,98 @@ test_direction_round_trip(void)
 	}
 }
 
+/*
+ * A DIEFFECT that ends before dwStartDelay is not read past its end.
+ *
+ * That member is the one DirectInput 6 added, so a caller built against the
+ * older headers passes a struct which stops before it, and dwSize is how it
+ * says which it has. Both guards, on the way in at t150_effect_convert and on
+ * the way out at eff_GetParameters, exist for a memory safety defect a
+ * previous audit found, and RESEARCH.md records it as one of two.
+ *
+ * Every DIEFFECT this file built set dwSize to sizeof(DIEFFECT), so the guard
+ * was never taken in its false direction: someone simplifying that function
+ * could drop the test, since the flags argument already looks like it names
+ * the field, and the whole suite would stay green while a DirectX 5 era game
+ * had eight bytes read off the end of its stack.
+ *
+ * The struct here is deliberately shorter than a DIEFFECT and the bytes past
+ * its end are poisoned, so reading them shows up as a value rather than as
+ * whatever happened to be there.
+ */
+/*
+ * The whole test rests on a DIEFFECT_DX5 being a DIEFFECT that stops exactly
+ * where dwStartDelay begins, so that the poison past the end of the caller's
+ * struct lands on that member and nowhere else. Checked against the real
+ * header rather than assumed: the first version of this asserted dwStartDelay
+ * was the last member and was wrong, because on x86_64 the struct is padded
+ * out past it.
+ */
+_Static_assert(sizeof(DIEFFECT_DX5) == offsetof(DIEFFECT, dwStartDelay),
+    "a DIEFFECT_DX5 is no longer a DIEFFECT stopping before dwStartDelay");
+
+static void
+test_a_dx5_effect_is_not_read_past_its_end(void)
+{
+	/*
+	 * A caller's struct that really does end early, with everything past
+	 * it poisoned. A full sized DIEFFECT with a small dwSize would not do:
+	 * the member is still there and still zero, so reading it unguarded
+	 * would give the same answer as not reading it and the test would pass
+	 * either way.
+	 */
+	unsigned char raw[sizeof(DIEFFECT) + 4 * sizeof(DWORD)];
+	const size_t dx5 = sizeof(DIEFFECT_DX5);
+	DIEFFECT *p = (DIEFFECT *)(void *)raw;
+	DICONSTANTFORCE cf;
+	struct t150_effect out;
+	LONG dir = 0;
+	DWORD axis = DIJOFS_X;
+
+	memset(&cf, 0, sizeof(cf));
+	cf.lMagnitude = 4200;
+
+	memset(raw, 0xee, sizeof(raw));		/* past the end, and visible */
+	memset(raw, 0, dx5);			/* the caller's own struct */
+
+	p->dwSize = (DWORD)dx5;
+	p->dwFlags = DIEFF_OBJECTOFFSETS | DIEFF_CARTESIAN;
+	p->dwDuration = 250000;
+	p->dwGain = 6000;
+	p->cAxes = 1;
+	p->rgdwAxes = &axis;
+	p->rglDirection = &dir;
+	p->cbTypeSpecificParams = sizeof(cf);
+	p->lpvTypeSpecificParams = &cf;
+
+	memset(&out, 0, sizeof(out));
+	out.kind = T150_EFFECT_CONSTANT;
+	t150_effect_convert(&out, p, ALL_PARAMS);
+
+	check_u32("a DX5 effect still gives its duration", out.duration, 250000);
+	check_u32("and its gain", out.gain, 6000);
+	check_i32("and its magnitude", out.u.constant.magnitude, 4200);
+	/*
+	 * The one that matters. Unguarded this reads the poison, because
+	 * dwStartDelay sits exactly where the caller's struct stopped.
+	 */
+	check_u32("and no start delay is read past its end", out.start_delay, 0);
+
+	/* And a full sized one still carries one, so the guard is not a ban. */
+	memset(raw, 0, sizeof(raw));
+	p->dwSize = sizeof(DIEFFECT);
+	p->dwFlags = DIEFF_OBJECTOFFSETS | DIEFF_CARTESIAN;
+	p->cAxes = 1;
+	p->rgdwAxes = &axis;
+	p->rglDirection = &dir;
+	p->dwStartDelay = 50000;
+	memset(&out, 0, sizeof(out));
+	out.kind = T150_EFFECT_CONSTANT;
+	t150_effect_convert(&out, p, ALL_PARAMS);
+	check_u32("a full sized effect still carries its start delay",
+	    out.start_delay, 50000);
+}
+
 static void
 test_constant(void)
 {
@@ -434,6 +527,7 @@ main(int argc, char *argv[])
 {
 	test_direction();
 	test_direction_round_trip();
+	test_a_dx5_effect_is_not_read_past_its_end();
 	test_constant();
 	test_periodic_and_condition();
 	test_guids();
