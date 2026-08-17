@@ -259,7 +259,8 @@ $(BIN)/socket_check: tests/socket_check.c $(LIB_OBJS) | $(BIN) $(DAEMON_BIN)
 $(BIN)/usage_check: tests/usage_check.c | $(BIN)
 	$(CC) $(CPPFLAGS) -DPROBE_SRC_DIR='"$(CURDIR)/src/probe"' \
 	    -DTOOL_SRC_DIR='"$(CURDIR)/src/tools"' \
-	    -DDAEMON_SRC_DIR='"$(CURDIR)/src/t150d"' $(CFLAGS) \
+	    -DDAEMON_SRC_DIR='"$(CURDIR)/src/t150d"' \
+	    -DMAN_DIR='"$(CURDIR)/man"' $(CFLAGS) \
 	    -o $@ tests/usage_check.c $(LDFLAGS)
 
 # wirequeue_check drives the writer's queue, which lives with the daemon. The
