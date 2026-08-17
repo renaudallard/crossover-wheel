@@ -87,6 +87,29 @@ drain_log(void)
 	consumed = loglen;
 }
 
+/* The same on a session of the caller's choosing, for the handover tests. */
+static void
+frame_on(struct t150_session *s, uint8_t op, const uint8_t *payload, size_t len,
+    uint64_t now, uint8_t want_op, enum t150_proto_err want_err)
+{
+	struct t150_reply rep;
+
+	memset(&rep, 0, sizeof(rep));
+	(void)t150_session_frame(s, op, payload, len, now, &rep);
+
+	if (rep.op != want_op) {
+		fprintf(stderr, "FAIL op %u: wanted reply %u, got %u\n", op,
+		    want_op, rep.op);
+		failures++;
+		return;
+	}
+	if (want_op == T150_OP_ERROR && rep.payload[0] != (uint8_t)want_err) {
+		fprintf(stderr, "FAIL op %u: wanted error %u, got %u\n", op,
+		    (unsigned)want_err, rep.payload[0]);
+		failures++;
+	}
+}
+
 static void
 frame(uint8_t op, const uint8_t *payload, size_t len, uint64_t now,
     uint8_t want_op, enum t150_proto_err want_err)
@@ -1472,6 +1495,55 @@ test_an_unencodable_effect_is_refused_at_the_door(void)
 	upload_at(&ef, 1);
 	if (sess.io_err)
 		fail("no write error is left owing from the refusal");
+}
+
+/*
+ * A displacing client's device settings wait for the handover.
+ *
+ * The newcomer proves its token before the incumbent has been made safe, so
+ * writing its gain and range inside the hello told the wheel to render at the
+ * newcomer's strength while the outgoing client's forces were still playing.
+ * pending defers them and settings_owed pays the debt on the tick after the
+ * caller has made the wheel safe.
+ *
+ * Neither field was ever assigned in a test, so both directions were invisible:
+ * the deferral being dropped, which is the hazard the fields were added for,
+ * and the debt never being paid, which leaves the promoted session driving a
+ * wheel that has forgotten its gain.
+ */
+static void
+test_a_displacing_clients_settings_wait_for_the_handover(void)
+{
+	struct t150_session newcomer;
+
+	/* A pending session, as main.c builds one for a second connection. */
+	t150_session_init(&newcomer, &be, TOKEN);
+	newcomer.pending = 1;
+	newcomer.verbose = 0;
+	newcomer.range_deg = 900;
+	drain_log();
+
+	frame_on(&newcomer, T150_OP_HELLO, (const uint8_t *)TOKEN,
+	    T150_TOKEN_LEN, 0, T150_OP_OK, T150_ERR_NONE);
+
+	/*
+	 * The input open and nothing else. That one packet is deliberate: the
+	 * promoted session needs the wheel listening from the moment it takes
+	 * over, and it is the only thing here that does not depend on who
+	 * holds the wheel.
+	 */
+	expect_log("a pending hello opens the input and states no settings",
+	    "write 2: 42 04\n");
+	if (!newcomer.settings_owed)
+		fail("a pending hello leaves its settings owed");
+
+	/* The caller makes the incumbent safe and promotes it; then a tick. */
+	(void)t150_session_tick(&newcomer, 1);
+	expect_log("and the tick after the handover states them",
+	    "write 2: 43 80\n"
+	    "write 4: 40 11 55 d5\n");
+	if (newcomer.settings_owed)
+		fail("the debt is settled once it has been paid");
 }
 
 /* The floor is what applies unless -E asks for the early pass. */
@@ -2942,6 +3014,7 @@ main(void)
 	test_a_finished_ramp_stops_pinning_the_timeout();
 	test_an_inherited_stop_is_released_across_a_re_acquire();
 	test_an_unencodable_effect_is_refused_at_the_door();
+	test_a_displacing_clients_settings_wait_for_the_handover();
 
 	(void)fclose(logfp);
 	free(logbuf);
