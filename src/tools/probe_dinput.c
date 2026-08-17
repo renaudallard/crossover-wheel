@@ -1150,6 +1150,21 @@ ffb_sequence(void)
 	(void)IDirectInputEffect_Start(c, 1, 0);
 	Sleep(SEQ_WARM_MS);
 
+	/*
+	 * Eight: a pause and then a continue, which is the pair SDL makes out
+	 * of SDL_HapticPause and SDL_HapticUnpause. The proxy has no wire
+	 * opcode for either, so the pause goes out as a stop-everything; the
+	 * continue has to start again what the pause stopped, and for a long
+	 * time it sent nothing at all, which left a game that paused with no
+	 * force feedback for the rest of its run.
+	 */
+	seq_mark();
+	out("  eight: paused, then continued\n");
+	(void)IDirectInputDevice8_SendForceFeedbackCommand(dev, DISFFC_PAUSE);
+	Sleep(SEQ_WARM_MS);
+	(void)IDirectInputDevice8_SendForceFeedbackCommand(dev, DISFFC_CONTINUE);
+	Sleep(SEQ_WARM_MS);
+
 	seq_mark();
 	(void)IDirectInputEffect_Stop(c);
 	(void)IDirectInputEffect_Stop(r);

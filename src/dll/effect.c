@@ -30,6 +30,12 @@ struct effect_obj {
 	 * uses it for its own replay, so the loss was entirely on this side.
 	 */
 	uint8_t			 iterations;
+	/*
+	 * Stopped by a pause rather than by the game, so a continue knows what
+	 * to put back. DISFFC_PAUSE has no wire opcode, so the proxy sends a
+	 * stop-everything for it, and that lost which effects had been running.
+	 */
+	int			 paused;
 	int			 logged;	/* the first Start is logged, not every one */
 	unsigned int		 gen;		/* the connection this was uploaded to */
 	/* What the daemon last acknowledged, and when. See upload(). */
@@ -129,8 +135,66 @@ t150_effect_all_stopped(void)
 	for (i = 0; i < T150_SLOT_MAX; i++) {
 		struct effect_obj *e = live[i];
 
-		if (e != NULL)
-			e->playing = 0;
+		if (e == NULL)
+			continue;
+		e->playing = 0;
+		/* A reset or a stop-all is not a pause: nothing is owed back. */
+		e->paused = 0;
+	}
+}
+
+/*
+ * The same, but remembering what was running so a continue can restore it.
+ *
+ * DISFFC_PAUSE has no opcode of its own, so the proxy sends a stop-everything
+ * and answers DI_OK. That much is honest, because answering DI_OK while the
+ * wheel carried on pulling is the worse way to be wrong. What was missing is
+ * the other half: DISFFC_CONTINUE sent nothing and restarted nothing, so a
+ * game that paused had no force feedback for the rest of its run. SDL's
+ * SDL_HapticPause and SDL_HapticUnpause are exactly this pair, and a plain
+ * DirectInput game that pauses on its menu behaves the same.
+ */
+void
+t150_effect_all_paused(void)
+{
+	size_t i;
+
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		struct effect_obj *e = live[i];
+
+		if (e == NULL)
+			continue;
+		e->paused = e->playing;
+		e->playing = 0;
+	}
+}
+
+void
+t150_effect_all_continued(void)
+{
+	size_t i;
+
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		struct effect_obj *e = live[i];
+		uint8_t start[2];
+
+		if (e == NULL || !e->paused)
+			continue;
+		e->paused = 0;
+
+		/*
+		 * The effects were left downloaded, which is the whole
+		 * difference between a pause and a reset, so a start is all
+		 * this takes. A refusal means the daemon does not hold the
+		 * slot after all, and clearing sent_valid is what lets the
+		 * game's own Download go rather than being skipped.
+		 */
+		start[0] = (uint8_t)e->slot;
+		start[1] = e->iterations > 0 ? e->iterations : 1;
+		if (t150_client_call(T150_OP_EFFECT_START, start, 2) == 0)
+			e->playing = 1;
+		else
+			e->sent_valid = 0;
 	}
 }
 

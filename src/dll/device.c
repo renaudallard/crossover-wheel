@@ -890,19 +890,32 @@ dev_SendForceFeedbackCommand(IDirectInputDevice8W *self, DWORD flags)
 	 */
 	if (flags & (DISFFC_PAUSE | DISFFC_SETACTUATORSOFF)) {
 		(void)t150_client_call(T150_OP_STOP_ALL, NULL, 0);
+		/*
+		 * Remembering which were running, because a stop-everything
+		 * names no effect and nothing else can tell the continue below
+		 * what to put back. This cleared the flag outright, so a game
+		 * that paused was left with no force feedback for the rest of
+		 * its run: the pause said the effects stayed downloaded and
+		 * the continue then did nothing at all.
+		 */
+		t150_effect_all_paused();
+	} else if (flags & (DISFFC_RESET | DISFFC_STOPALL)) {
+		/*
+		 * The game's effects are stopped now and only the device knows
+		 * it: these name no effect, so the objects would otherwise
+		 * still believe they were playing and be started again by the
+		 * replay that follows a reconnect.
+		 */
+		t150_effect_all_stopped();
 	}
 
 	/*
-	 * Whatever went out, the game's effects are stopped now, and only the
-	 * device knows that: these commands name no effect, so the objects
-	 * would otherwise still believe they were playing and be started
-	 * again by the replay that follows a reconnect.
+	 * And the other half of the pause. The slots are still there, so this
+	 * is a start each and nothing more.
 	 */
-	if (flags & (DISFFC_RESET | DISFFC_STOPALL | DISFFC_PAUSE |
-	    DISFFC_SETACTUATORSOFF))
-		t150_effect_all_stopped();
+	if (flags & (DISFFC_CONTINUE | DISFFC_SETACTUATORSON))
+		t150_effect_all_continued();
 
-	/* Continue and actuators-on need nothing: the slots are still there. */
 	return DI_OK;
 }
 

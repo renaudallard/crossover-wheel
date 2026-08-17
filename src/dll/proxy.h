@@ -116,6 +116,14 @@ HRESULT	t150_effect_enum(struct t150_device *dev,
 void	t150_effect_all_stopped(void);
 
 /*
+ * The same for a pause, which remembers what was running, and the continue
+ * that puts it back. DISFFC_PAUSE has no wire opcode, so the proxy stops
+ * everything for it and only this can tell a continue what to restart.
+ */
+void	t150_effect_all_paused(void);
+void	t150_effect_all_continued(void);
+
+/*
  * Mark every effect this process holds as no longer downloaded, which a
  * device level reset makes true and only the device knows. See upload().
  */

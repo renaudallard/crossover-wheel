@@ -382,6 +382,14 @@ jobs:
 
           want 7 '^write 9: 02 ' "nothing was re-uploaded after a device reset"
 
+          # A pause stops everything and a continue has to put it back. The
+          # proxy has no opcode for either, so the pause is a stop-everything
+          # and the continue is a start for each effect the pause stopped.
+          # Sending nothing at all is what it used to do, which cost a game
+          # that paused its force feedback for the rest of the run.
+          want 8 '^write 4: 41 .. 00 01$' "the pause stopped nothing"
+          want 8 '^write 4: 41 .. 41 ..$' "the continue restarted nothing"
+
           test "$bad" -eq 0 ||
               { echo "the packets above are not what the sequence asked for" >&2
                 exit 1; }
