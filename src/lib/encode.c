@@ -159,6 +159,21 @@ safe_coeff(int32_t di)
 	return v;
 }
 
+int
+t150_effect_encodable(uint8_t kind)
+{
+	uint16_t type;
+	uint8_t cls;
+
+	/*
+	 * Both halves, because they do not agree by construction: first_class
+	 * gives constant and periodic the same code and says nothing about
+	 * which waveform, while commit_type has a code per waveform and no
+	 * ninth entry. An effect needs all three packets to reach the wheel.
+	 */
+	return first_class(kind, &cls) == 0 && commit_type(kind, &type) == 0;
+}
+
 uint8_t
 t150_effect_downgrade(uint8_t kind)
 {

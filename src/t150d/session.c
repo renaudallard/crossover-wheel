@@ -653,6 +653,26 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 		fprintf(stderr, "t150d: slot %u: effect %u sent as %u\n",
 		    ef.slot, want, ef.kind);
 
+	/*
+	 * Refused here, where there is a frame to answer with, rather than in
+	 * an emission pass.
+	 *
+	 * proto.c already tells clients to expect this: an unknown kind is not
+	 * a frame error, the daemon answers T150_ERR_UNSUPPORTED. Nothing sent
+	 * it. The effect was stored instead, and the pass that discovered it
+	 * could not be encoded had no frame left, so it set io_err and the
+	 * refusal was charged to whichever later upload came next. Worse, that
+	 * pass was the one release path in this file that did not go through
+	 * slot_stop.
+	 */
+	if (!t150_effect_encodable(ef.kind)) {
+		if (s->verbose)
+			fprintf(stderr, "t150d: slot %u: effect %u is not one "
+			    "this wheel can be given\n", ef.slot, want);
+		reply_err(rep, T150_ERR_UNSUPPORTED);
+		return;
+	}
+
 	scale_effect(&ef);
 
 	/*
@@ -1453,10 +1473,24 @@ session_emit(struct t150_session *s, uint64_t now_ms)
 		 * time either, so the slot goes rather than being retried for
 		 * the life of the session. If it was playing then something
 		 * on the wheel is still running and only the stop ends it.
+		 *
+		 * Through slot_stop, like every other release in this file.
+		 * Open-coding it threw away the one answer that matters: a
+		 * refused stop left the slot forgotten while the wheel went on
+		 * rendering it, which is the failure slot_stop exists to
+		 * prevent. A refusal keeps the debt now, and clearing the kind
+		 * is what lets the retry loop release the slot once the stop
+		 * lands, since nothing here is worth keeping.
+		 *
+		 * do_upload refuses an unencodable kind at the door, so this
+		 * is defence rather than a path anything reaches today.
 		 */
-		if (sl->playing)
-			(void)control(s, (uint8_t)k, 0, 0);
-		memset(sl, 0, sizeof(*sl));
+		if (slot_stop(s, (uint8_t)k) == 0) {
+			memset(sl, 0, sizeof(*sl));
+		} else {
+			sl->ef.kind = T150_EFFECT_NONE;
+			sl->source_kind = T150_EFFECT_NONE;
+		}
 	}
 
 	s->next_slot = (uint8_t)((s->next_slot + i) % T150_SLOT_MAX);

@@ -1432,6 +1432,48 @@ test_an_inherited_stop_is_released_across_a_re_acquire(void)
 		fail("and no write error is left owing to the next upload");
 }
 
+/*
+ * An effect the wheel cannot be given is refused, with a frame to refuse it
+ * in.
+ *
+ * proto.c has always told clients to expect this: an unknown kind is not a
+ * frame error, the daemon answers T150_ERR_UNSUPPORTED, which a game can
+ * survive. Nothing ever sent it. The effect was stored and answered OK, and
+ * the pass that discovered it could not be encoded had no frame left, so the
+ * error went to whichever later upload came next - one that had succeeded.
+ */
+static void
+test_an_unencodable_effect_is_refused_at_the_door(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+
+	reset_session();
+	hello(0);
+
+	/* Nothing downgrades to this and no encoder has a code for it. */
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = 99;
+	ef.slot = 4;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.gain = T150_DI_MAX;
+	ef.direction = 9000;
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_ERROR,
+	    T150_ERR_UNSUPPORTED);
+
+	if (sess.slots[4].used)
+		fail("a refused effect leaves the slot alone");
+
+	(void)tick(0);
+	expect_log("and nothing is written for it", "");
+
+	/* A good upload afterwards is answered on its own merits. */
+	constant(&ef, 4, 5000);
+	upload_at(&ef, 1);
+	if (sess.io_err)
+		fail("no write error is left owing from the refusal");
+}
+
 /* The floor is what applies unless -E asks for the early pass. */
 static void
 test_the_floor_holds_unless_asked_otherwise(void)
@@ -2899,6 +2941,7 @@ main(void)
 	test_an_upload_does_not_rewind_a_running_ramp();
 	test_a_finished_ramp_stops_pinning_the_timeout();
 	test_an_inherited_stop_is_released_across_a_re_acquire();
+	test_an_unencodable_effect_is_refused_at_the_door();
 
 	(void)fclose(logfp);
 	free(logbuf);

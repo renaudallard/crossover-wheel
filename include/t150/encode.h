@@ -76,6 +76,14 @@ size_t	t150_enc_control(uint8_t *buf, size_t buflen, uint8_t slot, int play,
 uint8_t	t150_effect_downgrade(uint8_t kind);
 
 /*
+ * Whether this build can turn a kind into wheel packets at all, asked of what
+ * t150_effect_downgrade returned. The daemon asks before it accepts an effect,
+ * because the alternative is finding out during an emission pass, where there
+ * is no frame left to answer and the slot has already been stored.
+ */
+int	t150_effect_encodable(uint8_t kind);
+
+/*
  * Sine of a direction given in hundredths of a degree, as a signed Q15
  * fraction, so 9000 gives 32767 and 27000 gives -32767. This is the X
  * component of a DirectInput polar direction, which is the only component a
