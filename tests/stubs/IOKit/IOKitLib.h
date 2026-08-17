@@ -18,6 +18,13 @@ typedef uint32_t IOOptionBits;
 #define kIOReturnSuccess 0
 #define kIOMasterPortDefault ((mach_port_t)0)
 #define kIOMainPortDefault ((mach_port_t)0)
+/*
+ * Field for field from IOKitLib.h, and it has to be: an async read hands the
+ * completion a function pointer, and a stub that took void * there would
+ * accept any function at all. The whole point of this directory is to catch a
+ * signature that no longer matches the framework.
+ */
+typedef void (*IOAsyncCallback1)(void *refcon, IOReturn result, void *arg0);
 kern_return_t IOObjectRelease(io_object_t);
 io_service_t IOIteratorNext(io_iterator_t);
 CFMutableDictionaryRef IOServiceMatching(const char *);

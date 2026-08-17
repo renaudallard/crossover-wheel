@@ -62,9 +62,9 @@ typedef struct IOUSBInterfaceStruct500 {
 	IOReturn (*WritePipeTO)(void *, uint8_t, void *, uint32_t, uint32_t,
 	    uint32_t);
 	IOReturn (*ReadPipeAsyncTO)(void *, uint8_t, void *, uint32_t, uint32_t,
-	    uint32_t, void *, void *);
-	IOReturn (*ReadPipeAsync)(void *, uint8_t, void *, uint32_t, void *,
-	    void *);
+	    uint32_t, IOAsyncCallback1, void *);
+	IOReturn (*ReadPipeAsync)(void *, uint8_t, void *, uint32_t,
+	    IOAsyncCallback1, void *);
 	IOReturn (*WritePipe)(void *, uint8_t, void *, uint32_t);
 	IOReturn (*ClearPipeStall)(void *, uint8_t);
 	IOReturn (*CreateInterfaceAsyncEventSource)(void *, CFRunLoopSourceRef *);
