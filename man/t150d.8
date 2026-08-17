@@ -219,10 +219,21 @@ it is not reentrant is kept by nothing else ever coming in. The poll thread
 copies bytes into a queue and returns.
 .Pp
 That answer is given before the write happens, so a write the wheel refuses
-has nowhere to go: the frame that caused it was answered long ago. Such a
-failure is carried forward and refuses the next packet instead, which leaves
-the session holding it, keeps the slot owed and sends it again. Without that
-a refused packet was logged and dropped, and an effect could go missing, or a
+has nowhere to go: the frame that caused it was answered long ago. The writer
+counts what it dropped instead, and the count only ever rises. Answering for
+the packet in hand is the whole point of that: charging one packet's refusal
+to the next made
+.Fn flush_slot
+stop a set of packets that had already gone, which puts a bare first packet on
+the wire with no update or commit behind it.
+.Pp
+The session reads that count around its own writes rather than being told. A
+watchdog safe state notes it before the stops and again after, and a rise
+means the wheel is not where the daemon believes: it forgets what the wheel
+holds, means to play the started slots again, and owes an error to the next
+upload. So a refusal still keeps the slot owed and still re-arms the watchdog,
+but the packet it is charged to is the one that failed. Without any of this a
+refused packet was logged and dropped, and an effect could go missing, or a
 stop fail to arrive, with every layer reporting success.
 .Pp
 A writer with no backlog can also let the emitter run ahead of its floor,
