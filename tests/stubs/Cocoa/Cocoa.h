@@ -342,8 +342,10 @@ extern NSString * const NSForegroundColorAttributeName;
 @property (strong) NSColor *textColor;
 @end
 
+/* Really an NSMutableAttributedString, which is where the mutators come from. */
 @interface NSTextStorage : NSObject
 - (void)appendAttributedString:(NSAttributedString *)s;
+- (void)deleteCharactersInRange:(NSRange)r;
 @property (readonly) NSUInteger length;
 @end
 

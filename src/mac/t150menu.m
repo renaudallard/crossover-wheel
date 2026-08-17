@@ -52,6 +52,14 @@
 #define HEALTHY_SECS	60.0
 
 /*
+ * How much of the log is kept, both in the buffer Copy the log reads and in
+ * the setup window's own view. The oldest goes when the first is passed, back
+ * to the second.
+ */
+#define LOG_MAX		400000
+#define LOG_KEEP	200000
+
+/*
  * Which of the wheel's identities is on the bus.
  *
  * Four answers rather than the two booleans this used to keep, because those
@@ -1623,9 +1631,9 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	if (self.logBuf == nil)
 		self.logBuf = [NSMutableString string];
 	[self.logBuf appendString:s];
-	if (self.logBuf.length > 400000)
+	if (self.logBuf.length > LOG_MAX)
 		[self.logBuf deleteCharactersInRange:
-		    NSMakeRange(0, self.logBuf.length - 200000)];
+		    NSMakeRange(0, self.logBuf.length - LOG_KEEP)];
 
 	if (self.out == nil)
 		return;
@@ -1642,6 +1650,18 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 
 	[self.out.textStorage appendAttributedString:
 	    [[NSAttributedString alloc] initWithString:s attributes:attrs]];
+
+	/*
+	 * And bounded the same way as the buffer above, for the same reason it
+	 * gives: this runs for as long as the application does and the daemon
+	 * is talkative under -v. Only the view was left to grow, and the window
+	 * is open by default on a first run, so an evening's driving put tens
+	 * of thousands of attributed strings into one text storage.
+	 */
+	if (self.out.textStorage.length > LOG_MAX)
+		[self.out.textStorage deleteCharactersInRange:
+		    NSMakeRange(0, self.out.textStorage.length - LOG_KEEP)];
+
 	[self.out scrollRangeToVisible:
 	    NSMakeRange(self.out.string.length, 0)];
 }
