@@ -497,14 +497,22 @@ macOS it also builds `crossover-wheel.app`, deliberately: compiling that
 Objective-C is the whole of the automated confidence in the application.
 `make help` lists the targets.
 
-`make check-mac` syntax checks the two sources that need Cocoa and IOKit,
-`src/mac/t150menu.m` and `src/t150d/hid_darwin.c`, against the fake headers in
-`tests/stubs`. It needs clang, it is not part of `all` or `strict`, and it
-proves only that those files parse and are warning clean under the same flags:
-nothing at all about behaviour. It exists because those two were otherwise
-checked by being read, and reading does not find what `-Werror` finds. A
-change that leaves a parameter unused is a hard failure of the macOS job, and
-therefore of the release that job builds, and one reached that job once.
+`make check-mac` syntax checks every macOS only source against the fake
+headers in `tests/stubs`: the application, the daemon's HID backend, the boot
+switch, `t150ctl`, `t150boot` and all four probes. It needs clang, it is not
+part of `all` or `strict`, and it proves only that those files parse and are
+warning clean under the same flags: nothing at all about behaviour. It exists
+because they were otherwise checked by being read, and reading does not find
+what `-Werror` finds. A change that leaves a parameter unused is a hard
+failure of the macOS job, and therefore of the release that job builds, and
+one reached that job once.
+
+The stubs declare only what those files name, and they are written from the
+real headers rather than from the code. That direction matters: a stub loose
+enough to accept whatever the code does turns this check into a mirror, which
+is worse than having no check, because it passes. If one drifts, `check-mac`
+goes quiet rather than wrong. `tests/stubs/README` says which parts are
+hand-written and why the macOS job remains the authority.
 
 Development happens on Linux; the Mac is only needed to run the probes and
 the daemon. Because the probe sources cannot be compiled on Linux, CI builds
