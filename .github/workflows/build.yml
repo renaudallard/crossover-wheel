@@ -49,6 +49,12 @@ jobs:
                      "and the app will both refuse it" >&2; exit 1; }
           head -c 2 build/bin/t150-dinput8.dll | grep -q '^MZ' ||
               { echo "the proxy is not a PE" >&2; exit 1; }
+      # The archive the releases page publishes beside the disk image, built
+      # by a rule so dist/README.probe really is packaged verbatim, which is
+      # what README.md says of both archives and what nothing made true for
+      # this one.
+      - name: build the bottle probe archive
+        run: make probe-zip
       - name: upload the proxy
         uses: actions/upload-artifact@v7
         with:
@@ -57,6 +63,7 @@ jobs:
             build/bin/t150-dinput8.dll
             build/bin/dll_check.exe
             build/bin/probe_dinput.exe
+            build/bin/crossover-wheel-*-bottle-probe.zip
           if-no-files-found: error
 
   windows:

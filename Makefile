@@ -117,7 +117,7 @@ DLL_LIBS     = -ldxguid -luuid -lole32 -lws2_32
 SHARED_HDRS = $(wildcard include/t150/*.h)
 
 .PHONY: all probes tools daemon dll test check check-mac strict clean help \
-        install app dmg
+        install app dmg probe-zip
 
 ifeq ($(HAVE_DLL_CC),yes)
 DLL_TARGET = dll
@@ -377,6 +377,31 @@ install:
 # against anything.
 REL_VERSION := $(shell { git describe --tags --exact-match 2>/dev/null || \
 	         echo 0; } | sed 's/^v//')
+#
+# The bottle probe archive, the second thing the releases page publishes.
+#
+# A rule rather than something zipped by hand at release time, because
+# README.md promises that each archive's README is "packaged verbatim at
+# release time so they cannot drift from what is written here" and nothing
+# anywhere made that true for this one: the disk image copies
+# dist/README.macos in its own recipe and CI asserts it is there, and this
+# archive had no rule, no check and no README in the artifact it is built
+# from.
+#
+PROBE_ZIP = $(BIN)/crossover-wheel-$(REL_VERSION)-bottle-probe.zip
+
+probe-zip: $(PROBE_ZIP)
+
+$(PROBE_ZIP): $(DINPUT_PROBE_BIN) dist/README.probe | $(BIN)
+	@command -v zip >/dev/null 2>&1 || { \
+	    echo "probe-zip: needs zip" >&2; exit 1; }
+	rm -rf $(BUILD)/probe-zip "$@"
+	mkdir -p $(BUILD)/probe-zip
+	cp $(DINPUT_PROBE_BIN) $(BUILD)/probe-zip/
+	cp dist/README.probe $(BUILD)/probe-zip/README.txt
+	cd $(BUILD)/probe-zip && zip -q -r "$(CURDIR)/$@" .
+	@echo "built $@"
+
 APP	   = $(BIN)/crossover-wheel.app
 APP_RES	   = $(APP)/Contents/Resources
 
