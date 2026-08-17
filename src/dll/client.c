@@ -426,8 +426,34 @@ connect_locked(void)
 	 * thread.
 	 */
 	if (!keepalive_running) {
-		HANDLE th = CreateThread(NULL, 0, keepalive_main, NULL, 0, NULL);
+		HANDLE th;
 
+		/*
+		 * Pin the module first. The thread below runs for the life of
+		 * the process and there is nowhere to stop it from, because a
+		 * DLL's only teardown hook is DllMain and waiting on a thread
+		 * under the loader lock deadlocks. That reasoning covers the
+		 * process ending; it does not cover the module being unloaded
+		 * while the process carries on.
+		 *
+		 * Nothing here held a reference against that, and the proxy
+		 * hands the verdict to a DLL that knows nothing about this
+		 * thread: DllCanUnloadNow forwards to the chained builtin. A
+		 * program that loads dinput8 with LoadLibrary, plays, releases
+		 * everything and calls FreeLibrary would unmap the code this
+		 * thread is sitting in, and up to KEEPALIVE_MS later it wakes
+		 * in freed address space.
+		 *
+		 * Pinning is the honest answer rather than refusing to unload:
+		 * this really cannot be unloaded once the thread exists.
+		 */
+		HMODULE self = NULL;
+
+		(void)GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN |
+		    GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+		    (LPCWSTR)(void *)&keepalive_main, &self);
+
+		th = CreateThread(NULL, 0, keepalive_main, NULL, 0, NULL);
 		if (th != NULL) {
 			keepalive_running = 1;
 			(void)CloseHandle(th);
