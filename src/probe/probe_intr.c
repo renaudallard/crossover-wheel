@@ -272,12 +272,22 @@ release_device(long vid, long pid)
 	}
 	IOObjectRelease(svc);
 
-	if ((*dev)->USBDeviceOpen(dev) == kIOReturnSuccess) {
+	if ((r = (*dev)->USBDeviceOpen(dev)) == kIOReturnSuccess) {
 		r = (*dev)->USBDeviceReEnumerate(dev,
 		    kUSBReEnumerateReleaseDeviceMask);
 		printf("release                        %s\n",
 		    probe_ioreturn_str(r));
 		(*dev)->USBDeviceClose(dev);
+	} else {
+		/*
+		 * Said rather than skipped. This was a bare success test with
+		 * no else, so a wheel that could not be reopened was left
+		 * captured and the tool printed nothing at all about it. Its
+		 * two sibling failures above both warn and both name the fix,
+		 * and this is the one that leaves the wheel unusable.
+		 */
+		warnx("cannot reopen the wheel to hand it back: %s. Replug it",
+		    probe_ioreturn_str(r));
 	}
 	(*dev)->Release(dev);
 }
