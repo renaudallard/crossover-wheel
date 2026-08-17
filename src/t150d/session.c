@@ -1244,10 +1244,32 @@ ramp_level(const struct t150_slot *sl, uint64_t now_ms)
 static int
 slot_expired(const struct t150_slot *sl, uint64_t now_ms)
 {
+	uint64_t total;
+
 	if (sl->ef.duration == T150_DURATION_INFINITE || sl->ef.duration == 0)
 		return 0;
 
-	return now_ms - sl->started_ms >= sl->ef.duration / 1000;
+	/*
+	 * Everything the wheel was told, not the duration alone.
+	 *
+	 * The commit carries a start delay and the play packet carries an
+	 * iteration count, so the window the wheel renders in begins at
+	 * started_ms + start_delay and lasts iterations durations. This
+	 * measured one duration from the start, which cost nothing while the
+	 * only reader was the re-play guard: being early there merely skipped
+	 * a re-play. It stopped being free when the tick began stopping a slot
+	 * on this answer. A game asking for a three second delay had its
+	 * effect stopped two seconds before the wheel would have begun it, and
+	 * one asking for three iterations had two of them cut off.
+	 *
+	 * The iteration count is read the way t150_enc_control writes it: zero
+	 * means one pass.
+	 */
+	total = (uint64_t)(sl->ef.start_delay / 1000) +
+	    (uint64_t)(sl->iterations > 0 ? sl->iterations : 1) *
+	    (uint64_t)(sl->ef.duration / 1000);
+
+	return now_ms - sl->started_ms >= total;
 }
 
 /* Forget what the wheel was believed to hold, and mean to teach it again. */

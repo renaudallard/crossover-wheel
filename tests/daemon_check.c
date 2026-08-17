@@ -1617,6 +1617,65 @@ test_a_displacing_clients_settings_wait_for_the_handover(void)
 		fail("the debt is settled once it has been paid");
 }
 
+/*
+ * The end of an effect is everything the wheel was told, not the duration.
+ *
+ * The commit carries a start delay and the play packet an iteration count, so
+ * the window the wheel renders in begins at started_ms + start_delay and lasts
+ * that many durations. Measuring one duration from the start was free while
+ * the only reader was the re-play guard, and stopped being free when the tick
+ * began stopping a slot on the answer: a delayed effect was stopped before the
+ * wheel would have begun it, and a repeating one was cut off after its first
+ * pass.
+ */
+static void
+test_the_end_of_an_effect_counts_delay_and_iterations(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+	uint8_t start[2];
+
+	/* Three iterations of half a second, after a one second delay. */
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_CONSTANT;
+	ef.slot = 0;
+	ef.duration = 500000;
+	ef.start_delay = 1000000;
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.constant.magnitude = 10000;
+
+	reset_session();
+	hello(0);
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
+	    T150_ERR_NONE);
+	start[0] = 0;
+	start[1] = 3;
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(0);
+	drain_log();
+
+	/*
+	 * A duration in, the wheel has not even begun: the delay still has
+	 * half a second to run. Stopping here cancelled the effect outright.
+	 */
+	frame(T150_OP_KEEPALIVE, NULL, 0, 500, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(500);
+	expect_log("nothing is stopped while the start delay is still running",
+	    "");
+
+	/* And not part way through the iterations either. */
+	frame(T150_OP_KEEPALIVE, NULL, 0, 1800, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(1800);
+	expect_log("nor part way through the iterations", "");
+
+	/* 1000 delay + 3 * 500 = 2500, and then it goes. */
+	frame(T150_OP_KEEPALIVE, NULL, 0, 2600, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(2600);
+	expect_log("and it is stopped once all of them have run",
+	    "write 4: 41 00 00 01\n");
+}
+
 /* The floor is what applies unless -E asks for the early pass. */
 static void
 test_the_floor_holds_unless_asked_otherwise(void)
@@ -3084,6 +3143,7 @@ main(void)
 	test_a_start_puts_a_ramp_back_to_its_start();
 	test_an_upload_does_not_rewind_a_running_ramp();
 	test_a_finished_ramp_stops_pinning_the_timeout();
+	test_the_end_of_an_effect_counts_delay_and_iterations();
 	test_an_inherited_stop_is_released_across_a_re_acquire();
 	test_an_unencodable_effect_is_refused_at_the_door();
 	test_a_displacing_clients_settings_wait_for_the_handover();
