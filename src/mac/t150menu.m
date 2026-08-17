@@ -1616,17 +1616,31 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 			/*
 			 * The commonest failure is macOS refusing this app
 			 * access to CrossOver.app, which the script explains
-			 * in its own output. Repeating it here would be
-			 * noise; what this adds is that nothing was left half
-			 * done, which is the thing somebody looking at an
-			 * error most wants to know.
+			 * in its own output, so repeating it here would be
+			 * noise. What this adds is what to do next.
+			 *
+			 * It used to promise that nothing had been left half
+			 * done, and that is not the script's promise to make.
+			 * install.sh orders its work so that the bottle's own
+			 * configuration is written last and says so, but the
+			 * two files it copies into system32 go before the
+			 * registry override, and that step runs CrossOver's
+			 * wine and can fail on its own: an expired trial, a
+			 * bottle wanting an upgrade, a wineserver from another
+			 * version holding the registry. Running the install
+			 * again is the answer to all of them, and telling
+			 * somebody nothing had changed when the proxy is
+			 * already in their bottle is the kind of wrong that
+			 * sends them looking somewhere else.
 			 */
 			[weak say:st == 0 ?
 			    @"\nDone. Start the daemon from the menu bar, then "
 			    "start your game.\n" :
-			    @"\nThat did not work, and nothing was left half "
-			    "done: the installer checks as it goes and stops "
-			    "at the first thing it cannot verify.\n"];
+			    @"\nThat did not work. Read what it said above: the "
+			    "installer stops at the first thing it cannot "
+			    "verify, so nothing was left in a state a second "
+			    "run will not put right. Fix what it names and "
+			    "press Install again.\n"];
 			[weak refresh];
 		});
 	};
