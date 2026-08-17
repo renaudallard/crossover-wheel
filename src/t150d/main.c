@@ -566,6 +566,7 @@ main(int argc, char *argv[])
 	unsigned int gap_ms = 0, range_deg = 0, autocenter = 0;
 	int always_triple = 0, writer = 0, early_pass = 0;
 	int ch, lfd, cfd = -1, pfd_pend = -1, verbose = 0, fake = 0;
+	int rc = 0;
 
 	while ((ch = getopt(argc, argv, "Ea:e:g:nr:tvw")) != -1) {
 		switch (ch) {
@@ -732,7 +733,22 @@ main(int argc, char *argv[])
 		if (n == -1) {
 			if (errno == EINTR)
 				continue;
-			err(1, "poll");
+			/*
+			 * Out through the bottom of the loop, not through
+			 * err(3).
+			 *
+			 * This was the one exit from here that skipped
+			 * t150_session_shutdown, which is the only thing that
+			 * takes a force off the wheel on the way out, and
+			 * there is no atexit handler behind it. macOS
+			 * documents EAGAIN from poll as an allocation failure
+			 * a later call may well survive, so the daemon can
+			 * lose this on an ordinary busy machine while a game
+			 * holds a force.
+			 */
+			warn("poll");
+			rc = 1;
+			break;
 		}
 
 		/* A newcomer that never proves the token does not linger. */
@@ -956,5 +972,5 @@ main(int argc, char *argv[])
 	if (be.close != NULL)
 		be.close(be.priv);
 
-	return 0;
+	return rc;
 }
