@@ -314,6 +314,15 @@ t150_client_call(uint8_t op, const void *payload, size_t len)
  * lock, so waiting on a thread there deadlocks; a game on its way out is
  * exactly the case the daemon's watchdog exists for, and it releases the wheel
  * half a second later whatever this thread does.
+ *
+ * It knows nothing about whether the game is still running its frame loop,
+ * which is the limit of what the watchdog can protect against: a game whose
+ * logic thread deadlocks keeps it fed for as long as the process is scheduled,
+ * and whatever force it had commanded stays on the wheel. Gating this on
+ * recent DirectInput activity would tell a hung game from a live one for most
+ * games and bring back the regression this thread was added for in the rest,
+ * which is a game holding one steady force and calling nothing. Nothing has
+ * measured which games are which. See the watchdog note in t150/proto.h.
  */
 static DWORD WINAPI
 keepalive_main(LPVOID arg)

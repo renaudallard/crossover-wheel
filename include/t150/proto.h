@@ -129,6 +129,23 @@ enum t150_proto_err {
  * if no frame arrives for this long it stops every effect and releases the
  * autocenter, whether or not the socket is still open, which leaves the
  * wheel limp rather than latched or fighting.
+ *
+ * What this protects against is a process that has gone, not one that has
+ * hung, and the distinction is worth stating because it is not obvious.
+ * KEEPALIVE feeds the watchdog and the proxy's keepalive thread sends it on a
+ * timer of its own, knowing nothing about whether the game is still running
+ * its frame loop. A game whose logic thread deadlocks therefore keeps the
+ * watchdog fed for as long as the process is scheduled, and whatever force it
+ * had commanded stays on the wheel.
+ *
+ * That is a trade rather than an oversight. The keepalive exists because a
+ * game holding one steady force and calling nothing otherwise lost it after
+ * half a second, and at this layer a game holding a force deliberately and a
+ * game hung while holding one are the same silence. Gating the keepalive on
+ * recent DirectInput activity would tell them apart for most games and
+ * reintroduce that regression for the rest, and nothing has measured which
+ * games are which. Until something does, the honest summary is: pulling the
+ * plug on a hung game is what a person still has to do.
  */
 #define T150_WATCHDOG_MS	500u
 

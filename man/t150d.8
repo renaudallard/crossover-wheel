@@ -472,6 +472,16 @@ expected to send
 often enough to stay ahead of this. The same safe state is entered when a
 client disconnects, when one displaces another, and on the way out.
 .Pp
+.Sy "It protects against a game that has gone, not one that has hung" .
+The proxy's keepalive runs on a timer of its own and knows nothing about
+whether the game is still running its frame loop, so a game whose logic thread
+deadlocks keeps the watchdog fed for as long as its process is scheduled, and
+whatever force it had commanded stays on the wheel. That is a trade and not an
+oversight: the keepalive exists because a game holding one steady force and
+calling nothing otherwise lost it after half a second, and at this layer a
+game holding a force deliberately and a game hung while holding one are the
+same silence. Killing a hung game is still something a person has to do.
+.Pp
 A stop the wheel will not take is owed rather than forgotten. The slot keeps
 its record, the daemon stays armed, and the stop is tried again on the
 emitter's cadence and on every watchdog wake until the wheel accepts it. What
