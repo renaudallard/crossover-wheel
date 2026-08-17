@@ -79,8 +79,11 @@ on a measurement that did not support them.
 
 <img src="dist/icons/crossover-wheel-256.png" alt="" width="96" align="right">
 
-**Needs macOS 12 or newer.** The IOKit call that takes the wheel out of boot
-mode is named differently before that.
+**Needs macOS 26 or newer, on Apple Silicon.** That is the only release any of
+this has been measured on, and the measurements are the design. B6 in
+`docs/RESEARCH.md` is why it is not a formality: the `fClientSeized` check
+that decides whether a non-seizing write reaches the wheel at all arrived in
+26, and B6 says outright that older IOKit sources read the other way.
 
 **One download.** Get `crossover-wheel-<version>.dmg` from the
 [releases page](https://github.com/renaudallard/crossover-wheel/releases),

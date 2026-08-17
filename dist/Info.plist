@@ -33,20 +33,27 @@
 	<key>LSUIElement</key>
 	<true/>
 	<!--
-	    Twelve rather than eleven, because bootswitch.c and probe_intr.c
-	    name kIOMainPortDefault, which IOKit renamed from
-	    kIOMasterPortDefault in macOS 12 and marks available from there.
-	    It is a data symbol, so dyld binds it when the process starts:
-	    saying 11 here let LaunchServices open the application on a system
-	    where it could only die before main, with a crash report and no
-	    menu bar item to explain it. t150d links the same file, so falling
-	    back to the command line would not have helped either.
+	    Twenty six, which is what HANDOFF.md and README.md have called the
+	    target from the beginning and the only release any of this has been
+	    measured on. RESEARCH.md B6 is the reason it matters rather than a
+	    formality: macOS 26 added an fClientSeized check to setReport, and
+	    B6 says outright that older IOHIDFamily sources are misleading, so
+	    the non-seizing open the daemon is built on was read against this
+	    release and no other.
+
+	    Naming a lower floor is not caution, it is a promise. This said 11
+	    while bootswitch.c named kIOMainPortDefault, which IOKit renamed
+	    from kIOMasterPortDefault in macOS 12: a data symbol, bound by dyld
+	    at start, so LaunchServices opened the application on a system where
+	    it could only die before main, with a crash report and no menu bar
+	    item to explain it. t150d links the same file, so falling back to
+	    the command line would not have helped either.
 
 	    APP_CFLAGS carries the matching -mmacosx-version-min so the
 	    compiler refuses an API newer than this rather than leaving it to
 	    be found by whoever runs it.
 	-->
 	<key>LSMinimumSystemVersion</key>
-	<string>12.0</string>
+	<string>26.0</string>
 </dict>
 </plist>

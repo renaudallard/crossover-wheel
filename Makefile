@@ -27,12 +27,19 @@ UNAME_S := $(shell uname -s)
 # Saying it to the compiler is what makes it enforce it: an API newer than this
 # becomes a warning, and strict turns that into an error.
 #
-# Twelve because bootswitch.c and probe_intr.c name kIOMainPortDefault, which
-# IOKit renamed from kIOMasterPortDefault in macOS 12. It is a data symbol, so
-# dyld binds it when the process starts: with the plist claiming 11, macOS
-# would let somebody open an application that could only die before main.
+# Twenty six because that is the only release any of this has been measured
+# on, and the measurement is the design. RESEARCH.md B6: macOS 26 added an
+# fClientSeized check to setReport, so a non-seizing write fails the moment
+# anything else seizes the device, and B6 says in as many words that older
+# IOHIDFamily sources are misleading here. The whole non-seizing open rests on
+# that reading. HANDOFF.md and README.md have said "macOS 26 or newer" since
+# the beginning; this makes the build and the bundle say it too.
 #
-MACOS_MIN = 12.0
+# It was briefly 12, on the narrower ground that kIOMainPortDefault is named
+# kIOMasterPortDefault before then. True, and beside the point: naming an
+# older floor claims releases nobody has ever run this on.
+#
+MACOS_MIN = 26.0
 
 ifeq ($(UNAME_S),Darwin)
 # Apple hides err(3) and parts of IOKit behind the Darwin namespace, which
