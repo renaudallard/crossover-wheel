@@ -632,7 +632,7 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 	struct t150_slot *sl;
 	struct t150_wire sent[3];
 	uint64_t started_ms;
-	uint8_t want, was_playing, was_owed, iterations;
+	uint8_t want, was_playing, was_ramp, was_owed, iterations;
 
 	if (len < T150_PROTO_EFFECT_LEN ||
 	    t150_proto_unpack_effect(payload, len, &ef) != 0) {
@@ -688,6 +688,11 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 	 * game died, which is the one outcome the watchdog exists to prevent.
 	 */
 	was_playing = sl->used ? sl->playing : 0;
+	/*
+	 * Whether this slot already held a ramp, which is a different question
+	 * from whether it was playing one and is the one the level below needs.
+	 */
+	was_ramp = sl->used && sl->source_kind == T150_EFFECT_RAMP;
 	started_ms = sl->started_ms;
 	iterations = sl->iterations;
 	/*
@@ -741,8 +746,16 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 	 * nothing with SetParameters at 60 Hz went back UP on twenty four of
 	 * its forty nine writes, to full scale every time, while the game
 	 * believed it was easing the force off.
+	 *
+	 * The test is whether the slot already held a ramp rather than whether
+	 * it was playing one. Those were the same thing until the tick began
+	 * stopping an effect at its end: after that a game still animating a
+	 * finished ramp, which the proxy never skips an upload for, found
+	 * was_playing false and had the level thrown back to the ramp's
+	 * beginning, which for a release is the full force it had spent the
+	 * whole slide winding down.
 	 */
-	if (want == T150_EFFECT_RAMP && was_playing)
+	if (want == T150_EFFECT_RAMP && was_ramp)
 		sl->ef.u.constant.magnitude =
 		    apply_gain(ramp_level(sl, s->last_frame_ms), sl->ef.gain);
 
