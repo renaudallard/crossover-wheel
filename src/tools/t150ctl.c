@@ -140,12 +140,13 @@ build(struct job *j, int argc, char *argv[])
  * there is more than one candidate.
  */
 static IOHIDDeviceRef
-pick_node(const struct probe_devlist *dl)
+pick_node(const struct probe_devlist *dl, int *joysticks)
 {
 	IOHIDDeviceRef found = NULL;
 	CFIndex i;
 	int seen = 0;
 
+	*joysticks = 1;
 	if (dl->count == 1)
 		return (IOHIDDeviceRef)dl->items[0];
 
@@ -159,6 +160,8 @@ pick_node(const struct probe_devlist *dl)
 		found = d;
 		seen++;
 	}
+
+	*joysticks = seen;
 
 	return seen == 1 ? found : NULL;
 }
@@ -203,7 +206,7 @@ main(int argc, char *argv[])
 	long vid = T150_VID, pid = T150_PID_FIRMWARE;
 	unsigned long parsed;
 	size_t i;
-	int ch, rc = 0;
+	int ch, rc = 0, joysticks = 0;
 
 	memset(&j, 0, sizeof(j));
 
@@ -238,11 +241,21 @@ main(int argc, char *argv[])
 		errx(1, "no wheel at %04lx:%04lx, is it plugged in and "
 		    "switched to firmware mode", vid, pid);
 	}
-	if ((dev = pick_node(&dl)) == NULL) {
+	if ((dev = pick_node(&dl, &joysticks)) == NULL) {
+		long n = (long)dl.count;
+
 		probe_devlist_close(&dl);
-		errx(1, "%ld nodes match %04lx:%04lx and none is a joystick, "
-		    "so there is no telling which one drives the wheel",
-		    (long)dl.count, vid, pid);
+		/*
+		 * pick_node refuses for two different reasons and this said
+		 * the first for both, so somebody with two joystick nodes was
+		 * sent looking for a missing one. The man page documents the
+		 * rule the other way round: exactly one has to be a Generic
+		 * Desktop collection.
+		 */
+		errx(1, "%ld nodes match %04lx:%04lx and %s, so there is no "
+		    "telling which one drives the wheel", n, vid, pid,
+		    joysticks == 0 ? "none is a joystick" :
+		    "more than one is a joystick");
 	}
 
 	if (j.n == 0) {
