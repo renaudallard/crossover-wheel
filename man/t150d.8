@@ -499,11 +499,14 @@ emitter's cadence and on every watchdog wake until the wheel accepts it. What
 does go down immediately is the game's intent, so an effect the game stopped is
 never started again by the replay that follows a re-acquire, however the stop
 itself fared.
-The debt also survives the two things that replace what the daemon knows about
-a slot without changing what the wheel is rendering: the game uploading a new
-effect to that slot, and a second client displacing the first. Both used to
-take the record with them and leave the wheel pulling with nothing able to stop
-it.
+The debt also survives everything that replaces what the daemon knows about a
+slot without changing what the wheel is rendering: the game uploading a new
+effect to that slot, a second client displacing the first, and a client simply
+going away and another connecting. Each of those used to take the record with
+them and leave the wheel pulling with nothing able to stop it. The last one is
+the quietest, because between the disconnect and the reconnect the emitter is
+retrying the stop on every pass, and it is the arrival of the next game that
+ends the retry.
 .Pp
 When the stop does land, the slot is left exactly as one the wheel took at once
 would have been. A plain
