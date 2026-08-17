@@ -609,7 +609,7 @@ main(int argc, char *argv[])
 	char endpoint[PATH_MAX], token[T150_TOKEN_LEN + 1];
 	struct stat epstat;
 	struct t150_backend be;
-	struct t150_session sess, psess;
+	struct t150_session sess, psess, fresh;
 	struct pollfd pfd[3];
 	const char *epopt = NULL, *home;
 	uint8_t rx[RXBUF], prx[RXBUF];
@@ -980,7 +980,23 @@ main(int argc, char *argv[])
 				 * straight away. It still has to say HELLO
 				 * before the session will do anything.
 				 */
-				t150_session_init(&sess, &be, token);
+				/*
+				 * A stop the wheel would not take is still
+				 * owed once the client that asked for it has
+				 * gone, and the session holding that debt is
+				 * about to be overwritten. The displacement
+				 * path carries it across for exactly this
+				 * reason; this one threw it away, so the one
+				 * thing that knew the wheel might still be
+				 * pulling went at the moment the next game
+				 * connected. The wheel being present but
+				 * refusing is the case that matters, since a
+				 * wheel that went away is scrubbed by the
+				 * re-acquire instead.
+				 */
+				t150_session_init(&fresh, &be, token);
+				t150_session_inherit_stops(&fresh, &sess);
+				sess = fresh;
 				sess.verbose = verbose;
 				sess.range_deg = range_deg;
 				sess.autocenter = autocenter;
