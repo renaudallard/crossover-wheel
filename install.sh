@@ -597,7 +597,9 @@ fi
 cat <<EOF
 
 Start the daemon before the game, and leave it running. The proxy looks for
-it once, when the game creates its wheel, and never again.
+it when the game creates its wheel. If it is not there then, that game has
+the wheel directly and starting the daemon afterwards will not reach it. A
+daemon restarted under a game that did find one is picked up by itself.
 
   $boot          # after every plug-in, sleep and wake
   $daemon -v -w       # then start the game

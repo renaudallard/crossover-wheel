@@ -102,11 +102,14 @@ By hand:
                       before you start the daemon.
   t150d -v -w         start this before the game, and leave it running.
 
-The proxy looks for the daemon when the game creates its wheel, and again on
-any later call if it has lost it, at most once a second. So a daemon started
-late, or restarted under a running game, is picked up within a frame or two
-and the game gets its force feedback back by itself. Starting it first is
-still the simplest thing to do.
+The proxy looks for the daemon when the game creates its wheel. If one answers
+then, the game keeps it: a later call that finds the socket gone re-dials, at
+most once a second, so a daemon restarted under a running game is picked up
+within a frame or two and the game gets its force feedback back by itself.
+
+If nothing answers at that moment the game is given the wheel directly and
+nothing in it looks again, so starting the daemon afterwards does not reach
+that game. Start it first, or restart the game.
 
 -w writes to the wheel from a separate thread, which is what stops a game
 reporting 100% CPU. The menu bar application always passes it; it is not the
