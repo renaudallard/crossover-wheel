@@ -25,6 +25,19 @@
 #define T150_PID_FIRMWARE	0xb677u
 
 /*
+ * And what the wheel is when the selector on its base is in the PS4 position
+ * instead of the PS3 one. Nothing here drives it there: it takes no mode
+ * switch, it has a different report descriptor, and RESEARCH.md D7 is why
+ * driving it there is the wrong road.
+ *
+ * It is named because it is worth telling apart from an empty bus. A wheel in
+ * this position matches neither id above, so anything looking only for those
+ * two reports that no wheel is plugged in while one is sitting there rigid,
+ * which is a diagnosis nobody can make from that sentence.
+ */
+#define T150_PID_PS4		0xb66du	/* "Thrustmaster Racing Wheel FFB" */
+
+/*
  * Boot to firmware mode switch, two vendor control transfers on endpoint 0.
  *
  * 1. model query:  bmRequestType 0xC1, bRequest 73, wLength 16.

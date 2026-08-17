@@ -43,6 +43,24 @@
  */
 #define AGENT_LOG_MAX	(4 * 1024 * 1024)
 
+/*
+ * Which of the wheel's identities is on the bus.
+ *
+ * Four answers rather than the two booleans this used to keep, because those
+ * two could not say the fourth. A wheel whose selector is in the PS4 position
+ * is plugged in and rigid and is at neither id this drives, so both booleans
+ * read false and the menu reported that no wheel was found, which is the one
+ * sentence that stops somebody looking at the switch on the base.
+ *
+ * Ordered by how usable the wheel is, so the first that matches wins.
+ */
+typedef enum {
+	WHEEL_NONE = 0,	/* nothing of ours on the bus */
+	WHEEL_PS4,	/* plugged in, selector in the wrong position */
+	WHEEL_BOOT,	/* switched, not back at its own id yet */
+	WHEEL_READY	/* at b677, which is what this drives */
+} wheel_state;
+
 @interface T150Menu : NSObject <NSApplicationDelegate, NSWindowDelegate,
     NSMenuDelegate>
 @property (strong) NSStatusItem *item;
@@ -58,8 +76,7 @@
 @property (strong) NSMenuItem *loginItem;
 @property (strong) NSTimer *watch;
 @property (assign) BOOL clientConnected;
-@property (assign) BOOL wheelSeen;
-@property (assign) BOOL wheelReady;
+@property (assign) wheel_state wheel;
 /*
  * Whether the daemon that just ended was meant to end. Everything that stops
  * it on purpose clears this first, so the termination handler can tell a stop
@@ -348,8 +365,7 @@
 	m.delegate = self;
 	self.item.menu = m;
 	[self leaveBootMode];
-	self.wheelSeen = [self wheelPresent];
-	self.wheelReady = [self wheelUsable];
+	self.wheel = [self wheelState];
 	[self refresh];
 
 	/*
@@ -425,7 +441,7 @@
 {
 	NSString *name;
 
-	if (!running || !self.wheelReady)
+	if (!running || self.wheel != WHEEL_READY)
 		name = @"t150-idleTemplate";
 	else if (self.clientConnected)
 		name = @"t150-activeTemplate";
@@ -451,32 +467,51 @@
 	BOOL elsewhere = !mine && [self daemonElsewhere];
 	BOOL running = mine || elsewhere;
 	/*
-	 * Three states, not two. A wheel still at the boot id is plugged in
-	 * and unusable: that id names no model, so a game enumerating it there
-	 * binds to a different device from the one it will see once the switch
-	 * has happened, and every button mapped against the other one has to
-	 * be done again. Saying "connected" then was saying it at the one
-	 * moment it matters most that somebody waits a few seconds.
+	 * Four states, not two. A wheel still at the boot id is plugged in and
+	 * unusable: that id names no model, so a game enumerating it there binds
+	 * to a different device from the one it will see once the switch has
+	 * happened, and every button mapped against the other one has to be done
+	 * again. Saying "connected" then was saying it at the one moment it
+	 * matters most that somebody waits a few seconds.
+	 *
+	 * And a wheel in the PS4 position says so, naming the switch and where
+	 * to put it, because that is the whole fix and it is on the base of the
+	 * wheel rather than anywhere this software can reach.
 	 */
-	NSString *wheel = self.wheelReady ? @"wheel connected"
-	    : (self.wheelSeen ? @"wheel starting up, not ready for a game"
-	    : @"no wheel found");
+	NSString *text;
+
+	switch (self.wheel) {
+	case WHEEL_READY:
+		text = @"wheel connected";
+		break;
+	case WHEEL_BOOT:
+		text = @"wheel starting up, not ready for a game";
+		break;
+	case WHEEL_PS4:
+		text = @"wheel in the PS4 position: "
+		    @"set its switch to PS3 and replug";
+		break;
+	case WHEEL_NONE:
+	default:
+		text = @"no wheel found";
+		break;
+	}
 
 	[self showGlyph:running];
 
 	if (elsewhere)
 		self.statusLine.title = [NSString stringWithFormat:
-		    @"%@ · daemon running, started elsewhere", wheel];
+		    @"%@ · daemon running, started elsewhere", text];
 	else if (running && self.clientConnected)
 		self.statusLine.title = [NSString stringWithFormat:
 		    @"%@ · daemon running · a game is connected",
-		    wheel];
+		    text];
 	else if (running)
 		self.statusLine.title = [NSString stringWithFormat:
-		    @"%@ · daemon running", wheel];
+		    @"%@ · daemon running", text];
 	else
 		self.statusLine.title = [NSString stringWithFormat:
-		    @"%@ · daemon stopped", wheel];
+		    @"%@ · daemon stopped", text];
 
 	/*
 	 * A daemon somebody else started is not ours to stop, and offering to
@@ -511,8 +546,7 @@
 - (void)menuWillOpen:(NSMenu *)menu
 {
 	(void)menu;
-	self.wheelSeen = [self wheelPresent];
-	self.wheelReady = [self wheelUsable];
+	self.wheel = [self wheelState];
 	[self checkBottleProxies];
 	[self refresh];
 }
@@ -559,11 +593,10 @@
  */
 - (void)watchWheel
 {
-	BOOL was = self.wheelSeen, wasReady = self.wheelReady;
+	wheel_state was = self.wheel;
 
 	[self leaveBootMode];
-	self.wheelSeen = [self wheelPresent];
-	self.wheelReady = [self wheelUsable];
+	self.wheel = [self wheelState];
 
 	/*
 	 * A daemon of our own arrives through its pipe. One started at login
@@ -573,57 +606,53 @@
 	if ([self daemonElsewhere])
 		[self readAgentLog];
 
-	if (self.wheelSeen != was || self.wheelReady != wasReady)
+	if (self.wheel != was)
 		[self refresh];
 }
 
+/* Whether this vendor has a device at pid on the bus. */
+- (BOOL)wheelAt:(unsigned int)pid
+{
+	io_service_t s;
+
+	if ((s = t150_usb_find(T150_VID, pid)) == IO_OBJECT_NULL)
+		return NO;
+	IOObjectRelease(s);
+
+	return YES;
+}
+
 /*
- * Whether the wheel is on the bus, asked the same way the daemon asks: by
- * vendor and product id, through the IOKit helper t150boot and the daemon
- * already share. It needs no device open and no root.
+ * Where the wheel is, asked the same way the daemon asks: by vendor and
+ * product id, through the IOKit helper t150boot and the daemon already share.
+ * It needs no device open and no root.
  *
  * This used to run ioreg and look for a registry entry named T150, which was
  * a guess and was wrong. The menu said no wheel found while a game was being
  * driven by that very wheel, which is worse than saying nothing: it invites
  * somebody to go hunting for a fault that is not there.
  *
- * Both product ids count. The boot one means it is plugged in but not yet
- * switched, which leaveBootMode above puts right on the next tick of the
- * watch timer, and which the daemon also does on its own scan.
- */
-- (BOOL)wheelPresent
-{
-	io_service_t s;
-
-	if ([self wheelUsable])
-		return YES;
-	if ((s = t150_usb_find(T150_VID, T150_PID_BOOT)) != IO_OBJECT_NULL) {
-		IOObjectRelease(s);
-		return YES;
-	}
-
-	return NO;
-}
-
-/*
- * Whether the wheel is at its own product id, which is the only one a game
- * can use.
+ * Three ids count, and the reason each does is different. Boot means plugged
+ * in but not yet switched, which leaveBootMode puts right on the next tick of
+ * the watch timer and the daemon also does on its own scan. PS4 means the
+ * selector on the base is in the position nothing here drives, which no
+ * software can put right: it is a switch somebody has to slide. Reporting that
+ * as an empty bus cost a fault report, because a wheel in that position is
+ * rigid as well as unfindable and the two together read as a broken wheel.
  *
- * At the boot id it is on the bus and no use to anybody: that id names no
- * model, every T-series wheel shares it, and a game that enumerates the wheel
- * there binds to a different device from the one it will see once the switch
- * has happened. wheelPresent above is the wider question, and the difference
- * between the two is what tells "no wheel" apart from "not ready yet".
+ * Most usable first and it stops at the first hit. One wheel is in one
+ * position, so a lookup after a hit asks a question already answered.
  */
-- (BOOL)wheelUsable
+- (wheel_state)wheelState
 {
-	io_service_t s;
+	if ([self wheelAt:T150_PID_FIRMWARE])
+		return WHEEL_READY;
+	if ([self wheelAt:T150_PID_BOOT])
+		return WHEEL_BOOT;
+	if ([self wheelAt:T150_PID_PS4])
+		return WHEEL_PS4;
 
-	if ((s = t150_usb_find(T150_VID, T150_PID_FIRMWARE)) == IO_OBJECT_NULL)
-		return NO;
-	IOObjectRelease(s);
-
-	return YES;
+	return WHEEL_NONE;
 }
 
 #pragma mark - what the wheel keeps for itself

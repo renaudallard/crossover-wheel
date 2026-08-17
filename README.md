@@ -112,7 +112,7 @@ is a fault to read rather than a loop to run.
 
 | icon | meaning |
 | --- | --- |
-| thin hub | the daemon is stopped, no wheel is plugged in, or the wheel is still starting up |
+| thin hub | the daemon is stopped, or the wheel is not one it can drive yet: unplugged, still starting up, or in the PS4 position |
 | filled hub | the daemon holds the wheel |
 | full hub | a game is streaming force feedback |
 
@@ -123,6 +123,14 @@ enumerates it there sees a different device: the buttons you mapped are mapped
 against something it can no longer find. The menu says *wheel starting up, not
 ready for a game* until the switch has happened, which takes a few seconds and
 which the app and the daemon both do by themselves.
+
+**The menu names the PS4 position too**, as *wheel in the PS4 position: set its
+switch to PS3 and replug*. That state is a wheel plugged in, findable at
+`044f:b66d` and rigid, at an identity nothing here drives, and the only fix is
+the selector on the base of the wheel. It used to read *no wheel found*, which
+is true of neither of the two ids the app looked for and false about the wheel,
+and it sent one person hunting for a fault in the software instead of looking at
+the switch.
 
 **Copy the log** puts what the daemon has printed on the clipboard, whether or
 not a window is open to show it. A long tail of it rather than the whole
@@ -530,7 +538,9 @@ selector decides which device macOS sees, and it is not a preference: PS3
 gives `044f:b65d`, the shared boot identity that `t150boot` takes to
 `044f:b677`, which is what this project drives. PS4 gives `044f:b66d`, a
 DualShock 4 shaped device running a different protocol that nothing here
-applies to. A wheel in the PS4 position is not a wheel this software can find.
+applies to. A wheel in the PS4 position is not a wheel this software can drive,
+but the menu does recognise it there and says so rather than reporting an empty
+bus.
 
 **Watch it calibrate.** A healthy T150 sweeps counterclockwise, then
 clockwise, then back to centre as soon as it has mains power. If it does not,
