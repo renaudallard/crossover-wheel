@@ -110,8 +110,14 @@ struct hid_be {
 	 * recorded the packet as being on the wheel. The failure was logged
 	 * and then dropped: an effect could go missing with every layer
 	 * reporting success, and a stop that never arrived left the wheel
-	 * pulling. Carrying it forward is the only way back to the session,
-	 * which reacts by keeping the slot dirty and sending it again.
+	 * pulling.
+	 *
+	 * This says a write failed. It cannot say which, so it is not what
+	 * repairs the slot: the epoch bump beside it is, because forgetting
+	 * what the wheel holds is the one recovery that needs no identity.
+	 * What this is for is the error reaching the session at all, which it
+	 * reports to the next EFFECT_UPLOAD, and hid_drain taking it so the
+	 * safe state knows whether its stops landed.
 	 *
 	 * Atomic because the writer sets it and the poll thread takes it.
 	 */
