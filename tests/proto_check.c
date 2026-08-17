@@ -167,6 +167,105 @@ roundtrip(const char *what, const struct t150_effect *ef)
 	}
 }
 
+/*
+ * The effect payload's own byte layout, held still by a literal.
+ *
+ * roundtrip below proves pack and unpack are mutual inverses and nothing more,
+ * and the two of them live twenty lines apart in one file: any edit that moves
+ * a field moves both, and the test goes on passing while the bytes on the wire
+ * change. The header has had a vector like this from the start and the payload,
+ * which is the message that actually carries force, had none.
+ *
+ * It matters here more than it would elsewhere because the two ends ship
+ * separately and are updated separately. src/mac/t150menu.m says so at length:
+ * "Check for updates" replaces the application, and the proxy in somebody's
+ * bottle stays as it was the day they pressed Install. T150_PROTO_VERSION is
+ * the only guard against a mismatch, it has been 1 since the initial commit,
+ * and nothing coupled it to the layout. So a self-consistent change to
+ * proto.c would have gone out against an older proxy in silence.
+ *
+ * The offsets are the ones include/t150/proto.h documents, and every field
+ * here is a different value so a transposition cannot pass.
+ */
+static void
+test_effect_layout(void)
+{
+	static const uint8_t want[] = {
+		0x08,				/* kind, spring */
+		0x05,				/* slot */
+		0x60, 0xe3, 0x16, 0x00,		/* duration, 1500000 */
+		0x90, 0xd0, 0x03, 0x00,		/* start delay, 250000 */
+		0x4c, 0x1d, 0x00, 0x00,		/* gain, 7500 */
+		0x78, 0x69, 0x00, 0x00,		/* direction, 27000 */
+		0xa0, 0x86, 0x01, 0x00,		/* attack time, 100000 */
+		0xa0, 0x0f, 0x00, 0x00,		/* attack level, 4000 */
+		0x40, 0x0d, 0x03, 0x00,		/* fade time, 200000 */
+		0x18, 0xfc, 0xff, 0xff,		/* fade level, -1000 */
+		0x01,				/* envelope present */
+		0x3c, 0xf6, 0xff, 0xff,		/* centre, -2500 */
+		0x40, 0x1f, 0x00, 0x00,		/* positive coefficient, 8000 */
+		0xc0, 0xe0, 0xff, 0xff,		/* negative coefficient, -8000 */
+		0x28, 0x23, 0x00, 0x00,		/* positive saturation, 9000 */
+		0x70, 0x17, 0x00, 0x00,		/* negative saturation, 6000 */
+		0xf4, 0x01, 0x00, 0x00		/* deadband, 500 */
+	};
+	struct t150_effect ef;
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	size_t i;
+
+	if (sizeof(want) != T150_PROTO_EFFECT_LEN) {
+		fail("the vector is not T150_PROTO_EFFECT_LEN bytes");
+		return;
+	}
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_SPRING;
+	ef.slot = 5;
+	ef.duration = 1500000;
+	ef.start_delay = 250000;
+	ef.gain = 7500;
+	ef.direction = 27000;
+	ef.envelope.present = 1;
+	ef.envelope.attack_time = 100000;
+	ef.envelope.attack_level = 4000;
+	ef.envelope.fade_time = 200000;
+	ef.envelope.fade_level = -1000;
+	ef.u.condition.center = -2500;
+	ef.u.condition.pos_coeff = 8000;
+	ef.u.condition.neg_coeff = -8000;
+	ef.u.condition.pos_saturation = 9000;
+	ef.u.condition.neg_saturation = 6000;
+	ef.u.condition.deadband = 500;
+
+	memset(buf, 0xaa, sizeof(buf));
+	if (t150_proto_pack_effect(buf, sizeof(buf), &ef) !=
+	    T150_PROTO_EFFECT_LEN) {
+		fail("packing the layout vector");
+		return;
+	}
+
+	for (i = 0; i < sizeof(want); i++) {
+		if (buf[i] == want[i])
+			continue;
+		fprintf(stderr, "FAIL effect layout: byte %zu is 0x%02x, "
+		    "wanted 0x%02x\n", i, buf[i], want[i]);
+		failures++;
+		return;
+	}
+
+	/*
+	 * And the version has to move when the layout does. Nothing can check
+	 * that automatically, so this is the reminder: if the vector above had
+	 * to be changed, the two halves no longer agree and the version is what
+	 * tells an older proxy to stop rather than to misread.
+	 */
+	if (T150_PROTO_VERSION != 1) {
+		fprintf(stderr, "note: protocol version is %u, so the layout "
+		    "vector above should have been reviewed with it\n",
+		    T150_PROTO_VERSION);
+	}
+}
+
 static void
 test_effects(void)
 {
@@ -240,6 +339,7 @@ int
 main(void)
 {
 	test_header();
+	test_effect_layout();
 	test_effects();
 
 	if (failures != 0) {
