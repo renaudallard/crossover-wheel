@@ -35,6 +35,20 @@ jobs:
       # recursive sub-make, so both built the same three PE targets.
       - name: build the proxy and its test
         run: make strict
+      # install.sh and the menu bar app both refuse to install a proxy that
+      # does not carry this string, and both find it by searching the PE. It
+      # is there for one incidental reason, the GetEnvironmentVariableA call
+      # in src/dll/client.c, so renaming that variable or adding
+      # --gc-sections would break every install with nothing anywhere going
+      # red. install_check.sh cannot see it: its synthetic proxy carries the
+      # literal whatever the real build does.
+      - name: the proxy carries the marker every install gates on
+        run: |
+          grep -aq 'T150_ENDPOINT' build/bin/t150-dinput8.dll ||
+              { echo "the proxy has no T150_ENDPOINT string, so install.sh" \
+                     "and the app will both refuse it" >&2; exit 1; }
+          head -c 2 build/bin/t150-dinput8.dll | grep -q '^MZ' ||
+              { echo "the proxy is not a PE" >&2; exit 1; }
       - name: upload the proxy
         uses: actions/upload-artifact@v7
         with:
