@@ -427,18 +427,24 @@ upload(struct effect_obj *e)
 	 *   and the daemon is holding the news for the next upload. Both are
 	 *   bounded by how old the acknowledgement is: see ASSUME_MS.
 	 *
-	 * A ramp is never skipped, because for a ramp the bytes being equal
-	 * does not mean the daemon's slot is. The wheel has no ramp, so the
-	 * daemon renders one as a constant it re-computes on its own clock,
-	 * and an upload is the only thing that puts that level back to the
-	 * ramp's start. Skipping it left a ramp that was started again playing
+	 * A ramp is never skipped. The wheel has no ramp, so the daemon
+	 * renders one as a constant it re-computes on its own clock, and for a
+	 * ramp the bytes being equal therefore does not mean the daemon's slot
+	 * is. Skipping the upload left a ramp that was started again playing
 	 * whatever level it had slid to: measured against the session code, a
 	 * ramp from 0 to 10000 over 300 ms restarted after it had run sent the
 	 * play packet alone, so the wheel replayed the 0x40 it was still
 	 * holding, which is full scale, until the slicer corrected it up to
-	 * T150_RAMP_TICK_MS later. With the upload it sends 03 46 00 00 first,
-	 * which is the start value the game asked for. Ramps are the only kind
-	 * this applies to: session.c's tick touches no other slot's effect.
+	 * T150_RAMP_TICK_MS later.
+	 *
+	 * The daemon no longer relies on this: do_start rewinds a ramp itself,
+	 * so a skip cannot produce that any more. The exemption stays because
+	 * the two halves of this stack ship separately and are updated
+	 * separately, so a proxy this new may well be talking to a daemon that
+	 * still needs the upload, and one round trip on an effect kind almost
+	 * nothing uses is not worth the risk of finding out. Ramps are the
+	 * only kind it applies to: session.c's tick touches no other slot's
+	 * effect.
 	 */
 	gen = t150_client_state(&up);
 	if (up && e->sent_valid && e->gen == gen &&

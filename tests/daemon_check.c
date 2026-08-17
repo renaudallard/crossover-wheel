@@ -1210,19 +1210,23 @@ test_a_queued_write_the_wheel_refused_is_taught_again(void)
 }
 
 /*
- * Only an upload puts a ramp back to its start, which is a precondition the
- * proxy has to honour rather than a behaviour of its own.
+ * A start puts a ramp back to its beginning, with or without the upload the
+ * proxy sends ahead of it.
  *
  * The wheel has no ramp. The daemon renders one as a constant it re-computes
- * as the ramp slides, and do_upload is the only thing that puts that level
- * back to where the ramp begins. A start on its own therefore sends no level
- * at all and the wheel replays the one it had slid to, which for a ramp that
- * has run its course is its end value: full scale for the ramp used here,
- * which ends at T150_DI_MAX. That is why upload() in src/dll/effect.c never
- * skips the upload for a ramp however unchanged its parameters are.
+ * as the ramp slides, so something has to put that level back when the game
+ * plays it again, and for a long time the only thing that did was do_upload.
+ * That made it a precondition on the proxy rather than a property of the
+ * daemon, and it made every bare SetParameters on a running ramp throw the
+ * wheel back to a start value the slide had already left.
+ *
+ * A start is the event that means begin again, so it is what rewinds now. The
+ * proxy still never skips a ramp upload, but it no longer has to: a skip can
+ * no longer leave the wheel replaying whatever level the slide had reached,
+ * which for the ramp here is full scale, since it ends at T150_DI_MAX.
  */
 static void
-test_only_an_upload_puts_a_ramp_back_to_its_start(void)
+test_a_start_puts_a_ramp_back_to_its_start(void)
 {
 	struct t150_effect ef;
 	uint8_t buf[T150_PROTO_EFFECT_LEN];
@@ -1263,16 +1267,66 @@ test_only_an_upload_puts_a_ramp_back_to_its_start(void)
 			    T150_OP_OK, T150_ERR_NONE);
 			frame(T150_OP_EFFECT_START, start, 2, 410, T150_OP_OK,
 			    T150_ERR_NONE);
-			expect_log("an upload puts the ramp back to its start",
+			expect_log("an upload and a start put the ramp back",
 			    "write 4: 03 46 00 00\nwrite 4: 41 02 41 01\n");
 		} else {
 			frame(T150_OP_EFFECT_START, start, 2, 410, T150_OP_OK,
 			    T150_ERR_NONE);
-			expect_log("a start alone sends no level, so the wheel "
-			    "keeps the one it slid to",
-			    "write 4: 41 02 41 01\n");
+			expect_log("and a start on its own does it too",
+			    "write 4: 03 46 00 00\nwrite 4: 41 02 41 01\n");
 		}
 	}
+}
+
+/*
+ * And an upload on its own does not rewind a ramp that is running.
+ *
+ * A game animating a force calls SetParameters without DIEP_START, which
+ * reaches do_upload and nothing else. Rewinding there threw the wheel back to
+ * the start value the slide had already left, roughly every other write:
+ * measured on a ramp releasing from full scale to nothing with SetParameters
+ * at 60 Hz, twenty four of its forty nine writes went the wrong way, to full
+ * scale every time, while the game believed it was easing the force off.
+ */
+static void
+test_an_upload_does_not_rewind_a_running_ramp(void)
+{
+	struct t150_effect ef;
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	uint8_t start[2];
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_RAMP;
+	ef.slot = 2;
+	ef.duration = 400000;		/* 400 ms */
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.ramp.start = 10000;	/* a force the game is easing off */
+	ef.u.ramp.end = 0;
+	start[0] = 2;
+	start[1] = 1;
+
+	reset_session();
+	hello(0);
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
+	    T150_ERR_NONE);
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(0);
+	(void)tick(200);		/* half way down */
+	drain_log();
+
+	/* The game says the same thing again, without asking for a start. */
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 200, T150_OP_OK,
+	    T150_ERR_NONE);
+	(void)tick(210);
+	expect_log("a bare upload leaves a running ramp where it has slid to",
+	    "");
+
+	/* And the slide carries on downward rather than starting again. */
+	(void)tick(230);
+	expect_log("and the slide carries on from there",
+	    "write 4: 03 46 00 1b\n"
+	    "write 4: 41 02 41 01\n");
 }
 
 /* The floor is what applies unless -E asks for the early pass. */
@@ -2738,7 +2792,8 @@ main(void)
 	test_a_queued_write_the_wheel_refused_is_taught_again();
 	test_a_failed_pass_is_not_brought_forward();
 	test_the_floor_holds_unless_asked_otherwise();
-	test_only_an_upload_puts_a_ramp_back_to_its_start();
+	test_a_start_puts_a_ramp_back_to_its_start();
+	test_an_upload_does_not_rewind_a_running_ramp();
 
 	(void)fclose(logfp);
 	free(logbuf);

@@ -174,6 +174,9 @@ scale_effect(struct t150_effect *ef)
 static int control(struct t150_session *s, uint8_t slot, int play,
 	    uint8_t iterations);
 
+/* Where a ramp has slid to. Defined with the slicer, needed by do_upload. */
+static int32_t ramp_level(const struct t150_slot *sl, uint64_t now_ms);
+
 /*
  * Returns 0 when the wheel already holds the effect and nothing was sent,
  * 1 when only the update went, 2 when the whole set went, -1 when a write
@@ -689,6 +692,27 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 	sl->dirty = 1;
 
 	/*
+	 * A ramp already running keeps the level it has slid to.
+	 *
+	 * The wheel has no ramp, so the daemon walks it and this is the only
+	 * place the rendered level is set from anything but the slicer.
+	 * Rewinding it to the ramp's beginning is right for the upload a
+	 * restart carries, and do_start does that now. It is wrong for the
+	 * bare SetParameters a game makes on a force it is animating, which
+	 * reaches here just the same and cannot be told apart: the slide had
+	 * not restarted, so the wheel was thrown back to the start value and
+	 * the slicer walked it forward again up to T150_RAMP_TICK_MS later.
+	 *
+	 * Measured against this file, a ramp releasing from full scale to
+	 * nothing with SetParameters at 60 Hz went back UP on twenty four of
+	 * its forty nine writes, to full scale every time, while the game
+	 * believed it was easing the force off.
+	 */
+	if (want == T150_EFFECT_RAMP && was_playing)
+		sl->ef.u.constant.magnitude =
+		    apply_gain(ramp_level(sl, s->last_frame_ms), sl->ef.gain);
+
+	/*
 	 * What the game is actually asking for, at most once a second so a
 	 * game updating at its physics rate does not drown the terminal.
 	 *
@@ -812,6 +836,28 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 	 * without an update while its constant force was started on every
 	 * frame. Only an emission pass moves the deadline.
 	 */
+	/*
+	 * A ramp begins again from its beginning, and this is where that
+	 * happens rather than in do_upload.
+	 *
+	 * The daemon walks the slide, so nothing else can put the level back.
+	 * do_upload used to, which served the upload a restart carries and
+	 * broke every bare SetParameters on a running ramp; a start is the
+	 * event that actually means begin again, and it is the one the proxy
+	 * always sends before it expects the ramp from the top. The clock goes
+	 * back with the level, before the flush, so the pass below writes the
+	 * start value rather than one the slicer has already moved.
+	 */
+	if (sl->source_kind == T150_EFFECT_RAMP) {
+		int32_t level = apply_gain(sl->ramp.start, sl->ef.gain);
+
+		if (sl->ef.u.constant.magnitude != level) {
+			sl->ef.u.constant.magnitude = level;
+			sl->dirty = 1;
+		}
+		sl->started_ms = now_ms;
+	}
+
 	if (flush_slot(s, sl) < 0) {
 		/* Reported here, so the next upload does not repeat it. */
 		s->io_err = 0;

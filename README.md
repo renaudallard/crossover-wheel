@@ -737,8 +737,11 @@ effect was uploaded to, only if the game has not reset the device since, only
 if no start or stop has been refused since, never for a ramp, and only while
 the acknowledgement is younger than `ASSUME_MS`. A ramp is the interesting
 one: the wheel has none, so the daemon renders it as a constant it recomputes
-as the ramp slides, and an upload is the only thing that puts that level back
-to where the ramp begins.
+as the ramp slides, and for a ramp the bytes being equal does not mean the
+daemon's slot is. The daemon puts the level back itself when a ramp is
+started, so a skip could no longer strand one; the proxy keeps the exemption
+because the two halves ship separately and this one may be talking to a daemon
+that still needs it.
 
 One consequence is visible in `-n`: a steady force prints three lines and
 then nothing, where it used to print three per update.
