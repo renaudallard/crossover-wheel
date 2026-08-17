@@ -818,6 +818,15 @@ dev_GetEffectInfo(IDirectInputDevice8W *self, LPDIEFFECTINFOW info, REFGUID guid
 
 	if (info == NULL)
 		return E_POINTER;
+	/*
+	 * fill_info writes a whole DIEFFECTINFO, name and all, so the caller
+	 * has to have said it passed one. Every other place in this file that
+	 * writes into a caller's struct checks its size first, and Wine
+	 * answers DIERR_INVALIDPARAM here for anything else.
+	 */
+	if (info->dwSize != (d->wide ? sizeof(DIEFFECTINFOW) :
+	    sizeof(DIEFFECTINFOA)))
+		return DIERR_INVALIDPARAM;
 
 	for (i = 0; i < sizeof(effects) / sizeof(effects[0]); i++) {
 		if (!IsEqualGUID(effects[i].guid, guid))
