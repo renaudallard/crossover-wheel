@@ -147,6 +147,89 @@ test_direction(void)
 	check_u32("spherical zero is east", ef.direction, 9000);
 }
 
+/*
+ * A direction survives being read back out and written in again.
+ *
+ * GetParameters answered in polar whatever the caller asked for, and rewrote
+ * the caller's flags to say polar. That breaks the read-modify-write pattern
+ * that exists so members the caller does not touch survive: a game filling a
+ * DIEFFECT with DIEFF_CARTESIAN, reading everything, changing only the
+ * magnitude and writing it back handed direction_of a polar angle in a struct
+ * still flagged cartesian. On one axis that is read as a sign, so a force
+ * pointing left came back as a large positive number and pushed right.
+ *
+ * The two halves are t150_direction_out and t150_effect_convert, so the round
+ * trip can be checked here without a device.
+ */
+static void
+test_direction_round_trip(void)
+{
+	static const uint32_t dirs[] = { 0, 4500, 9000, 18000, 22500, 27000, 31500 };
+	static const DWORD systems[] = { DIEFF_POLAR, DIEFF_SPHERICAL,
+	    DIEFF_CARTESIAN };
+	size_t i, j;
+
+	for (i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
+		for (j = 0; j < sizeof(systems) / sizeof(systems[0]); j++) {
+			struct t150_effect ef;
+			DIEFFECT p;
+			LONG axes[2] = { 0, 0 };
+			DWORD naxes = systems[j] == DIEFF_CARTESIAN ? 2 : 1;
+
+			t150_direction_out(dirs[i], systems[j], axes, naxes);
+
+			memset(&ef, 0, sizeof(ef));
+			memset(&p, 0, sizeof(p));
+			p.dwSize = sizeof(p);
+			p.dwFlags = systems[j];
+			p.cAxes = naxes;
+			p.rglDirection = axes;
+			t150_effect_convert(&ef, &p, DIEP_DIRECTION);
+
+			/*
+			 * Cartesian on two axes goes through sin, cos and
+			 * atan2, so it comes back within a rounding step
+			 * rather than exactly. A whole degree is far tighter
+			 * than the wheel can tell: t150_dir_sin feeds one
+			 * signed byte.
+			 */
+			if (dirs[i] > ef.direction ?
+			    dirs[i] - ef.direction > 100 :
+			    ef.direction - dirs[i] > 100) {
+				fprintf(stderr, "FAIL direction %lu in system "
+				    "0x%lx came back as %lu\n",
+				    (unsigned long)dirs[i],
+				    (unsigned long)systems[j],
+				    (unsigned long)ef.direction);
+				failures++;
+			}
+		}
+	}
+
+	/* One axis carries a side and not an angle, so only the side survives. */
+	{
+		struct t150_effect ef;
+		DIEFFECT p;
+		LONG axis = 0;
+
+		t150_direction_out(27000, DIEFF_CARTESIAN, &axis, 1);
+		if (axis >= 0) {
+			fprintf(stderr, "FAIL a westward force is not negative "
+			    "on one cartesian axis\n");
+			failures++;
+		}
+		memset(&ef, 0, sizeof(ef));
+		memset(&p, 0, sizeof(p));
+		p.dwSize = sizeof(p);
+		p.dwFlags = DIEFF_CARTESIAN;
+		p.cAxes = 1;
+		p.rglDirection = &axis;
+		t150_effect_convert(&ef, &p, DIEP_DIRECTION);
+		check_u32("one cartesian axis keeps its side", ef.direction,
+		    27000);
+	}
+}
+
 static void
 test_constant(void)
 {
@@ -350,6 +433,7 @@ int
 main(int argc, char *argv[])
 {
 	test_direction();
+	test_direction_round_trip();
 	test_constant();
 	test_periodic_and_condition();
 	test_guids();

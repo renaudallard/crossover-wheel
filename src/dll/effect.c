@@ -341,6 +341,45 @@ direction_of(const DIEFFECT *p)
 	return (uint32_t)angle % 36000;
 }
 
+/*
+ * A stored direction back out in the system a caller asked for, which is the
+ * inverse of what direction_of reads.
+ *
+ * Exposed for the reason t150_effect_convert is: between them they are the
+ * fiddliest code in the proxy and the only part of it that can be checked
+ * without a wheel. Writes only what the named system needs, and never more
+ * than naxes.
+ */
+void
+t150_direction_out(uint32_t direction, DWORD system, LONG *out, DWORD naxes)
+{
+	if (out == NULL || naxes < 1)
+		return;
+
+	if (system == DIEFF_CARTESIAN) {
+		double a;
+
+		/* One axis carries no angle at all, only the side. */
+		if (naxes == 1) {
+			out[0] = direction >= 18000 ? -10000 : 10000;
+			return;
+		}
+		/* The inverse of direction_of's atan2(x, -y). */
+		a = (double)direction * 3.14159265358979323846 / 18000.0;
+		out[0] = (LONG)(sin(a) * 10000.0);
+		out[1] = (LONG)(-cos(a) * 10000.0);
+		return;
+	}
+
+	if (system == DIEFF_SPHERICAL) {
+		/* Spherical zero is due east where polar zero is north. */
+		out[0] = (LONG)((direction + 36000 - 9000) % 36000);
+		return;
+	}
+
+	out[0] = (LONG)direction;
+}
+
 void
 t150_effect_convert(struct t150_effect *ef, const DIEFFECT *p, DWORD flags)
 {
@@ -649,14 +688,35 @@ eff_GetParameters(IDirectInputEffect *self, DIEFFECT *p, DWORD flags)
 	}
 
 	/*
-	 * Direction goes back the way it came in, in polar hundredths of a
-	 * degree, which is the form direction_of() normalised it to.
+	 * Direction goes back in the system the caller asked for.
+	 *
+	 * DirectInput's contract is that the caller names one in dwFlags and
+	 * the device converts; Wine implements exactly that. This answered in
+	 * polar whatever was asked and rewrote the caller's flags to say so,
+	 * which breaks the read-modify-write that exists so the members a
+	 * caller does not touch survive: a game that fills a DIEFFECT with
+	 * DIEFF_CARTESIAN, reads every parameter, changes only the magnitude
+	 * and writes it back handed direction_of a polar angle in a struct
+	 * still flagged cartesian. On one axis that is read as a sign, so a
+	 * force pointing left came back as a large positive number and the
+	 * wheel pushed right.
+	 *
+	 * Polar when the caller named nothing, which is what this always did.
+	 * Wine refuses that with DIERR_INVALIDPARAM; keeping it is the more
+	 * forgiving of the two and costs nobody anything.
 	 */
 	if ((flags & DIEP_DIRECTION) && p->rglDirection != NULL &&
 	    p->cAxes >= 1) {
-		p->dwFlags = (p->dwFlags & ~(DWORD)(DIEFF_CARTESIAN |
-		    DIEFF_SPHERICAL)) | DIEFF_POLAR;
-		p->rglDirection[0] = (LONG)e->ef.direction;
+		DWORD want = p->dwFlags &
+		    (DIEFF_CARTESIAN | DIEFF_POLAR | DIEFF_SPHERICAL);
+
+		if (want != DIEFF_CARTESIAN && want != DIEFF_SPHERICAL) {
+			p->dwFlags = (p->dwFlags & ~(DWORD)(DIEFF_CARTESIAN |
+			    DIEFF_SPHERICAL)) | DIEFF_POLAR;
+			want = DIEFF_POLAR;
+		}
+		t150_direction_out(e->ef.direction, want, p->rglDirection,
+		    p->cAxes);
 	}
 
 	if ((flags & DIEP_ENVELOPE) && p->lpEnvelope != NULL &&

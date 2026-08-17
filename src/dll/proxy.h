@@ -142,6 +142,14 @@ void	t150_effect_convert(struct t150_effect *ef, const DIEFFECT *p,
 	    DWORD flags);
 
 /*
+ * And the way back: a stored direction in the coordinate system a caller of
+ * GetParameters asked for. DirectInput's contract is that the caller names
+ * one and the device converts, which is what this is for.
+ */
+void	t150_direction_out(uint32_t direction, DWORD system, LONG *out,
+	    DWORD naxes);
+
+/*
  * Which of our effect kinds a DirectInput effect GUID is, or
  * T150_EFFECT_NONE for one we do not recognise.
  */
