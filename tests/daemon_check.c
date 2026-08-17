@@ -1001,6 +1001,215 @@ test_an_idle_writer_emits_ahead_of_the_floor(void)
 }
 
 /*
+ * A backend that answers before the wheel has the packet.
+ *
+ * This is the contract -w has and failing_write above does not: hid_write
+ * copies the bytes into a queue and returns 0 straight away, and a refusal the
+ * writer meets afterwards comes back out of band, charged to whatever is
+ * written next. Every rule in session.c is written against the other meaning
+ * of 0, and nothing here modelled this one, which is why fifty tests passed
+ * over a safe state that erased a slot the wheel was still rendering.
+ *
+ * The two tests below are the ones that would have caught it.
+ */
+#define DEFER_MAX	64
+
+static struct {
+	uint8_t	buf[T150_PKT_MAX];
+	uint8_t	len;
+} deferred[DEFER_MAX];
+static size_t deferred_n;
+static int deferred_failed;	/* the backend's write_failed, owed onward */
+static int deferred_refuse_at;	/* the wheel refuses this queued packet, from 1 */
+
+static int
+deferred_write(void *priv, const uint8_t *buf, size_t len)
+{
+	(void)priv;
+
+	if (deferred_n >= DEFER_MAX || len == 0 || len > T150_PKT_MAX)
+		return -1;
+
+	memcpy(deferred[deferred_n].buf, buf, len);
+	deferred[deferred_n].len = (uint8_t)len;
+	deferred_n++;
+
+	/* Answer for the packet the writer could not place, as hid_write does. */
+	if (deferred_failed) {
+		deferred_failed = 0;
+		return -1;
+	}
+
+	return 0;		/* queued, which is not the same as written */
+}
+
+/*
+ * The writer thread. Everything queued is tried, the chosen packet is refused
+ * and dropped, and the refusal is owed onward exactly as hid_darwin.c owes it:
+ * the flag for the next write, and the epoch so the session stops believing
+ * the wheel holds what it was told.
+ */
+static void
+deferred_run(void)
+{
+	size_t i;
+
+	for (i = 0; i < deferred_n; i++) {
+		if (deferred_refuse_at != 0 &&
+		    (int)i + 1 == deferred_refuse_at) {
+			deferred_failed = 1;
+			be.epoch++;
+			continue;
+		}
+		(void)real_write(be.priv, deferred[i].buf, deferred[i].len);
+	}
+	deferred_n = 0;
+	deferred_refuse_at = 0;
+}
+
+static int
+deferred_drain(void *priv)
+{
+	(void)priv;
+
+	deferred_run();
+	if (deferred_failed) {
+		deferred_failed = 0;
+		return -1;
+	}
+
+	return 0;
+}
+
+/* Hand the session the deferred backend, after the handshake has been checked. */
+static void
+use_deferred_backend(void)
+{
+	deferred_n = 0;
+	deferred_failed = 0;
+	deferred_refuse_at = 0;
+	be.write = deferred_write;
+	be.drain = deferred_drain;
+}
+
+static void
+use_normal_backend(void)
+{
+	be.write = failing_write;
+	be.drain = NULL;
+	deferred_n = 0;
+	deferred_failed = 0;
+	deferred_refuse_at = 0;
+}
+
+/*
+ * The safe state may not forget a slot on a stop that was only queued.
+ *
+ * A stop answered 0 at queue time and refused by the wheel afterwards used to
+ * take the slot with it: used went to 0, armed went to 0 with it, and the
+ * watchdog never looked at that slot again. Ten seconds of ticks later the
+ * stop had still not been sent and the wheel was still pulling.
+ */
+static void
+test_a_queued_stop_the_wheel_refused_keeps_the_slot(void)
+{
+	uint8_t start[2] = { 0, 1 };
+	struct t150_effect ef;
+
+	reset_session();
+	hello(0);
+	use_deferred_backend();
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(0);
+	deferred_run();
+	drain_log();
+
+	/*
+	 * The game goes quiet. The watchdog fires, the safe state stops the
+	 * slot, and the wheel refuses that stop: the first thing the drain
+	 * below tries.
+	 */
+	deferred_refuse_at = 1;
+	(void)tick(T150_WATCHDOG_MS);
+
+	if (!sess.slots[0].used)
+		fail("a queued stop the wheel refused must not release the slot");
+	if (!sess.slots[0].stop_owed)
+		fail("and the stop is still owed");
+	if (!sess.armed)
+		fail("and the session stays armed so the watchdog comes back");
+
+	/* And the retry really goes out once the wheel takes writes again. */
+	deferred_run();
+	drain_log();
+	sess.epoch = be.epoch;	/* the re-teach is the next test's business */
+	sess.last_frame_ms = T150_WATCHDOG_MS;
+	(void)tick(T150_WATCHDOG_MS + T150_EMIT_MS);
+	deferred_run();
+	expect_log("the owed stop is retried and lands",
+	    "write 4: 41 00 00 01\n");
+	if (sess.slots[0].stop_owed)
+		fail("and the debt is settled once it has");
+
+	use_normal_backend();
+}
+
+/*
+ * A queued write the wheel refused is re-taught rather than believed.
+ *
+ * The refusal carries no identity, so it is charged to whichever packet is
+ * written next and the slot that actually lost one keeps a sent[] record for
+ * bytes the wheel never received. flush_slot then finds nothing to do for ever
+ * after. Measured before the epoch bump: a game easing a force off to zero had
+ * the wheel hold full scale through two hundred further frames.
+ */
+static void
+test_a_queued_write_the_wheel_refused_is_taught_again(void)
+{
+	uint8_t start[2] = { 0, 1 };
+	struct t150_effect ef;
+
+	reset_session();
+	hello(0);
+	use_deferred_backend();
+
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(0);
+	deferred_run();
+	drain_log();
+
+	/* The game eases the force off. The wheel refuses that update. */
+	ef.u.constant.magnitude = 0;
+	upload_at(&ef, 10);
+	(void)tick(10);
+	deferred_refuse_at = 1;
+	deferred_run();
+	drain_log();
+
+	/*
+	 * The game goes on asking for the same thing, which is what a car at
+	 * a standstill does. Nothing new is uploaded, so only the session
+	 * noticing the wheel is not what it believes can put this right.
+	 */
+	upload_at(&ef, 20);
+	(void)tick(20);
+	deferred_run();
+	expect_log("the level the wheel refused is taught again",
+	    "write 2: 43 80\n"
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 00\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n"
+	    "write 4: 41 00 41 01\n");
+
+	use_normal_backend();
+}
+
+/*
  * Only an upload puts a ramp back to its start, which is a precondition the
  * proxy has to honour rather than a behaviour of its own.
  *
@@ -2525,6 +2734,8 @@ main(void)
 	test_hello_states_the_settings();
 	test_only_the_packet_that_moved_is_sent();
 	test_an_idle_writer_emits_ahead_of_the_floor();
+	test_a_queued_stop_the_wheel_refused_keeps_the_slot();
+	test_a_queued_write_the_wheel_refused_is_taught_again();
 	test_a_failed_pass_is_not_brought_forward();
 	test_the_floor_holds_unless_asked_otherwise();
 	test_only_an_upload_puts_a_ramp_back_to_its_start();

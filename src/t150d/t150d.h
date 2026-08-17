@@ -75,6 +75,25 @@ struct t150_backend {
 	 * remove.
 	 */
 	int		(*idle)(void *priv);
+	/*
+	 * Wait until everything handed over has been tried on the wheel, and
+	 * say whether all of it arrived. Returns 0 when it did.
+	 *
+	 * This exists because a backend with a writer thread answers a write
+	 * the moment the bytes are copied, so a 0 from it means queued and not
+	 * delivered. Every rule in session.c is written against the other
+	 * meaning: slot_stop records a refused stop from the answer it gets,
+	 * and the safe state forgets a slot only when its stop returned 0. A
+	 * stop that was merely queued and then refused therefore let the safe
+	 * state erase a slot the wheel was still rendering, with armed cleared
+	 * so the watchdog would never look at it again.
+	 *
+	 * Only the safe state calls this. It is off the hot path, it is the one
+	 * place where knowing beats being quick, and it is the path whose
+	 * failure leaves a force on somebody's hands. A backend that writes on
+	 * the caller's thread already tells the truth and leaves this NULL.
+	 */
+	int		(*drain)(void *priv);
 };
 
 /* The logging backend, which drives nothing and records everything. */

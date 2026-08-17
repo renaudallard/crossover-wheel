@@ -358,10 +358,34 @@ emit_autocenter(struct t150_session *s, uint32_t force)
 static void
 session_safe_state(struct t150_session *s, const char *why)
 {
+	uint8_t stopped[T150_SLOT_MAX];
 	size_t i;
 
 	if (s->verbose && why != NULL)
 		fprintf(stderr, "t150d: safe state: %s\n", why);
+
+	/*
+	 * Every stop goes out first and nothing is forgotten until they have
+	 * all been answered for, because with a writer the answer to one of
+	 * them is not known until the queue behind it has drained.
+	 */
+	for (i = 0; i < T150_SLOT_MAX; i++)
+		stopped[i] = slot_stop(s, (uint8_t)i) == 0;
+
+	/*
+	 * With a writer thread those answers only say the packets were queued.
+	 * Wait for the queue before believing any of them.
+	 *
+	 * A backend that writes on this thread reports the packet that failed
+	 * and leaves the hook NULL, so this costs it nothing. One that answers
+	 * at queue time cannot, and a stop merely queued and then refused let
+	 * the loop below erase a slot the wheel was still rendering: armed
+	 * went to 0 with it, so the watchdog never looked at that slot again
+	 * and nothing anywhere could stop the force. Measured against this
+	 * file, ten seconds of ticks later the stop had still not been sent.
+	 */
+	if (s->be->drain != NULL && s->be->drain(s->be->priv) != 0)
+		memset(stopped, 0, sizeof(stopped));
 
 	/*
 	 * The memset is load-bearing beyond forgetting the effect: it clears
@@ -375,11 +399,13 @@ session_safe_state(struct t150_session *s, const char *why)
 	 * give up on the first failed write: used went to 0, so no later pass
 	 * and no later safe state would ever look at that slot again, and the
 	 * wheel kept pulling with nothing left in the daemon that could stop
-	 * it.
+	 * it. Anything else keeps the debt, which is what holds armed below.
 	 */
 	for (i = 0; i < T150_SLOT_MAX; i++) {
-		if (slot_stop(s, (uint8_t)i) == 0)
+		if (stopped[i])
 			memset(&s->slots[i], 0, sizeof(s->slots[i]));
+		else if (s->slots[i].used)
+			s->slots[i].stop_owed = 1;
 	}
 	s->io_err = 0;
 	s->emit_failed = 0;
