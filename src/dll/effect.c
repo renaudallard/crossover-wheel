@@ -22,6 +22,14 @@ struct effect_obj {
 	GUID			 guid;
 	int			 slot;
 	int			 playing;
+	/*
+	 * What the game passed to Start, which nothing kept: the reconnect
+	 * replay below built its own payload with a hard coded 1, so a rumble
+	 * a game had asked to repeat twenty times came back as one pass of it
+	 * after the daemon was restarted. The daemon keeps this per slot and
+	 * uses it for its own replay, so the loss was entirely on this side.
+	 */
+	uint8_t			 iterations;
 	int			 logged;	/* the first Start is logged, not every one */
 	unsigned int		 gen;		/* the connection this was uploaded to */
 	/* What the daemon last acknowledged, and when. See upload(). */
@@ -694,6 +702,7 @@ eff_SetParameters(IDirectInputEffect *self, const DIEFFECT *p, DWORD flags)
 			return DIERR_NOTDOWNLOADED;
 		}
 		e->playing = 1;
+		e->iterations = 1;	/* DIEP_START is one pass of it */
 	}
 
 	return DI_OK;
@@ -736,6 +745,7 @@ eff_Start(IDirectInputEffect *self, DWORD iterations, DWORD flags)
 	start[1] = iterations >= 255 ? 255 : (uint8_t)iterations;
 	if (start[1] == 0)
 		start[1] = 1;
+	e->iterations = start[1];
 
 	/*
 	 * A refused start is the daemon saying it does not hold this slot, so
