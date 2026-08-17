@@ -215,8 +215,9 @@ find_dll()
 	done
 
 	warn "t150-dinput8.dll not found beside this script"
-	warn "it is in the windows zip on the releases page; pass it with -d"
-	die "or build it with: make dll"
+	warn "the disk image carries it inside crossover-wheel.app, under"
+	warn "Contents/Resources; point at that copy with -d, or build one"
+	die "with: make dll   (needs mingw-w64, so not on a Mac)"
 }
 
 # Bottles are directories with a cxbottle.conf in them.
