@@ -156,15 +156,12 @@ put_u32(uint8_t *b, uint32_t v)
 static void
 reset_session(void)
 {
-	t150_session_init(&sess, &be, TOKEN);
 	/*
-	 * Agreeing with the backend to start with, which is what a session
-	 * opened against a daemon that has just acquired the wheel does. Tests
-	 * that want a re-acquire bump be.epoch themselves; without this, every
-	 * test placed after one of those inherited the mismatch and saw an
-	 * extra settings restatement on its first tick.
+	 * t150_session_init agrees with the backend itself now, which is what
+	 * a session opened against a daemon that has just acquired the wheel
+	 * does. Tests that want a re-acquire bump be.epoch themselves.
 	 */
-	sess.epoch = be.epoch;
+	t150_session_init(&sess, &be, TOKEN);
 	(void)fflush(logfp);
 	consumed = loglen;
 }

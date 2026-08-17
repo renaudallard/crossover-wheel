@@ -319,6 +319,16 @@ t150_session_init(struct t150_session *s, struct t150_backend *be,
 {
 	memset(s, 0, sizeof(*s));
 	s->be = be;
+	/*
+	 * Agreeing with the backend from the start. A new session has nothing
+	 * on the wheel to reconcile, so beginning at 0 against a backend that
+	 * has already acquired it made every session's first tick look like a
+	 * re-acquire: a forget, a replay armed for slots that do not exist,
+	 * and a second statement of the device settings the hello had only
+	 * just made. A displaced session inherits that too, which is where it
+	 * reached the wheel.
+	 */
+	s->epoch = atomic_load(&be->epoch);
 	s->gain = T150_DI_MAX;
 	if (token != NULL) {
 		strncpy(s->token, token, sizeof(s->token) - 1);
