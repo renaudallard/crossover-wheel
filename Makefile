@@ -22,10 +22,23 @@ override CFLAGS += -std=c11 $(WARNINGS) $(EXTRA_CFLAGS)
 
 UNAME_S := $(shell uname -s)
 
+#
+# The oldest macOS this builds for, which is the one dist/Info.plist promises.
+# Saying it to the compiler is what makes it enforce it: an API newer than this
+# becomes a warning, and strict turns that into an error.
+#
+# Twelve because bootswitch.c and probe_intr.c name kIOMainPortDefault, which
+# IOKit renamed from kIOMasterPortDefault in macOS 12. It is a data symbol, so
+# dyld binds it when the process starts: with the plist claiming 11, macOS
+# would let somebody open an application that could only die before main.
+#
+MACOS_MIN = 12.0
+
 ifeq ($(UNAME_S),Darwin)
 # Apple hides err(3) and parts of IOKit behind the Darwin namespace, which
 # -std=c11 would otherwise switch off.
 CPPFLAGS  += -D_DARWIN_C_SOURCE
+override CFLAGS += -mmacosx-version-min=$(MACOS_MIN)
 FRAMEWORKS = -framework IOKit -framework CoreFoundation
 endif
 
@@ -359,7 +372,8 @@ APP_RES	   = $(APP)/Contents/Resources
 # directory there: both ship to users as debris in an application nobody can
 # attach a debugger to anyway. It includes nothing but Cocoa, so it needs no
 # include path either.
-APP_CFLAGS = -O2 -fobjc-arc -Iinclude -Isrc $(WARNINGS) $(EXTRA_CFLAGS)
+APP_CFLAGS = -O2 -fobjc-arc -mmacosx-version-min=$(MACOS_MIN) -Iinclude -Isrc \
+	     $(WARNINGS) $(EXTRA_CFLAGS)
 
 ifeq ($(UNAME_S),Darwin)
 app: $(APP)

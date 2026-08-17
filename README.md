@@ -79,6 +79,9 @@ on a measurement that did not support them.
 
 <img src="dist/icons/crossover-wheel-256.png" alt="" width="96" align="right">
 
+**Needs macOS 12 or newer.** The IOKit call that takes the wheel out of boot
+mode is named differently before that.
+
 **One download.** Get `crossover-wheel-<version>.dmg` from the
 [releases page](https://github.com/renaudallard/crossover-wheel/releases),
 open it, and **drag the app onto the Applications shortcut** next to it.
