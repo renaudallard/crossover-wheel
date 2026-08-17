@@ -487,6 +487,72 @@ test_refusals(void)
  * asking for half strength must still get half strength, or the cap would
  * quietly weaken every condition rather than only the ones that would buzz.
  */
+/*
+ * A magnitude outside the documented range is clamped, not wrapped.
+ *
+ * scale_signed's own comment states the property: "A game is free to send a
+ * magnitude outside the documented range and must not be able to turn a strong
+ * push into a weak one in the other direction by doing so." Nothing tested it.
+ * Every case in this file stopped at T150_DI_MAX, and the clamp is the only
+ * thing between an out of range request and a sign flip.
+ *
+ * It is reachable from a game rather than only from a bad client:
+ * t150_effect_convert copies DIPERIODIC.dwMagnitude straight through with no
+ * clamp of its own, and that member is a DWORD.
+ */
+static void
+test_an_out_of_range_magnitude_is_clamped(void)
+{
+	struct t150_effect ef;
+	uint8_t b[BUFLEN];
+
+	memset(&ef, 0, sizeof(ef));
+	ef.slot = 0;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.direction = 9000;		/* due east, so the level passes whole */
+
+	/* A constant at twice full scale is full scale, not minus two. */
+	ef.kind = T150_EFFECT_CONSTANT;
+	ef.u.constant.magnitude = 2 * T150_DI_MAX;
+	if (t150_enc_ff_update(b, sizeof(b), &ef) == 0)
+		check_int("the encoder refused a constant", 0, 1);
+	check_int("twice full scale is full scale", (int8_t)b[3],
+	    (int)T150_FF_LEVEL_MAX);
+
+	ef.u.constant.magnitude = -2 * T150_DI_MAX;
+	if (t150_enc_ff_update(b, sizeof(b), &ef) == 0)
+		check_int("the encoder refused a constant", 0, 1);
+	check_int("and the same the other way", (int8_t)b[3],
+	    -(int)T150_FF_LEVEL_MAX);
+
+	/*
+	 * A periodic is the one a game reaches without meaning to, and it is
+	 * where the sign would flip: 20000 scaled by 127/10000 is 254, which
+	 * as a signed byte is minus two. Full strength one way became almost
+	 * nothing the other.
+	 */
+	ef.kind = T150_EFFECT_SINE;
+	ef.u.periodic.magnitude = 2 * T150_DI_MAX;
+	ef.u.periodic.offset = -3 * T150_DI_MAX;
+	ef.u.periodic.period = 20000;
+	if (t150_enc_ff_update(b, sizeof(b), &ef) == 0)
+		check_int("the encoder refused a periodic", 0, 1);
+	check_int("a periodic magnitude past full scale is held",
+	    (int8_t)b[3], (int)T150_FF_PERIODIC_MAX);
+	check_int("and an offset past it downwards", (int8_t)b[4],
+	    -(int)T150_FF_PERIODIC_MAX);
+
+	/* And the extremes of the type cannot get round it either. */
+	ef.u.periodic.magnitude = 2147483647;
+	ef.u.periodic.offset = -2147483647 - 1;
+	if (t150_enc_ff_update(b, sizeof(b), &ef) == 0)
+		check_int("the encoder refused a periodic", 0, 1);
+	check_int("INT32_MAX is held", (int8_t)b[3],
+	    (int)T150_FF_PERIODIC_MAX);
+	check_int("INT32_MIN is held", (int8_t)b[4],
+	    -(int)T150_FF_PERIODIC_MAX);
+}
+
 static void
 test_condition_coefficients_are_held_below_the_unstable_value(void)
 {
@@ -512,7 +578,17 @@ test_condition_coefficients_are_held_below_the_unstable_value(void)
 	for (i = 0; i < (int)(sizeof(below) / sizeof(below[0])); i++) {
 		ef.u.condition.pos_coeff = below[i].di;
 		ef.u.condition.neg_coeff = -below[i].di;
-		(void)t150_enc_ff_update(b, sizeof(b), &ef);
+		/*
+		 * The return is checked before the buffer is read. b is an
+		 * uninitialised automatic, so an encoder that refused left
+		 * these comparing against indeterminate stack bytes, and a
+		 * regression that made ff_update refuse a damper could pass
+		 * whenever those happened to hold the wanted value.
+		 */
+		if (t150_enc_ff_update(b, sizeof(b), &ef) == 0) {
+			check_int("the encoder refused a damper", 0, 1);
+			return;
+		}
 		check_int("a coefficient below the ceiling is not touched",
 		    (int8_t)b[3], below[i].want);
 		check_int("and neither is its negative half",
@@ -522,20 +598,23 @@ test_condition_coefficients_are_held_below_the_unstable_value(void)
 	/* Everything above it is flattened onto it, in both directions. */
 	ef.u.condition.pos_coeff = 8100;
 	ef.u.condition.neg_coeff = -8100;
-	(void)t150_enc_ff_update(b, sizeof(b), &ef);
+	if (t150_enc_ff_update(b, sizeof(b), &ef) == 0)
+		check_int("the encoder refused a damper", 0, 1);
 	check_int("just above the ceiling is held", (int8_t)b[3], 80);
 	check_int("and so is just above it downwards", (int8_t)b[4], -80);
 
 	ef.u.condition.pos_coeff = T150_DI_MAX;
 	ef.u.condition.neg_coeff = -T150_DI_MAX;
-	(void)t150_enc_ff_update(b, sizeof(b), &ef);
+	if (t150_enc_ff_update(b, sizeof(b), &ef) == 0)
+		check_int("the encoder refused a damper", 0, 1);
 	check_int("the maximum a game can ask for is held", (int8_t)b[3], 80);
 	check_int("in both directions", (int8_t)b[4], -80);
 
 	/* And a game sending nonsense cannot get round it either. */
 	ef.u.condition.pos_coeff = 32767;
 	ef.u.condition.neg_coeff = -32767;
-	(void)t150_enc_ff_update(b, sizeof(b), &ef);
+	if (t150_enc_ff_update(b, sizeof(b), &ef) == 0)
+		check_int("the encoder refused a damper", 0, 1);
 	check_int("an out of range request is held too", (int8_t)b[3], 80);
 	check_int("in both directions", (int8_t)b[4], -80);
 
@@ -556,6 +635,7 @@ main(void)
 	test_condition();
 	test_downgrades();
 	test_vendor_bytes();
+	test_an_out_of_range_magnitude_is_clamped();
 	test_condition_coefficients_are_held_below_the_unstable_value();
 	test_refusals();
 
