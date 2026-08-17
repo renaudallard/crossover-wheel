@@ -1360,9 +1360,18 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 {
 	BOOL mine = self.daemon != nil && self.daemon.isRunning;
 	BOOL elsewhere = !mine && [self daemonElsewhere];
+	NSArray *was = nil;
 
-	if ([self loginEnabled])
+	/*
+	 * What the login job was started with, read before the plist is
+	 * rewritten over it. It is the only record of a launchd daemon's own
+	 * arguments, and the question below needs it.
+	 */
+	if ([self loginEnabled]) {
+		was = [[NSDictionary dictionaryWithContentsOfFile:
+		    [self agentPath]] objectForKey:@"ProgramArguments"];
 		(void)[self writeLoginAgent];
+	}
 
 	/* Nothing is running, so the plist above was the whole job. */
 	if (!mine && !elsewhere)
@@ -1374,10 +1383,19 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	 * it again on its first acquire, and with it shut the firmware rests
 	 * both pedals at maximum. So it is worth doing only when it would
 	 * change what the daemon restates, which picking the row that is
-	 * already ticked does not. Only our own child can be asked that, since
-	 * its argument list is the one we kept.
+	 * already ticked does not.
+	 *
+	 * Both kinds of daemon can be asked. Our own child kept its argument
+	 * list in memory; a login job left its own on disk, which is where
+	 * migrateLoginAgent reads it from for the same purpose. Asking only
+	 * the child meant confirming a setting by clicking the row that
+	 * already carried the tick took the wheel away for the length of a
+	 * restart, which is the exact cost this test exists to avoid.
 	 */
 	if (mine && [[self daemonArguments] isEqualToArray:self.daemonArgs])
+		return;
+	if (elsewhere && was != nil &&
+	    [was isEqualToArray:[self loginArguments]])
 		return;
 
 	if (self.clientConnected) {
