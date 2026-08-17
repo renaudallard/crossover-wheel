@@ -1400,19 +1400,30 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	 * replug, with the menu still showing the tick against a number the
 	 * wheel was no longer at.
 	 *
-	 * kickstart -k stops the job and starts it again from the plist just
-	 * written, which is the same restart the child gets below.
+	 * Booted out and bootstrapped again, which is the pair toggleLogin
+	 * uses and the only one that re-reads the plist. kickstart was the
+	 * first attempt and does not: launchctl(1) gives it as "run the
+	 * specified service immediately, regardless of its configured launch
+	 * conditions", with -k killing the running instance first, and a
+	 * loaded job's arguments live in launchd rather than on disk. So it
+	 * restarted the daemon with the old value and that daemon then stated
+	 * the old rotation to the wheel, undoing what t150ctl had just set:
+	 * worse than doing nothing, which at least left the wheel where the
+	 * person put it until the next replug.
 	 */
 	if (elsewhere) {
+		NSString *target = [[self agentDomain]
+		    stringByAppendingPathComponent:AGENT_LABEL];
+
 		if (![self loginEnabled]) {
 			[self say:@"a daemon started outside this application "
 			    "has the wheel, so it keeps the settings it was "
 			    "started with until it is restarted\n"];
 			return;
 		}
-		if ([self run:@"/bin/launchctl" args:@[ @"kickstart", @"-k",
-		    [[self agentDomain] stringByAppendingPathComponent:
-		    AGENT_LABEL] ]] == 0)
+		(void)[self run:@"/bin/launchctl" args:@[ @"bootout", target ]];
+		if ([self run:@"/bin/launchctl" args:@[ @"bootstrap",
+		    [self agentDomain], [self agentPath] ]] == 0)
 			[self say:@"the login daemon was restarted with the "
 			    "new setting\n"];
 		else
