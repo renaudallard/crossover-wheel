@@ -100,28 +100,6 @@ struct hid_be {
 	 * necessary.
 	 */
 	int			 threaded;
-	/*
-	 * A write the wheel refused for a reason that is not a removal, owed
-	 * to the poll thread.
-	 *
-	 * With a writer, hid_write answers the session the moment the bytes
-	 * are copied into the queue, so by the time the write actually fails
-	 * the frame that caused it has long been answered and the session has
-	 * recorded the packet as being on the wheel. The failure was logged
-	 * and then dropped: an effect could go missing with every layer
-	 * reporting success, and a stop that never arrived left the wheel
-	 * pulling.
-	 *
-	 * This says a write failed. It cannot say which, so it is not what
-	 * repairs the slot: the epoch bump beside it is, because forgetting
-	 * what the wheel holds is the one recovery that needs no identity.
-	 * What this is for is the error reaching the session at all, which it
-	 * reports to the next EFFECT_UPLOAD, and hid_drain taking it so the
-	 * safe state knows whether its stops landed.
-	 *
-	 * Atomic because the writer sets it and the poll thread takes it.
-	 */
-	atomic_int		 write_failed;
 	pthread_t		 thread;
 	pthread_mutex_t		 mtx;
 	pthread_cond_t		 cv;
@@ -140,11 +118,13 @@ struct hid_be {
 };
 
 /*
- * How long hid_drain waits for the queue. A safe state is up to eighteen
- * packets and the wheel takes on the order of 740 a second, so this is many
- * times what a working drain needs; what it really bounds is a wheel that has
- * stopped taking writes without saying so, which must not hold the daemon's
- * one loop for ever.
+ * How long hid_drain waits without the queue getting any shorter.
+ *
+ * Against a wheel that has stopped taking packets, not against one that is
+ * merely slow, which is why any progress buys the whole of it again. A fixed
+ * total got that wrong: -g pauses the writer after every packet and its
+ * ceiling is 20 ms, so a safe state's own stops can need more than this in
+ * gap alone, and every one of them landing still reported a failed drain.
  */
 #define DRAIN_MS	250u
 
@@ -638,32 +618,26 @@ writer_main(void *arg)
 				}
 				/*
 				 * The wheel is still there and refused this
-				 * packet. Owe it to the poll thread, which is
-				 * the only path back to the session.
-				 */
-				atomic_store(&h->write_failed, 1);
-				/*
-				 * And say the wheel is not holding what the
-				 * session believes, because this packet is
-				 * gone and it was answered 0 when it was
-				 * queued. The flag above cannot repair that on
-				 * its own: it carries no identity, so it is
-				 * charged to whichever packet is written next
-				 * and the slot that actually lost one keeps a
-				 * sent[] entry for bytes the wheel never got.
-				 * Measured: a game easing a force off to zero
-				 * had the wheel hold full scale through two
-				 * hundred further frames, with every layer
-				 * reporting success.
+				 * packet, which was answered 0 when it was
+				 * queued. Count it.
 				 *
-				 * The epoch is what already means exactly
-				 * this. session_forget_wheel clears every
-				 * slot's record and marks it dirty, so the
-				 * next passes teach the wheel again, and the
-				 * starts are replayed after them.
+				 * A count rather than a flag, because a flag
+				 * has to be consumed to be read and every
+				 * reader then takes it from the others: with
+				 * one, a refusal landing while the safe state
+				 * was still pushing its stops was swallowed by
+				 * the next push and hid_drain saw nothing, so
+				 * the safe state forgot a slot the wheel was
+				 * still rendering. That is the fault the drain
+				 * exists to prevent, reintroduced by the way
+				 * it was told about.
+				 *
+				 * Nobody consumes this. The session keeps its
+				 * own copy and reconciles, exactly as it does
+				 * with the epoch beside it.
 				 */
 				if (h->be != NULL)
-					h->be->epoch++;
+					h->be->lost++;
 			}
 			nap_ms(h->gap_ms);
 			queue_done(h);
@@ -719,6 +693,7 @@ static int
 hid_drain(void *priv)
 {
 	struct hid_be *h = priv;
+	unsigned int left, last;
 	uint64_t deadline;
 	int done = 0;
 
@@ -726,29 +701,46 @@ hid_drain(void *priv)
 		return 0;
 
 	pthread_cond_signal(&h->cv);
+
+	pthread_mutex_lock(&h->mtx);
+	last = t150_wq_depth(&h->q);
+	pthread_mutex_unlock(&h->mtx);
 	deadline = mono_ms() + DRAIN_MS;
 
 	for (;;) {
 		pthread_mutex_lock(&h->mtx);
-		done = t150_wq_depth(&h->q) == 0 && !h->inflight;
+		left = t150_wq_depth(&h->q);
+		done = left == 0 && !h->inflight;
 		pthread_mutex_unlock(&h->mtx);
-		if (done || mono_ms() >= deadline)
+		if (done)
+			break;
+		/*
+		 * The budget is against a wheel that has stopped taking
+		 * packets, not against one that is merely slow, so any
+		 * progress buys the whole of it again. A fixed wall clock got
+		 * that wrong: -g pauses the writer after every packet, and at
+		 * its ceiling of 20 ms a safe state's own stops need more than
+		 * DRAIN_MS of gap alone, so every one of them landed and the
+		 * drain reported failure anyway. The session then held every
+		 * slot owed and stayed armed, and did the same thing again on
+		 * the next watchdog, for ever.
+		 */
+		if (left < last) {
+			last = left;
+			deadline = mono_ms() + DRAIN_MS;
+		}
+		if (mono_ms() >= deadline)
 			break;
 		nap_ms(1);
 	}
 
 	/*
-	 * A queue that did not empty is a wheel that has stopped taking
-	 * writes, which is the same answer as a refusal for the caller's
-	 * purposes: it may not believe any of what it just sent.
-	 *
-	 * The failure flag is taken here rather than left for the next write,
-	 * because it belongs to the packets this drain was waiting for.
+	 * Only whether it emptied. Whether anything in it was refused is the
+	 * backend's lost count, which the caller reads for itself: answering
+	 * both here meant consuming something to answer the second, and
+	 * whatever this consumed was taken from hid_write.
 	 */
-	if (!done || atomic_exchange(&h->write_failed, 0))
-		return -1;
-
-	return 0;
+	return done ? 0 : -1;
 }
 
 /* Queue it, and never block the caller. */
@@ -781,26 +773,22 @@ hid_write(void *priv, const uint8_t *buf, size_t len)
 	 * is the whole fix: the daemon goes straight back to its socket and
 	 * the game's next frame is answered without waiting for USB.
 	 */
-	if (h->threaded) {
-		int queued = queue_push(h, buf, len);
-
-		/*
-		 * Answer for the packet the writer could not place, and take
-		 * this one anyway.
-		 *
-		 * Refusing the newcomer as well is what this did, on the
-		 * reasoning that the session would then send it again. That
-		 * holds only for a packet a slot owns, and it made every other
-		 * kind pay for the first one's fault: a device gain, a range
-		 * or an autocenter has no dirty flag to bring it back, so
-		 * whichever of them happened to be next was simply lost. What
-		 * repairs the slot is the epoch the writer bumps, not this.
-		 */
-		if (atomic_exchange(&h->write_failed, 0))
-			return -1;
-
-		return queued;
-	}
+	/*
+	 * About the packet it was handed, and about nothing else.
+	 *
+	 * Reporting an earlier packet's refusal here was wrong twice over. It
+	 * made every other kind of write pay for the first one's fault, since
+	 * a gain, a range or an autocenter has no dirty flag to bring it back.
+	 * And it made this answer a lie about the packet it did take: a
+	 * flush_slot that gets a non-zero stops the set there, so the wheel
+	 * received a bare ff_first with no update and no commit behind it,
+	 * which is the one sequence that file says is never sent.
+	 *
+	 * The refusal travels by the lost count instead, which nothing
+	 * consumes.
+	 */
+	if (h->threaded)
+		return queue_push(h, buf, len);
 
 	if (h->dev == NULL) {
 		uint64_t now = mono_ms();
@@ -980,6 +968,7 @@ t150_backend_hid(struct t150_backend *be, long vid, long pid,
 	/* Wired before the first acquire, which bumps the epoch itself. */
 	h->be = be;
 	be->epoch = 0;
+	be->lost = 0;
 
 	h->mgr = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
 	if (h->mgr == NULL) {

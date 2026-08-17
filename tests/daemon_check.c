@@ -1043,8 +1043,18 @@ static struct {
 	uint8_t	len;
 } deferred[DEFER_MAX];
 static size_t deferred_n;
-static int deferred_failed;	/* the backend's write_failed, owed onward */
 static int deferred_refuse_at;	/* the wheel refuses this queued packet, from 1 */
+
+static void deferred_run(void);
+
+/*
+ * Whether the writer runs while the poll thread is still pushing, which is
+ * what a real one does and what a model calling deferred_run afterwards can
+ * never show. It is the ordering that broke the first version of the drain:
+ * a refusal recorded here was consumed by the next push and the drain saw
+ * nothing.
+ */
+static int deferred_eager;
 
 static int
 deferred_write(void *priv, const uint8_t *buf, size_t len)
@@ -1058,11 +1068,12 @@ deferred_write(void *priv, const uint8_t *buf, size_t len)
 	deferred[deferred_n].len = (uint8_t)len;
 	deferred_n++;
 
-	/* Answer for the packet the writer could not place, as hid_write does. */
-	if (deferred_failed) {
-		deferred_failed = 0;
-		return -1;
-	}
+	/*
+	 * About this packet and nothing else, which is hid_write's whole
+	 * answer now: a refusal it met earlier travels by the lost count.
+	 */
+	if (deferred_eager)
+		deferred_run();
 
 	return 0;		/* queued, which is not the same as written */
 }
@@ -1081,8 +1092,7 @@ deferred_run(void)
 	for (i = 0; i < deferred_n; i++) {
 		if (deferred_refuse_at != 0 &&
 		    (int)i + 1 == deferred_refuse_at) {
-			deferred_failed = 1;
-			be.epoch++;
+			be.lost++;
 			continue;
 		}
 		(void)real_write(be.priv, deferred[i].buf, deferred[i].len);
@@ -1091,16 +1101,13 @@ deferred_run(void)
 	deferred_refuse_at = 0;
 }
 
+/* Only whether the queue emptied, which for this model it always does. */
 static int
 deferred_drain(void *priv)
 {
 	(void)priv;
 
 	deferred_run();
-	if (deferred_failed) {
-		deferred_failed = 0;
-		return -1;
-	}
 
 	return 0;
 }
@@ -1110,7 +1117,7 @@ static void
 use_deferred_backend(void)
 {
 	deferred_n = 0;
-	deferred_failed = 0;
+	deferred_eager = 0;
 	deferred_refuse_at = 0;
 	be.write = deferred_write;
 	be.drain = deferred_drain;
@@ -1122,7 +1129,7 @@ use_normal_backend(void)
 	be.write = failing_write;
 	be.drain = NULL;
 	deferred_n = 0;
-	deferred_failed = 0;
+	deferred_eager = 0;
 	deferred_refuse_at = 0;
 }
 
@@ -1182,6 +1189,66 @@ test_a_queued_stop_the_wheel_refused_keeps_the_slot(void)
 }
 
 /*
+ * A refusal that lands while the safe state is still pushing its stops is not
+ * lost.
+ *
+ * The safe state stops every slot and only then asks whether any of it
+ * arrived, so with a real writer the refusals arrive spread across that loop
+ * rather than after it. The first version of this told the session by a
+ * one-shot flag that hid_write also cleared, so a refusal recorded during the
+ * loop was taken by the next slot's push and the drain saw nothing: it
+ * answered 0, and the slot the wheel was still rendering was forgotten. That
+ * is the fault the drain exists to prevent, reintroduced by the way it was
+ * told.
+ *
+ * deferred_eager is what makes the ordering happen here: the writer runs
+ * inside the push rather than after the loop.
+ */
+static void
+test_a_refusal_during_the_safe_state_is_not_lost(void)
+{
+	uint8_t start[2] = { 0, 1 };
+	struct t150_effect ef;
+	size_t i;
+
+	reset_session();
+	hello(0);
+	use_deferred_backend();
+
+	/* Two playing slots, so there is a later push to swallow the flag. */
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	start[0] = 0;
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+	constant(&ef, 1, 10000);
+	upload_at(&ef, 0);
+	start[0] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(0);
+	deferred_run();
+	drain_log();
+
+	/*
+	 * The writer runs as the stops are pushed, and refuses the first of
+	 * them, which is slot 0's. Slot 1's push follows it.
+	 */
+	deferred_eager = 1;
+	deferred_refuse_at = 1;
+	(void)tick(T150_WATCHDOG_MS);
+
+	if (!sess.slots[0].used || !sess.slots[0].stop_owed)
+		fail("the slot whose stop was refused mid-loop is kept");
+	if (!sess.armed)
+		fail("and the session stays armed for it");
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		if (sess.slots[i].used && !sess.slots[i].stop_owed)
+			fail("a slot kept without a stop owed");
+	}
+
+	use_normal_backend();
+}
+
+/*
  * A queued write the wheel refused is re-taught rather than believed.
  *
  * The refusal carries no identity, so it is charged to whichever packet is
@@ -1223,8 +1290,12 @@ test_a_queued_write_the_wheel_refused_is_taught_again(void)
 	upload_at(&ef, 20);
 	(void)tick(20);
 	deferred_run();
+	/*
+	 * The slot is taught again and started again, and the device settings
+	 * are not restated: a dropped packet is not a re-acquire, so nothing
+	 * scrubbed the wheel and its gain is still where it was told.
+	 */
 	expect_log("the level the wheel refused is taught again",
-	    "write 2: 43 80\n"
 	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
 	    "write 4: 03 0e 00 00\n"
 	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n"
@@ -3007,6 +3078,7 @@ main(void)
 	test_an_idle_writer_emits_ahead_of_the_floor();
 	test_a_queued_stop_the_wheel_refused_keeps_the_slot();
 	test_a_queued_write_the_wheel_refused_is_taught_again();
+	test_a_refusal_during_the_safe_state_is_not_lost();
 	test_a_failed_pass_is_not_brought_forward();
 	test_the_floor_holds_unless_asked_otherwise();
 	test_a_start_puts_a_ramp_back_to_its_start();

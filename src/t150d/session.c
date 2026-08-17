@@ -329,6 +329,7 @@ t150_session_init(struct t150_session *s, struct t150_backend *be,
 	 * reached the wheel.
 	 */
 	s->epoch = atomic_load(&be->epoch);
+	s->lost = atomic_load(&be->lost);
 	s->gain = T150_DI_MAX;
 	if (token != NULL) {
 		strncpy(s->token, token, sizeof(s->token) - 1);
@@ -372,6 +373,7 @@ static void
 session_safe_state(struct t150_session *s, const char *why)
 {
 	uint8_t stopped[T150_SLOT_MAX];
+	unsigned int lost0 = atomic_load(&s->be->lost);
 	size_t i;
 
 	if (s->verbose && why != NULL)
@@ -397,7 +399,9 @@ session_safe_state(struct t150_session *s, const char *why)
 	 * and nothing anywhere could stop the force. Measured against this
 	 * file, ten seconds of ticks later the stop had still not been sent.
 	 */
-	if (s->be->drain != NULL && s->be->drain(s->be->priv) != 0)
+	if (s->be->drain != NULL &&
+	    (s->be->drain(s->be->priv) != 0 ||
+	     atomic_load(&s->be->lost) != lost0))
 		memset(stopped, 0, sizeof(stopped));
 
 	/*
@@ -1271,6 +1275,36 @@ session_forget_wheel(struct t150_session *s)
 }
 
 /*
+ * A packet the backend took and then dropped means the wheel is not holding
+ * what this session believes, for some slot it cannot name.
+ *
+ * Not the same as a re-acquire, and it took a review to see the difference.
+ * A re-acquire scrubs the wheel, so every loaded slot has to be taught again;
+ * a dropped packet leaves the wheel exactly as it was minus one write. Sending
+ * it through session_forget_wheel therefore re-dirtied slots a stop had
+ * deliberately un-dirtied, and the next pass wrote effect parameters to a slot
+ * that had just been stopped - which slot_stop's own comment rules out, since
+ * no wheel has ever been given one and a pass firing just after a stop asks
+ * that question of a wheel somebody is holding.
+ *
+ * So only the record of what the wheel holds goes. A slot that is playing is
+ * marked for teaching again, because nothing else will; one that is not is
+ * left alone, and do_start flushes it unconditionally when the game plays it.
+ */
+static void
+session_forget_wire(struct t150_session *s)
+{
+	size_t i;
+
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		memset(s->slots[i].sent, 0, sizeof(s->slots[i].sent));
+		if (s->slots[i].used && s->slots[i].playing &&
+		    s->slots[i].ef.kind != T150_EFFECT_NONE)
+			s->slots[i].dirty = 1;
+	}
+}
+
+/*
  * Put back what the game asked for, after the wheel has been away.
  *
  * The parameters are re-taught by the pass, because forgetting the wire
@@ -1524,6 +1558,27 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 		 */
 		if (s->hello)
 			session_apply_settings(s);
+	}
+
+	/*
+	 * A packet the backend dropped. Nothing here can say which, so what
+	 * this can do is stop believing the wheel holds what it was told, and
+	 * owe the error to the next upload the way a synchronous refusal does.
+	 */
+	if (s->lost != atomic_load(&s->be->lost)) {
+		s->lost = atomic_load(&s->be->lost);
+		session_forget_wire(s);
+		/*
+		 * And the starts, because the packet that went missing may
+		 * have been one: a play is answered 0 at queue time like any
+		 * other, so the game believes its effect is running and will
+		 * never ask again. Re-teaching the parameters alone would
+		 * leave the wheel loaded and silent. A start it is already
+		 * playing costs one packet, which is what every re-acquire
+		 * and the emitter's own re-play both already spend.
+		 */
+		s->replay_starts = 1;
+		s->io_err = 1;
 	}
 
 	/*

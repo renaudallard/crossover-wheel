@@ -45,6 +45,20 @@ struct t150_backend {
 	 */
 	atomic_uint	 epoch;
 	/*
+	 * How many packets the backend took and then could not put on the
+	 * wheel. Monotonic, and read the way epoch is: the session keeps its
+	 * own copy and reconciles when the two differ.
+	 *
+	 * A backend that writes on the caller's thread never moves this,
+	 * because it answers about the packet it was given and there is
+	 * nothing to carry. One with a writer answers before the wheel has
+	 * the packet, so a refusal it meets afterwards belongs to a packet
+	 * already reported as taken, and this is the only honest way to say
+	 * so: a count nobody can consume, rather than a flag whose first
+	 * reader takes it from every other.
+	 */
+	atomic_uint	 lost;
+	/*
 	 * Called from the daemon's loop whether or not anything is being
 	 * written, so a backend that has lost its device can look for it
 	 * again on its own clock. Without it the only thing that ever
@@ -76,8 +90,13 @@ struct t150_backend {
 	 */
 	int		(*idle)(void *priv);
 	/*
-	 * Wait until everything handed over has been tried on the wheel, and
-	 * say whether all of it arrived. Returns 0 when it did.
+	 * Wait until everything handed over has been tried on the wheel.
+	 * Returns 0 when the queue emptied, -1 when it did not.
+	 *
+	 * Only that. Whether any of it was refused is the lost count above,
+	 * which the caller brackets its own writes with: a hook that answered
+	 * both questions had to consume something to answer the second, and
+	 * anything it consumed was taken from somebody else.
 	 *
 	 * This exists because a backend with a writer thread answers a write
 	 * the moment the bytes are copied, so a 0 from it means queued and not
@@ -206,6 +225,7 @@ struct t150_session {
 	uint64_t		 next_ramp_ms;	/* no ramp recompute before this */
 	uint64_t		 last_param_log_ms;	/* -v effect parameters, rate limited */
 	unsigned int		 epoch;		/* the backend epoch we believe */
+	unsigned int		 lost;		/* and its dropped packet count */
 	int			 hello;
 	/*
 	 * A connection that is only proving its token, because someone else
