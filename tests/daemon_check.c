@@ -1381,6 +1381,60 @@ test_a_finished_ramp_stops_pinning_the_timeout(void)
 		fail("a ramp that has finished still pins the poll timeout");
 }
 
+/*
+ * A slot that holds nothing but an inherited stop is released once that stop
+ * is paid, even across a re-acquire.
+ *
+ * t150_session_inherit_stops hands on the debt and nothing else, so the slot
+ * carries no effect. session_emit releases such a slot once the stop lands,
+ * and reads dirty to decide whether the game has since put something in it.
+ * session_forget_wheel used to set dirty on every used slot, this one
+ * included, so the release never happened: the next pass could not encode a
+ * kind that was never set, and the resulting write error was charged to the
+ * next EFFECT_UPLOAD, which had succeeded. In the bottle that is a good
+ * upload answered DEVICE_IO.
+ */
+static void
+test_an_inherited_stop_is_released_across_a_re_acquire(void)
+{
+	struct t150_session next;
+	struct t150_effect ef;
+	uint8_t start[2];
+
+	reset_session();
+	hello(0);
+
+	/* A playing slot whose stop the wheel then refuses. */
+	constant(&ef, 3, 10000);
+	upload_at(&ef, 0);
+	start[0] = 3;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(0);
+	drain_log();
+
+	write_fails = 1;
+	t150_session_panic(&sess, NULL);
+	write_fails = 0;
+	if (!sess.slots[3].stop_owed)
+		fail("the refused stop should be owed");
+
+	/* A new client displaces it and inherits the debt, and the wheel has
+	 * been re-acquired in the meantime. */
+	t150_session_init(&next, &be, TOKEN);
+	t150_session_inherit_stops(&next, &sess);
+	sess = next;
+	sess.verbose = 0;
+	be.epoch++;
+	drain_log();
+
+	(void)tick(100);
+	if (sess.slots[3].used)
+		fail("a slot holding only a paid stop is released");
+	if (sess.io_err)
+		fail("and no write error is left owing to the next upload");
+}
+
 /* The floor is what applies unless -E asks for the early pass. */
 static void
 test_the_floor_holds_unless_asked_otherwise(void)
@@ -2847,6 +2901,7 @@ main(void)
 	test_a_start_puts_a_ramp_back_to_its_start();
 	test_an_upload_does_not_rewind_a_running_ramp();
 	test_a_finished_ramp_stops_pinning_the_timeout();
+	test_an_inherited_stop_is_released_across_a_re_acquire();
 
 	(void)fclose(logfp);
 	free(logbuf);

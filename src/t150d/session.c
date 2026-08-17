@@ -1224,7 +1224,18 @@ session_forget_wheel(struct t150_session *s)
 
 	for (i = 0; i < T150_SLOT_MAX; i++) {
 		memset(s->slots[i].sent, 0, sizeof(s->slots[i].sent));
-		if (s->slots[i].used)
+		/*
+		 * Only a slot that holds something to teach. A slot inherited
+		 * from a displaced session carries nothing but that session's
+		 * unpaid stop, and marking it dirty is read by session_emit as
+		 * "the game has put a new effect here", which is what keeps it
+		 * from releasing the slot once the stop is paid. The pass then
+		 * cannot encode a kind that was never set, and the write error
+		 * that follows is answered to the next EFFECT_UPLOAD, which had
+		 * succeeded.
+		 */
+		if (s->slots[i].used &&
+		    s->slots[i].ef.kind != T150_EFFECT_NONE)
 			s->slots[i].dirty = 1;
 	}
 }
