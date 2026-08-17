@@ -21,6 +21,7 @@
 _Static_assert(T150_VID == 0x044f, "T150 vendor id");
 _Static_assert(T150_PID_BOOT == 0xb65d, "T-series boot product id");
 _Static_assert(T150_PID_FIRMWARE == 0xb677, "T150 firmware product id");
+_Static_assert(T150_PID_PS4 == 0xb66d, "T150 PS4 position product id");
 _Static_assert(T150_RQ_MODEL_TYPE == 0xc1, "model query bmRequestType");
 _Static_assert(T150_RQ_MODEL == 73, "model query bRequest");
 _Static_assert(T150_RQ_SWITCH_TYPE == 0x41, "mode switch bmRequestType");
