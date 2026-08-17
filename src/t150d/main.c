@@ -198,27 +198,46 @@ write_endpoint(const char *path, unsigned short port, const char *token,
  * afterwards still refused the second daemon, but only once it had already
  * acquired the wheel and scrubbed it.
  *
- * Returns the descriptor, which must stay open, or -1 if somebody has it.
+ * Returns the descriptor, which must stay open, or -1.
+ *
+ * *held says which kind of -1 it is: another process holds the lock, or this
+ * one could not get as far as asking. Four different failures used to arrive
+ * as one sentence naming the first, so an endpoint under a directory this user
+ * cannot write was reported as a daemon that is already running, and the
+ * person was sent looking for a process that does not exist. Each of the
+ * others says what it was on its own way out.
  */
 static int
-lock_endpoint(const char *path)
+lock_endpoint(const char *path, int *held)
 {
 	char lockpath[PATH_MAX];
 	struct flock fl;
 	int fd;
 
+	*held = 0;
+
 	if ((size_t)snprintf(lockpath, sizeof(lockpath), "%s.lock", path) >=
-	    sizeof(lockpath))
+	    sizeof(lockpath)) {
+		warnx("%s is too long to put a lock file beside", path);
 		return -1;
-	if (mkpath(lockpath) != 0)
+	}
+	if (mkpath(lockpath) != 0) {
+		warn("cannot make the directory for %s", lockpath);
 		return -1;
-	if ((fd = open(lockpath, O_WRONLY | O_CREAT, 0600)) == -1)
+	}
+	if ((fd = open(lockpath, O_WRONLY | O_CREAT, 0600)) == -1) {
+		warn("cannot open %s", lockpath);
 		return -1;
+	}
 
 	memset(&fl, 0, sizeof(fl));
 	fl.l_type = F_WRLCK;
 	fl.l_whence = SEEK_SET;
 	if (fcntl(fd, F_SETLK, &fl) == -1) {
+		/* The two errnos that mean somebody else has it. */
+		*held = errno == EACCES || errno == EAGAIN;
+		if (!*held)
+			warn("cannot lock %s", lockpath);
 		(void)close(fd);
 		return -1;
 	}
@@ -566,7 +585,7 @@ main(int argc, char *argv[])
 	unsigned int gap_ms = 0, range_deg = 0, autocenter = 0;
 	int always_triple = 0, writer = 0, early_pass = 0;
 	int ch, lfd, cfd = -1, pfd_pend = -1, verbose = 0, fake = 0;
-	int rc = 0;
+	int rc = 0, lock_held = 0;
 
 	while ((ch = getopt(argc, argv, "Ea:e:g:nr:tvw")) != -1) {
 		switch (ch) {
@@ -627,9 +646,12 @@ main(int argc, char *argv[])
 	 * not wanted. The first daemon has no way to learn its slots were
 	 * emptied, so the game was left with none for the rest of its run.
 	 */
-	if (lock_endpoint(endpoint) == -1)
-		errx(1, "another t150d already has %s. Stop it first, or "
-		    "give this one its own with -e", endpoint);
+	if (lock_endpoint(endpoint, &lock_held) == -1) {
+		if (lock_held)
+			errx(1, "another t150d already has %s. Stop it first, "
+			    "or give this one its own with -e", endpoint);
+		errx(1, "cannot take the lock beside %s", endpoint);
+	}
 
 	/*
 	 * Zeroed before either backend fills it in, so an optional hook a
