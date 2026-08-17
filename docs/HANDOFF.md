@@ -135,7 +135,7 @@ The daemon's macOS HID backend, `t150ctl` and `t150boot` have all run against
 hardware. `t150d -n` still logs its packets rather than sending them, which is
 what every test drives and the only behaviour off macOS.
 
-The probe tools compile clean on `macos-latest` with `-Werror` against the
+The probe tools compile clean on `macos-26` with `-Werror` against the
 real CoreFoundation and IOKit headers, and they have now been run against a
 real T150. What they found is in RESEARCH.md A4 to A21: the wheel identifies
 itself, the endpoint 0 mode switch works and needs no privilege, every HID

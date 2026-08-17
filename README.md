@@ -523,8 +523,11 @@ hand-written and why the macOS job remains the authority.
 
 Development happens on Linux; the Mac is only needed to run the probes and
 the daemon. Because the probe sources cannot be compiled on Linux, CI builds
-them on `macos-latest` on every push and attaches them as an artifact, so a
-Mac is not needed to get a binary either.
+them on `macos-26` on every push and attaches them as an artifact, so a Mac
+is not needed to get a binary either. That runner is named rather than
+`macos-latest` because it is also the release the binaries are built for, and
+CI checks that the bundle's `LSMinimumSystemVersion` and every binary's
+deployment target agree with `MACOS_MIN`.
 
 CI also runs the in-bottle probe rather than only compiling it. It runs on
 `windows-latest` against a real loader, and on `ubuntu-latest` under Wine,

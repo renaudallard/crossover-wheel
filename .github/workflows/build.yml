@@ -503,7 +503,14 @@ jobs:
     # self contained, and a macOS runner has no cross compiler to build one,
     # so it comes from the job that does.
     needs: dll
-    runs-on: macos-latest
+    # Named rather than macos-latest. The target is macOS 26 on Apple Silicon
+    # and that is what the binaries are built for, so the machine that builds
+    # them should be the same release rather than whichever one the -latest
+    # label has drifted to this month. The image's own default Xcode is the
+    # newest stable one for it, and is deliberately not overridden: pinning a
+    # version here would go stale, and picking the newest installed would pick
+    # up whatever preview the image is carrying.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
       - name: build everything
@@ -522,6 +529,39 @@ jobs:
         # the case where the proxy arriving from the artifact changes what is
         # packaged.
         run: make strict app
+      - name: everything shipped is built for the macOS the bundle promises
+        # The bundle's LSMinimumSystemVersion and the deployment target the
+        # binaries were compiled with are two separate statements of the same
+        # fact, and nothing made them agree. When they disagreed, macOS opened
+        # an application that could only die before main: kIOMainPortDefault
+        # is a data symbol, dyld binds it at start, and it does not exist on
+        # the release the plist was claiming.
+        #
+        # So both are read back from what was actually built and compared to
+        # MACOS_MIN, which is where the compiler flag comes from and therefore
+        # the only place the number should live.
+        run: |
+          MIN=$(awk -F'= *' '/^MACOS_MIN[ \t]*=/ { print $2; exit }' Makefile)
+          test -n "$MIN" || { echo "no MACOS_MIN in the Makefile" >&2; exit 1; }
+          echo "MACOS_MIN is $MIN"
+          A=build/bin/crossover-wheel.app
+          P=$(/usr/libexec/PlistBuddy -c \
+              "Print :LSMinimumSystemVersion" "$A/Contents/Info.plist")
+          test "$P" = "$MIN" ||
+              { echo "the bundle promises $P, the build targets $MIN" >&2;
+                exit 1; }
+          for b in t150d t150ctl t150boot probe_hid probe_ep0 \
+                   probe_setreport probe_intr; do
+            got=$(otool -l "build/bin/$b" |
+                  awk '/LC_BUILD_VERSION/ { f = 1 } f && /minos/ { print $2; exit }')
+            test "$got" = "$MIN" ||
+                { echo "$b is built for $got, not $MIN" >&2; exit 1; }
+          done
+          got=$(otool -l "$A/Contents/MacOS/t150menu" |
+                awk '/LC_BUILD_VERSION/ { f = 1 } f && /minos/ { print $2; exit }')
+          test "$got" = "$MIN" ||
+              { echo "the app is built for $got, not $MIN" >&2; exit 1; }
+          echo "the bundle and all eight binaries agree on $MIN"
       - name: the app bundle carries what install.sh needs
         # install.sh resolves the binaries, the man pages and the proxy
         # relative to itself, so the bundle is only self contained if they are
