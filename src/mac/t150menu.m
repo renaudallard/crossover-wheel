@@ -1288,10 +1288,14 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
  */
 - (void)daemonSettingsChanged
 {
+	BOOL mine = self.daemon != nil && self.daemon.isRunning;
+	BOOL elsewhere = !mine && [self daemonElsewhere];
+
 	if ([self loginEnabled])
 		(void)[self writeLoginAgent];
 
-	if (self.daemon == nil || !self.daemon.isRunning)
+	/* Nothing is running, so the plist above was the whole job. */
+	if (!mine && !elsewhere)
 		return;
 
 	/*
@@ -1300,15 +1304,50 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	 * it again on its first acquire, and with it shut the firmware rests
 	 * both pedals at maximum. So it is worth doing only when it would
 	 * change what the daemon restates, which picking the row that is
-	 * already ticked does not.
+	 * already ticked does not. Only our own child can be asked that, since
+	 * its argument list is the one we kept.
 	 */
-	if ([[self daemonArguments] isEqualToArray:self.daemonArgs])
+	if (mine && [[self daemonArguments] isEqualToArray:self.daemonArgs])
 		return;
 
 	if (self.clientConnected) {
 		[self say:@"the wheel has the new setting; the daemon will "
 		    "restate the old one after a replug until it is "
 		    "restarted\n"];
+		return;
+	}
+
+	/*
+	 * A daemon launchd is running is not ours to terminate, and this used
+	 * to give up here without a word.
+	 *
+	 * That is the case Start at login produces, which is the mode the
+	 * README recommends: self.daemon is nil for the whole life of the
+	 * application, so only the plist was rewritten and the running daemon
+	 * kept the value it was started with. t150ctl had already put the wheel
+	 * where the person asked, so the setting appeared to take, right up
+	 * until the daemon restated the old one on the next hello or the next
+	 * replug, with the menu still showing the tick against a number the
+	 * wheel was no longer at.
+	 *
+	 * kickstart -k stops the job and starts it again from the plist just
+	 * written, which is the same restart the child gets below.
+	 */
+	if (elsewhere) {
+		if (![self loginEnabled]) {
+			[self say:@"a daemon started outside this application "
+			    "has the wheel, so it keeps the settings it was "
+			    "started with until it is restarted\n"];
+			return;
+		}
+		if ([self run:@"/bin/launchctl" args:@[ @"kickstart", @"-k",
+		    [[self agentDomain] stringByAppendingPathComponent:
+		    AGENT_LABEL] ]] == 0)
+			[self say:@"the login daemon was restarted with the "
+			    "new setting\n"];
+		else
+			[self say:@"could not restart the login daemon; the new "
+			    "setting reaches it at the next login\n"];
 		return;
 	}
 
