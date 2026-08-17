@@ -1179,6 +1179,33 @@ ffb_sequence(void)
 	(void)IDirectInputDevice8_SendForceFeedbackCommand(dev, DISFFC_CONTINUE);
 	Sleep(SEQ_WARM_MS);
 
+	/*
+	 * Nine gives the constant a fresh start of its own and asserts
+	 * nothing, so that ten below begins from a known playing effect.
+	 */
+	seq_mark();
+	out("  nine: the constant started again\n");
+	(void)IDirectInputEffect_Start(c, 1, 0);
+	Sleep(SEQ_WARM_MS);
+
+	/*
+	 * Ten: an effect the game stops while paused stays stopped when the
+	 * continue arrives.
+	 *
+	 * A pause records what was running so the continue can put it back,
+	 * and a game is free to turn a force off on the menu it paused for.
+	 * The record used to stand through that stop, so the continue started
+	 * a force the player had just turned off.
+	 */
+	seq_mark();
+	out("  ten: paused, the constant stopped, then continued\n");
+	(void)IDirectInputDevice8_SendForceFeedbackCommand(dev, DISFFC_PAUSE);
+	Sleep(SEQ_WARM_MS);
+	(void)IDirectInputEffect_Stop(c);
+	Sleep(SEQ_WARM_MS);
+	(void)IDirectInputDevice8_SendForceFeedbackCommand(dev, DISFFC_CONTINUE);
+	Sleep(SEQ_WARM_MS);
+
 	seq_mark();
 	(void)IDirectInputEffect_Stop(c);
 	(void)IDirectInputEffect_Stop(r);
