@@ -276,6 +276,21 @@ listen_loopback(unsigned short *port)
 		return -1;
 	(void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
 
+	/*
+	 * Non-blocking, for accept's sake rather than for anything this does
+	 * itself.
+	 *
+	 * poll reports a connection waiting, and a peer that aborts it between
+	 * the two takes it back out of the queue, so a blocking accept then
+	 * waits for the next connection to arrive. That is inside the single
+	 * loop which also runs the watchdog, with a force possibly on the
+	 * wheel, and any local process can produce it. The accept below
+	 * already has EAGAIN in the list of returns that carry nothing to wait
+	 * for.
+	 */
+	if ((on = fcntl(fd, F_GETFL, 0)) != -1)
+		(void)fcntl(fd, F_SETFL, on | O_NONBLOCK);
+
 	memset(&sa, 0, sizeof(sa));
 	sa.sin_family = AF_INET;
 	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -325,6 +340,25 @@ set_nodelay(int fd)
 	int on = 1;
 
 	(void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
+}
+
+/*
+ * The accepted socket is read and written as a blocking one.
+ *
+ * POSIX says accept does not hand on the listener's file status flags and BSD
+ * says it does, so with the listener now non-blocking this has to be stated
+ * rather than assumed. On the platform that inherits, an EAGAIN from read is
+ * treated here as the client going away, and one from write as the send
+ * timeout expiring: a game would be hung up on for being momentarily
+ * unreadable.
+ */
+static void
+set_blocking(int fd)
+{
+	int fl = fcntl(fd, F_GETFL, 0);
+
+	if (fl != -1)
+		(void)fcntl(fd, F_SETFL, fl & ~O_NONBLOCK);
 }
 
 static int
@@ -926,6 +960,7 @@ main(int argc, char *argv[])
 				}
 				continue;
 			}
+			set_blocking(nfd2);
 			set_send_timeout(nfd2);
 			set_nodelay(nfd2);
 
