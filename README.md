@@ -434,6 +434,10 @@ built by CI from the tagged commit. Two archives:
 | `crossover-wheel-<v>.dmg` | **everyone.** The application and a shortcut to Applications. The application carries the daemon, the man pages, the proxy and `install.sh` inside its own bundle |
 | `crossover-wheel-<v>-bottle-probe.zip` | almost nobody: `probe_dinput.exe`, a diagnostic for when something looks wrong inside a bottle |
 
+Both are built by rules, `make dmg` and `make probe-zip`, so that each
+archive's README is the file in `dist/` rather than something assembled by
+hand at release time.
+
 **The `.dmg` is the only thing to download.** Everything is inside it,
 including the proxy that goes into the bottle, because that bottle is on the
 same Mac. Nothing needs to be kept afterwards, and nothing asks for a
