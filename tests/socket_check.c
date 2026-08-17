@@ -153,6 +153,73 @@ send_frame(int fd, uint8_t op, const uint8_t *payload, size_t len)
 	return write(fd, buf, n + len) == (ssize_t)(n + len) ? 0 : -1;
 }
 
+/*
+ * The same, delivered a byte at a time with a pause between, so consume() in
+ * the daemon meets a header split across reads and a payload split from its
+ * header. Every other frame here arrives whole in one write, which is the one
+ * shape consume() never has to work for.
+ */
+static int
+send_frame_dribbled(int fd, uint8_t op, const uint8_t *payload, size_t len)
+{
+	uint8_t buf[T150_PROTO_HDR_LEN + T150_PROTO_MAX_PAYLOAD];
+	struct t150_proto_hdr hdr;
+	size_t n, i;
+
+	hdr.magic = T150_PROTO_MAGIC;
+	hdr.version = T150_PROTO_VERSION;
+	hdr.op = op;
+	hdr.length = (uint16_t)len;
+
+	if ((n = t150_proto_pack_hdr(buf, sizeof(buf), &hdr)) == 0)
+		return -1;
+	if (len > 0)
+		memcpy(buf + n, payload, len);
+	n += len;
+
+	for (i = 0; i < n; i++) {
+		struct timespec ts = { 0, 2 * 1000 * 1000 };
+
+		if (write(fd, buf + i, 1) != 1)
+			return -1;
+		(void)nanosleep(&ts, NULL);
+	}
+
+	return 0;
+}
+
+/* Two whole frames in one write, which is the other half consume() must do. */
+static int
+send_two_frames(int fd, uint8_t a_op, const uint8_t *a, size_t alen,
+    uint8_t b_op, const uint8_t *b, size_t blen)
+{
+	uint8_t buf[2 * (T150_PROTO_HDR_LEN + T150_PROTO_MAX_PAYLOAD)];
+	struct t150_proto_hdr hdr;
+	size_t n = 0, k;
+
+	hdr.magic = T150_PROTO_MAGIC;
+	hdr.version = T150_PROTO_VERSION;
+	hdr.op = a_op;
+	hdr.length = (uint16_t)alen;
+	if ((k = t150_proto_pack_hdr(buf, sizeof(buf), &hdr)) == 0)
+		return -1;
+	n = k;
+	if (alen > 0)
+		memcpy(buf + n, a, alen);
+	n += alen;
+
+	hdr.op = b_op;
+	hdr.length = (uint16_t)blen;
+	if ((k = t150_proto_pack_hdr(buf + n, sizeof(buf) - n, &hdr)) == 0)
+		return -1;
+	n += k;
+	if (blen > 0)
+		memcpy(buf + n, b, blen);
+	n += blen;
+
+	return write(fd, buf, n) == (ssize_t)n ? 0 : -1;
+}
+
 /* Read one reply and check it is the OK the daemon owes us. */
 static void
 expect_ok(int fd, const char *what)
@@ -306,6 +373,58 @@ main(void)
 		fail("the daemon did not publish an endpoint");
 		goto out;
 	}
+	/*
+	 * The version gate, before anything else takes the client slot.
+	 *
+	 * consume() answers T150_ERR_BAD_VERSION and drops the connection
+	 * rather than parsing a frame under a layout it does not speak, and
+	 * that is the whole of what protects an older proxy left in a bottle
+	 * if the wire format ever changes. Nothing reached it: every frame in
+	 * this file carries T150_PROTO_VERSION.
+	 *
+	 * On a connection of its own and first, because the answer is followed
+	 * by a hangup, and because only the established client reaches
+	 * consume() at all: a second connection is pending and pend_hello
+	 * drops a wrong version without a word, which is its own rule.
+	 */
+	{
+		uint8_t bad[T150_PROTO_HDR_LEN + 4];
+		uint8_t rb[T150_PROTO_HDR_LEN + 2];
+		struct t150_proto_hdr h;
+		struct pollfd pfd;
+		int vfd;
+
+		if ((vfd = connect_to(port)) == -1) {
+			fail("cannot open a connection for the version gate");
+		} else {
+			h.magic = T150_PROTO_MAGIC;
+			h.version = T150_PROTO_VERSION + 1;
+			h.op = T150_OP_SET_GAIN;
+			h.length = 4;
+			(void)t150_proto_pack_hdr(bad, sizeof(bad), &h);
+			memset(bad + T150_PROTO_HDR_LEN, 0, 4);
+			if (write(vfd, bad, sizeof(bad)) != (ssize_t)sizeof(bad))
+				fail("cannot send a wrong version");
+
+			pfd.fd = vfd;
+			pfd.events = POLLIN;
+			if (poll(&pfd, 1, OUTPUT_MS) != 1 ||
+			    read(vfd, rb, sizeof(rb)) != (ssize_t)sizeof(rb) ||
+			    t150_proto_unpack_hdr(rb, sizeof(rb), &h) != 0 ||
+			    h.op != T150_OP_ERROR ||
+			    rb[T150_PROTO_HDR_LEN] != T150_ERR_BAD_VERSION)
+				fail("a frame with the wrong version was not "
+				    "refused with BAD_VERSION");
+			(void)close(vfd);
+			/* Let the daemon see the close before the real client. */
+			{
+				struct timespec ts = { 0, 300 * 1000 * 1000 };
+
+				(void)nanosleep(&ts, NULL);
+			}
+		}
+	}
+
 	if ((fd = connect_to(port)) == -1) {
 		fail("cannot connect to the daemon");
 		goto out;
@@ -365,6 +484,34 @@ main(void)
 	expect_ok(fd, "the start was refused");
 	if (wait_for(pipefd[0], "write 4: 41 00 41 01\n") != 0)
 		fail("the start did not reach the backend");
+
+	/*
+	 * consume() has to find frames in a byte stream, and every frame above
+	 * arrived whole in one write, which is the one shape it never has to
+	 * work for. These two are the others: a frame dribbled a byte at a
+	 * time, so the header itself is split across reads, and two frames in
+	 * one write, so the second is only reachable through the leftover
+	 * carry that follows the first.
+	 */
+	{
+		uint8_t g[4];
+
+		put_u32(g, 7500);
+		if (send_frame_dribbled(fd, T150_OP_SET_GAIN, g, 4) != 0)
+			fail("cannot dribble a frame");
+		expect_ok(fd, "a frame split across reads was refused");
+		if (wait_for(pipefd[0], "write 2: 43 60\n") != 0)
+			fail("a frame split across reads did not reach the wheel");
+
+		put_u32(g, 2500);
+		if (send_two_frames(fd, T150_OP_KEEPALIVE, NULL, 0,
+		    T150_OP_SET_GAIN, g, 4) != 0)
+			fail("cannot send two frames at once");
+		expect_ok(fd, "the first of two frames in one write");
+		expect_ok(fd, "the second of two frames in one write");
+		if (wait_for(pipefd[0], "write 2: 43 20\n") != 0)
+			fail("the second of two frames in one write was lost");
+	}
 
 	/*
 	 * Now go quiet while holding the socket open, which is what a frozen
@@ -441,6 +588,7 @@ main(void)
 	 */
 	{
 		struct timespec settle = { 0, 300 * 1000 * 1000 };
+		uint64_t went_ms;
 		int good;
 		size_t mark;
 
@@ -480,7 +628,68 @@ main(void)
 		if (strstr(logbuf + mark, "write 2: 42 00\n") != NULL)
 			fail("the handover closed the wheel's input");
 
+		/*
+		 * And a client that simply goes away leaves the wheel safe.
+		 *
+		 * main.c calls t150_session_end on the read that returns zero,
+		 * and nothing here asserted it: daemon_check covers the
+		 * function and cannot see the call site, so deleting the call
+		 * from the poll loop passed the whole suite. A game that quits
+		 * while an effect is playing would then hold its force for up
+		 * to the watchdog instead of being released at once.
+		 *
+		 * Something has to be playing for the release to be visible,
+		 * so this session gets an effect of its own first.
+		 */
+		mark = loghave;
+		memset(&ef, 0, sizeof(ef));
+		ef.kind = T150_EFFECT_CONSTANT;
+		ef.slot = 1;
+		ef.duration = T150_DURATION_INFINITE;
+		ef.direction = 9000;
+		ef.gain = T150_DI_MAX;
+		ef.u.constant.magnitude = 10000;
+		if (send_frame(good, T150_OP_EFFECT_UPLOAD, buf,
+		    t150_proto_pack_effect(buf, sizeof(buf), &ef)) != 0)
+			fail("the newcomer could not upload");
+		expect_ok(good, "the newcomer's upload was refused");
+		buf[0] = 1;
+		buf[1] = 1;
+		if (send_frame(good, T150_OP_EFFECT_START, buf, 2) != 0)
+			fail("the newcomer could not start");
+		expect_ok(good, "the newcomer's start was refused");
+		if (wait_for_after(pipefd[0], "write 4: 41 01 41 01\n", mark) != 0)
+			fail("the newcomer's effect never played");
+
+		mark = loghave;
+		went_ms = now_ms();
 		(void)close(good);
+
+		/*
+		 * The stop for the slot that was playing, then the autocenter
+		 * pair. The input stays open, deliberately: the daemon holds
+		 * the wheel until it is itself leaving, and closing it here
+		 * would rest the pedals at maximum for the next game.
+		 */
+		if (wait_for_after(pipefd[0], "write 4: 41 01 00 01\n"
+		    "write 4: 40 03 00 00\n"
+		    "write 4: 40 04 00 00\n", mark) != 0)
+			fail("a client going away did not leave the wheel safe");
+		if (strstr(logbuf + mark, "write 2: 42 00\n") != NULL)
+			fail("a client going away closed the wheel's input");
+
+		/*
+		 * And it has to be the disconnect that did it rather than the
+		 * watchdog noticing the silence afterwards. Both produce the
+		 * same packets, so only the timing tells them apart: the read
+		 * of end of file is immediate and the watchdog is a whole
+		 * T150_WATCHDOG_MS away. Without this the test passed with the
+		 * t150_session_end call deleted from the poll loop, which is
+		 * the regression it exists to catch.
+		 */
+		if (now_ms() - went_ms >= T150_WATCHDOG_MS)
+			fail("the wheel was released by the watchdog rather "
+			    "than by the client going away");
 	}
 
 	(void)close(fd);
