@@ -285,15 +285,20 @@ test: $(TEST_BINS)
 
 check: test
 
-# Syntax check the two sources no build machine here can compile.
+# Syntax check the sources no build machine here can compile.
 #
-# src/mac/t150menu.m and src/t150d/hid_darwin.c need Cocoa and IOKit, so
-# anywhere but a Mac they were checked by being read, and reading does not find
-# what -Werror finds. An unused parameter left behind by a change is a hard
-# failure of the macOS job and therefore of the release that job builds, and it
-# reached that job once. tests/stubs holds fake headers declaring only what
-# these two files name; what this proves is that they parse and are warning
-# clean under the project's own flags, and nothing whatever about behaviour.
+# Everything macOS only needs Cocoa or IOKit, so anywhere but a Mac it was
+# checked by being read, and reading does not find what -Werror finds. An
+# unused parameter left behind by a change is a hard failure of the macOS job
+# and therefore of the release that job builds, and it reached that job once.
+# tests/stubs holds fake headers declaring only what these files name; what
+# this proves is that they parse and are warning clean under the project's own
+# flags, and nothing whatever about behaviour.
+#
+# It began as the application and the HID backend, which left the daemon's boot
+# switch, both command line tools and all four probes checkable only by the
+# macOS job. They are all here now: a change to any of them used to reach a
+# compiler for the first time in CI.
 #
 # clang rather than $(CC), because GCC's Objective-C front end cannot do
 # blocks and that file is full of them. -fobjc-runtime=macosx is the whole
@@ -304,15 +309,27 @@ check: test
 # and on a Mac the real build is a better check than any stub.
 STUBS = tests/stubs
 
+# Every macOS only C source, which is the daemon's backend and boot switch,
+# both tools and all four probes.
+MAC_ONLY_SRCS = src/t150d/hid_darwin.c src/mac/bootswitch.c \
+		src/tools/t150ctl.c src/tools/t150boot.c \
+		src/probe/common.c src/probe/probe_hid.c \
+		src/probe/probe_ep0.c src/probe/probe_setreport.c \
+		src/probe/probe_intr.c
+
 check-mac:
 	@command -v clang >/dev/null 2>&1 || { \
 	    echo "check-mac: needs clang (apt-get install clang)" >&2; exit 1; }
 	clang -fsyntax-only -x objective-c -fobjc-runtime=macosx-10.13 \
 	    -fobjc-arc -fblocks -I$(STUBS) -Iinclude -Isrc \
 	    $(WARNINGS) -Werror src/mac/t150menu.m
-	clang -fsyntax-only -std=c11 -I$(STUBS) -Iinclude -Isrc -Isrc/t150d \
-	    -D_POSIX_C_SOURCE=200809L -D_DARWIN_C_SOURCE -D__APPLE__ \
-	    $(WARNINGS) -Werror src/t150d/hid_darwin.c
+	@for f in $(MAC_ONLY_SRCS); do \
+	    echo "clang -fsyntax-only ... $$f"; \
+	    clang -fsyntax-only -std=c11 -I$(STUBS) -Iinclude -Isrc \
+	        -Isrc/probe -Isrc/t150d -D_POSIX_C_SOURCE=200809L \
+	        -D_DARWIN_C_SOURCE -D__APPLE__ $(WARNINGS) -Werror "$$f" \
+	        || exit 1; \
+	done
 	@echo "check-mac: ok"
 
 # Warnings as errors, everywhere they can be. EXTRA_CFLAGS rather than

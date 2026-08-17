@@ -12,6 +12,11 @@ jobs:
       - uses: actions/checkout@v7
       - name: build and test
         run: make strict
+      # The macOS only sources reach a compiler here rather than for the first
+      # time in the macos job, which needs an artifact from another one and so
+      # runs late. clang is on the ubuntu image already.
+      - name: syntax check what only a Mac can build
+        run: make check-mac
 
   dll:
     name: cross build the proxy

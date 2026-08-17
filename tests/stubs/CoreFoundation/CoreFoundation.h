@@ -16,6 +16,14 @@ typedef struct CFDict *CFMutableDictionaryRef;
 typedef const struct CFNumber *CFNumberRef;
 typedef const struct CFSet *CFSetRef;
 typedef struct CFRunLoop *CFRunLoopRef;
+typedef struct CFRunLoopSource *CFRunLoopSourceRef;
+typedef const struct CFArray *CFArrayRef;
+typedef const struct CFUUID *CFUUIDRef;
+typedef struct { unsigned char b[16]; } CFUUIDBytes;
+typedef int32_t SInt32;
+CFUUIDBytes CFUUIDGetUUIDBytes(CFUUIDRef);
+typedef const struct CFDictionary *CFDictionaryRef;
+typedef const struct CFData *CFDataRef;
 typedef const void *CFAllocatorRef;
 typedef int CFNumberType;
 typedef int32_t CFRunLoopRunResult;
@@ -30,9 +38,12 @@ typedef int32_t SInt32;
 #define TRUE 1
 #define kCFAllocatorDefault ((CFAllocatorRef)0)
 #define kCFNumberIntType 9
+#define kCFNumberLongType 10
 #define kCFNumberSInt32Type 3
 #define kCFRunLoopDefaultMode ((CFStringRef)0)
 #define kCFRunLoopRunHandledSource 4
+#define kCFRunLoopRunFinished 1
+#define kCFRunLoopRunTimedOut 3
 #define CFSTR(s) ((CFStringRef)(s))
 
 /*
@@ -52,7 +63,24 @@ Boolean CFNumberGetValue(CFNumberRef, CFNumberType, void *);
 void CFRelease(CFTypeRef);
 CFIndex CFSetGetCount(CFSetRef);
 void CFSetGetValues(CFSetRef, const void **);
+typedef unsigned long CFTypeID;
+CFTypeID CFGetTypeID(CFTypeRef);
+Boolean CFStringGetCString(CFStringRef, char *, CFIndex, uint32_t);
+const void *CFDictionaryGetValue(CFDictionaryRef, const void *);
+#define kCFStringEncodingUTF8 0x08000100
+CFTypeID CFNumberGetTypeID(void);
+CFTypeID CFStringGetTypeID(void);
+CFTypeID CFDataGetTypeID(void);
+CFTypeID CFArrayGetTypeID(void);
+CFTypeID CFDictionaryGetTypeID(void);
+CFIndex CFArrayGetCount(CFArrayRef);
+const void *CFArrayGetValueAtIndex(CFArrayRef, CFIndex);
+CFIndex CFDataGetLength(CFDataRef);
+const uint8_t *CFDataGetBytePtr(CFDataRef);
 CFRunLoopRef CFRunLoopGetCurrent(void);
+void CFRunLoopAddSource(CFRunLoopRef, CFRunLoopSourceRef, CFStringRef);
+void CFRunLoopStop(CFRunLoopRef);
+void CFRunLoopRemoveSource(CFRunLoopRef, CFRunLoopSourceRef, CFStringRef);
 CFRunLoopRunResult CFRunLoopRunInMode(CFStringRef, CFTimeInterval, Boolean);
 
 #endif /* T150_STUB_COREFOUNDATION_H */
