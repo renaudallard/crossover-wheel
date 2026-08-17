@@ -345,6 +345,12 @@ set_bottle_env()
 		return
 	fi
 
+	# Written beside it and renamed over it, never in place. A redirection
+	# truncates the target before awk has read a byte, so anything that
+	# stopped awk part way through left the bottle's own configuration as a
+	# fragment: measured under /bin/sh, an awk that exits non-zero after one
+	# line leaves a nine byte cxbottle.conf and set -e ends the script
+	# without a word about it. rename is what makes it all or nothing.
 	cp "$conf" "$conf.crossover-wheel.bak"
 	awk '
 		/^\[EnvironmentVariables\]/ {
@@ -359,7 +365,11 @@ set_bottle_env()
 				print "\"SDL_JOYSTICK_HIDAPI\" = \"0\""
 			}
 		}
-	' "$conf.crossover-wheel.bak" > "$conf"
+	' "$conf.crossover-wheel.bak" > "$conf.crossover-wheel.new" || {
+		rm -f "$conf.crossover-wheel.new"
+		die "could not rewrite $conf, which is unchanged"
+	}
+	mv "$conf.crossover-wheel.new" "$conf"
 	say "  SDL_JOYSTICK_HIDAPI=0 added (old file kept as .crossover-wheel.bak)"
 }
 
