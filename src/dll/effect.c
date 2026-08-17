@@ -667,7 +667,8 @@ upload(struct effect_obj *e)
 		 */
 		t150_device_replay_props(e->dev);
 		if (e->playing) {
-			uint8_t start[2] = { (uint8_t)e->slot, 1 };
+			uint8_t start[2] = { (uint8_t)e->slot,
+			    e->iterations > 0 ? e->iterations : 1 };
 
 			t150_log("the daemon is a new one, starting slot %d "
 			    "again\n", e->slot);
