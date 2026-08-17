@@ -1037,10 +1037,25 @@ eff_GetEffectStatus(IDirectInputEffect *self, DWORD *out)
 	 * idiom exactly: a game that fires a kerb effect with "if it is not
 	 * playing, start it" fires it once and is silent from then on.
 	 */
+	/*
+	 * Everything the wheel was told, the way the daemon's slot_expired
+	 * counts it: the commit carries a start delay and the play packet an
+	 * iteration count, so the window begins at started_ms plus the delay
+	 * and lasts that many durations. Counting the duration alone declared
+	 * a delayed effect finished before the wheel had begun it, and a
+	 * repeating one finished after its first pass - and the idiom this
+	 * exists to serve, "if it is not playing, start it", would then have
+	 * restarted it from the top on the very next frame.
+	 */
 	if (e->playing && e->ef.duration != T150_DURATION_INFINITE &&
-	    e->ef.duration != 0 &&
-	    GetTickCount64() - e->started_ms >= e->ef.duration / 1000)
-		e->playing = 0;
+	    e->ef.duration != 0) {
+		ULONGLONG span = (ULONGLONG)(e->ef.start_delay / 1000) +
+		    (ULONGLONG)(e->iterations > 0 ? e->iterations : 1) *
+		    (e->ef.duration / 1000);
+
+		if (GetTickCount64() - e->started_ms >= span)
+			e->playing = 0;
+	}
 
 	*out = e->playing ? DIEGES_PLAYING : 0;
 
