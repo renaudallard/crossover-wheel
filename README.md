@@ -128,9 +128,9 @@ which the app and the daemon both do by themselves.
 switch to PS3 and replug*. That state is a wheel plugged in, findable at
 `044f:b66d` and rigid, at an identity nothing here drives, and the only fix is
 the selector on the base of the wheel. It used to read *no wheel found*, which
-is true of neither of the two ids the app looked for and false about the wheel,
-and it sent one person hunting for a fault in the software instead of looking at
-the switch.
+was honest about the two ids the app asked after and wrong about the wheel in
+front of you, and it sent one person hunting for a fault in the software instead
+of looking at the switch.
 
 **Copy the log** puts what the daemon has printed on the clipboard, whether or
 not a window is open to show it. A long tail of it rather than the whole

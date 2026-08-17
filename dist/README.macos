@@ -14,14 +14,15 @@ preference: the position decides which device macOS sees, and only PS3 gives
 the wheel this software drives.
 
 In the PS4 position it is a different device speaking a different protocol,
-which nothing here can find or drive. It still runs its calibration sweep and
-it still feels stiff, because that is what the wheel does on its own in every
-mode rather than a sign of anything working, so the two together look
-convincingly like a broken wheel that no software can see. The menu says
+which nothing here can drive. It still runs its calibration sweep and it still
+feels stiff, because that is what the wheel does on its own in every mode
+rather than a sign of anything working, so a wheel there looks alive and does
+nothing.
+The menu recognises it and says
 
   wheel in the PS4 position: set its switch to PS3 and replug
 
-when it finds one there. Move the switch and plug the wheel in again.
+Move the switch and plug the wheel in again.
 
 INSTALL
 
