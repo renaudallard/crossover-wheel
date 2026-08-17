@@ -6,6 +6,23 @@ No kext, no system extension, no SIP or AMFI change, and no password at any
 point. Everything happens in your own account and the daemon that talks to the
 wheel runs unprivileged.
 
+THE SWITCH ON THE WHEEL GOES TO PS3
+
+Set the small selector on the wheel's base to PS3 before you plug the wheel in.
+Thrustmaster's own instructions say to do it in that order. It is not a
+preference: the position decides which device macOS sees, and only PS3 gives
+the wheel this software drives.
+
+In the PS4 position it is a different device speaking a different protocol,
+which nothing here can find or drive. It still runs its calibration sweep and
+it still feels stiff, because that is what the wheel does on its own in every
+mode rather than a sign of anything working, so the two together look
+convincingly like a broken wheel that no software can see. The menu says
+
+  wheel in the PS4 position: set its switch to PS3 and replug
+
+when it finds one there. Move the switch and plug the wheel in again.
+
 INSTALL
 
 Open the disk image and drag crossover-wheel onto the Applications shortcut
@@ -35,7 +52,7 @@ switch whether you are reading or writing.
 
 Afterwards it lives in your menu bar as a small steering wheel:
 
-  thin centre    nothing running, or no wheel plugged in
+  thin centre    nothing running, or the wheel is not ready to be driven
   filled centre  the daemon has the wheel
   full centre    a game is pulling on it right now
 

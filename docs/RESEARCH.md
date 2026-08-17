@@ -86,6 +86,17 @@ neither identifies the wheel; only the C6 model query does.
 there is no `b677`, none of the protocol in PROTOCOL.md applies, and
 `probe_setreport` matches nothing.
 
+**It arrives as a fault report about the software, so name it in the UI.**
+Reported on 2026-08-17 as a wheel that stayed locked while the menu said no
+wheel was found, on 0.2.5, and it was the selector. Those two symptoms are what
+the PS4 position looks like from outside: the rigidity is the wheel's own, in
+every mode and with no host involved, and a tool matching only `b677` and
+`b65d` truthfully reports finding nothing. Together they read as broken
+hardware that the software cannot see, which is a diagnosis nobody reaches from
+"no wheel found". Anything here that reports the wheel missing should check
+`b66d` before it says so, which is why `T150_PID_PS4` exists and what the menu
+now does.
+
 > Measured, plus scarburato/t150_driver's README: "For T150, always put the
 > switch of your wheel to the `PS3` position before plug it into your
 > machine!"
