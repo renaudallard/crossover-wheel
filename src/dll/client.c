@@ -546,28 +546,25 @@ t150_client_start(void)
 {
 	int r;
 
+	/*
+	 * Not rate limited, deliberately, and it was for a while.
+	 *
+	 * The limiter belongs to t150_client_call, which is retried on the
+	 * game's next frame, so a refusal there costs one frame. This is
+	 * asked once by di_CreateDevice and the answer is never revisited: a
+	 * -1 hands the game the raw Wine device and there is no second
+	 * chance, so a limiter that happened to be closed at that moment cost
+	 * the whole session its force feedback. The keepalive's own failed
+	 * reconnect is enough to close it, and a daemon being restarted is
+	 * exactly when both happen together.
+	 *
+	 * What the limiter was extended to here for was enumeration asking as
+	 * fast as it liked, and enumeration does not ask any more:
+	 * t150_client_listening probes without proving the token, so it
+	 * cannot displace anybody however often it runs.
+	 */
 	EnterCriticalSection(&lock);
-	if (online) {
-		r = 0;
-	} else {
-		ULONGLONG now = GetTickCount64();
-
-		/*
-		 * The same rate limit t150_client_call applies, and for the
-		 * reason given there: a connect proves the token, and proving
-		 * the token is what authorises the daemon to displace whoever
-		 * holds the wheel. Only that path was limited, so this one -
-		 * which every di_CreateDevice and every force feedback
-		 * enumeration reaches - could ask as fast as it liked, which
-		 * is the fight the limiter exists to prevent.
-		 */
-		if (now >= next_connect_ms) {
-			next_connect_ms = now + RECONNECT_MS;
-			r = connect_locked();
-		} else {
-			r = -1;
-		}
-	}
+	r = connect_locked();
 	LeaveCriticalSection(&lock);
 
 	return r;
