@@ -400,20 +400,24 @@ test_ramp(void)
 	    "write 4: 41 02 41 01\n");
 
 	/*
-	 * Past the end it holds, rather than wrapping back to the start, and
-	 * this time without the re-play. The wheel was given a length in its
-	 * commit and ends the effect itself; a play packet restarts that
-	 * countdown, so playing it again here held the force for another whole
-	 * second after the ramp the game asked for had finished.
+	 * Past its own end the daemon stops it rather than leaving that to the
+	 * wheel, and nothing is re-played.
+	 *
+	 * The wheel is given a length in its commit and does end the effect by
+	 * itself, but the re-play above is understood to restart that
+	 * countdown, so an effect whose level kept moving would finish one
+	 * whole duration after the last re-play rather than after its own
+	 * start. Ending it where the game asked is right whether or not a play
+	 * restarts anything: see t150_session_tick.
 	 */
 	frame(T150_OP_KEEPALIVE, NULL, 0, 2500, T150_OP_OK, T150_ERR_NONE);
 	(void)tick(2500);
-	expect_log("a ramp holds at its end and is not played again",
-	    "write 4: 03 46 00 40\n");
+	expect_log("a ramp that has run its course is stopped",
+	    "write 4: 41 02 00 01\n");
 
 	frame(T150_OP_KEEPALIVE, NULL, 0, 2600, T150_OP_OK, T150_ERR_NONE);
 	(void)tick(2600);
-	expect_log("a finished ramp stops writing", "");
+	expect_log("and stays stopped, writing nothing further", "");
 }
 
 static void
@@ -1236,7 +1240,7 @@ test_a_start_puts_a_ramp_back_to_its_start(void)
 	memset(&ef, 0, sizeof(ef));
 	ef.kind = T150_EFFECT_RAMP;
 	ef.slot = 2;
-	ef.duration = 300000;		/* 300 ms, so 400 is past the end */
+	ef.duration = 300000;		/* 300 ms, so 250 is well along it */
 	ef.direction = 9000;
 	ef.gain = T150_DI_MAX;
 	ef.u.ramp.start = 0;
@@ -1253,24 +1257,25 @@ test_a_start_puts_a_ramp_back_to_its_start(void)
 		frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK,
 		    T150_ERR_NONE);
 		(void)tick(0);
-		(void)tick(400);
-		expect_log("the slide ends at full scale",
+		(void)tick(250);
+		expect_log("the slide has carried the level well away from zero",
 		    "write 9: 02 54 00 00 00 00 00 00 00\n"
 		    "write 4: 03 46 00 00\n"
 		    "write 15: 01 02 00 40 2c 01 00 00 00 46 00 54 00 00 00\n"
 		    "write 4: 41 02 41 01\n"
-		    "write 4: 03 46 00 40\n");
+		    "write 4: 03 46 00 35\n"
+		    "write 4: 41 02 41 01\n");
 		drain_log();
 
 		if (i == 0) {
-			frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 410,
+			frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 260,
 			    T150_OP_OK, T150_ERR_NONE);
-			frame(T150_OP_EFFECT_START, start, 2, 410, T150_OP_OK,
+			frame(T150_OP_EFFECT_START, start, 2, 260, T150_OP_OK,
 			    T150_ERR_NONE);
 			expect_log("an upload and a start put the ramp back",
 			    "write 4: 03 46 00 00\nwrite 4: 41 02 41 01\n");
 		} else {
-			frame(T150_OP_EFFECT_START, start, 2, 410, T150_OP_OK,
+			frame(T150_OP_EFFECT_START, start, 2, 260, T150_OP_OK,
 			    T150_ERR_NONE);
 			expect_log("and a start on its own does it too",
 			    "write 4: 03 46 00 00\nwrite 4: 41 02 41 01\n");
@@ -1327,6 +1332,53 @@ test_an_upload_does_not_rewind_a_running_ramp(void)
 	expect_log("and the slide carries on from there",
 	    "write 4: 03 46 00 1b\n"
 	    "write 4: 41 02 41 01\n");
+}
+
+/*
+ * And a finished effect stops asking to be woken.
+ *
+ * The slicer arms the ramp timer for any playing ramp, whether or not it can
+ * still move, so a ramp that had run its course pinned the tick's answer at
+ * T150_RAMP_TICK_MS: fifty wakes a second for the rest of the session, to
+ * recompute a level held at the ramp's end. t150d.h states the opposite as the
+ * invariant, that an idle daemon wakes twice a second rather than 250 times,
+ * and stopping the effect where it ends is what makes that true again.
+ */
+static void
+test_a_finished_ramp_stops_pinning_the_timeout(void)
+{
+	struct t150_effect ef;
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	uint8_t start[2];
+	unsigned int next;
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_RAMP;
+	ef.slot = 1;
+	ef.duration = 200000;		/* 200 ms */
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.ramp.start = 0;
+	ef.u.ramp.end = 10000;
+	start[0] = 1;
+	start[1] = 1;
+
+	reset_session();
+	hello(0);
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
+	    T150_ERR_NONE);
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+
+	next = tick(100);
+	if (next > T150_RAMP_TICK_MS)
+		fail("a ramp still sliding asks to be woken for the next slice");
+
+	frame(T150_OP_KEEPALIVE, NULL, 0, 300, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(300);
+	frame(T150_OP_KEEPALIVE, NULL, 0, 400, T150_OP_OK, T150_ERR_NONE);
+	next = tick(400);
+	if (next != T150_WATCHDOG_MS)
+		fail("a ramp that has finished still pins the poll timeout");
 }
 
 /* The floor is what applies unless -E asks for the early pass. */
@@ -2794,6 +2846,7 @@ main(void)
 	test_the_floor_holds_unless_asked_otherwise();
 	test_a_start_puts_a_ramp_back_to_its_start();
 	test_an_upload_does_not_rewind_a_running_ramp();
+	test_a_finished_ramp_stops_pinning_the_timeout();
 
 	(void)fclose(logfp);
 	free(logbuf);

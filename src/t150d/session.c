@@ -1497,6 +1497,40 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 	}
 
 	/*
+	 * An effect whose own duration has run out is stopped here rather than
+	 * left to the wheel.
+	 *
+	 * The wheel is given a length in its commit and does end the effect by
+	 * itself, so for a long time this was nobody's job. What made it one is
+	 * the re-play in the emitter below: a play packet is understood to
+	 * restart that countdown, so an effect re-played while its level moved
+	 * ends one whole duration after the last re-play rather than after its
+	 * own start. Measured against this file, a one second ramp had its last
+	 * re-play at 980 ms, carrying full scale, which would hold the wheel
+	 * there until 1980.
+	 *
+	 * Ending it when the game asked is right whether or not a play restarts
+	 * anything. If it does, this is what stops the force on time. If it does
+	 * not, the wheel stopped by itself already and this is a stop for a slot
+	 * that is no longer playing, which costs one packet and changes nothing.
+	 * RESEARCH.md has never measured which of the two is true, and this is
+	 * the answer that does not need it.
+	 *
+	 * Stopped rather than released, like every other stop: the effect stays
+	 * downloaded and the game may start it again.
+	 */
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		struct t150_slot *sl = &s->slots[i];
+
+		if (!sl->used || !sl->playing || !slot_expired(sl, now_ms))
+			continue;
+		if (s->verbose)
+			fprintf(stderr, "t150d: slot %u %s reached the end of "
+			    "its duration\n", (unsigned)i, kind_name(sl->ef.kind));
+		(void)slot_stop(s, (uint8_t)i);
+	}
+
+	/*
 	 * A ramp is not a wheel effect, so the daemon walks it: recompute
 	 * where it has slid to and leave that in the slot. Whether it is
 	 * worth a packet is the emitter's question, and its answer is better
