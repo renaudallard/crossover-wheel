@@ -39,7 +39,10 @@ a hat, so the steering and pedals already reach games.
 to blame.** They are declared, they change on the interrupt IN pipe when
 pressed, and for many sessions CrossOver registered none of them. Solved:
 on the hidraw route with the B10 knob, all thirteen arrive in the bottle
-with their identities intact (A37). The remaining pedal mislabel is the
+with their identities intact (A37). The installer now turns hidraw off for
+the whole bottle, which defeats that knob, so keeping the route the
+thirteen were measured on means unticking its box or passing
+`--keep-hidraw` (A25). The remaining pedal mislabel is the
 descriptor's own, and the proxy leaves it alone: a game that binds pedals
 by asking you to press them resolves the labels itself, and correcting them
 underneath twice broke a working setup. `T150_PEDALS` is there for a game
@@ -623,6 +626,27 @@ That is a real datum for B8 rather than a workaround: the hidraw path is the
 one that would carry the wheel's own report descriptor into the bottle, and it
 drops the device instead of describing it. Whatever is losing the buttons is
 in that neighbourhood.
+
+**What the installer does with it.** `install.sh` writes `DisableHidraw`=1
+under `HKLM\System\CurrentControlSet\Services\WineBus` in the bottle it
+installs into, and the application's setup window carries that as a checkbox,
+ticked. `--keep-hidraw`, or unticking it, leaves the value alone rather than
+writing a 0 over it, because CrossOver's own settings window is the other
+thing that writes there.
+
+Three consequences, from the source rather than from this measurement.
+`is_hidraw_enabled()` tests `options.disable_hidraw` before the per-device
+list and before `EnableHidraw`, so this defeats B10's knob and anything
+CrossOver's controller settings put there; it is therefore the one setting
+that decides the route, and A37's thirteen buttons are on the other side of
+it. `bus_options_init()` runs when winebus starts, so a bottle already
+running keeps the route it started with. And the arbitration discards rather
+than moves: a device whose only copy came from the IOHID bus leaves the
+bottle entirely, which for a wheelbase carrying its own PID collection is the
+force feedback B12 credits to that path.
+
+> CrossOver 26.3.0 `dlls/winebus.sys/main.c`, `is_hidraw_enabled()`,
+> `load_device_options()` and `bus_options_init()`.
 
 **A26. The packet that opens the wheel's input is recoverable after all, and
 this project has never sent it.** A20 and earlier entries said its bytes were

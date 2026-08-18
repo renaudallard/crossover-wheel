@@ -45,14 +45,28 @@ make_proxy()
 	  printf 'not a builtin. T150_ENDPOINT\n'; } > "$1"
 }
 
+# CrossOver's own wine, replaced by something that records what it was asked
+# to do. Without one install.sh takes its "no wine here" branch and says what
+# to run by hand, so until this existed neither registry write was exercised
+# by anything: not the dinput8 override, and not the hidraw setting.
+make_wine()
+{
+	cat > "$1" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "${0%/bin/wine}/wine.log"
+EOF
+	chmod 755 "$1"
+}
+
 # One CrossOver install and as many bottles as asked for, named in order.
 build_tree()
 {
 	rm -rf "$work"
-	mkdir -p "$work/cx/lib/wine/x86_64-windows" "$work/bottles" "$work/src" \
-	    "$work/home" "$work/stage/build/bin"
+	mkdir -p "$work/cx/lib/wine/x86_64-windows" "$work/cx/bin" \
+	    "$work/bottles" "$work/src" "$work/home" "$work/stage/build/bin"
 	make_builtin "$work/cx/lib/wine/x86_64-windows/dinput8.dll"
 	make_proxy "$work/src/t150-dinput8.dll"
+	make_wine "$work/cx/bin/wine"
 
 	# The script is run from a copy rather than from the repository, so
 	# that what it resolves relative to itself is under our control: it
@@ -247,6 +261,35 @@ test_the_hidapi_setting_is_matched_by_value()
 	installed_in alpha && fail "it was written to anyway"
 }
 
+# The bottle is told not to use hidraw: with it on the wheel has been measured
+# missing from the bottle entirely (RESEARCH.md A25). It is one registry value,
+# and what proves it is what wine was asked to write.
+test_hidraw_is_turned_off_in_the_bottle()
+{
+	log=$work/cx/wine.log
+
+	build_tree alpha
+	run_install "" --no-binaries --no-app || :
+	key='HKLM\System\CurrentControlSet\Services\WineBus'
+	grep -Fq "reg.exe add $key /v DisableHidraw /t REG_DWORD /d 1 /f" \
+	    "$log" || fail "hidraw was not turned off in the bottle"
+
+	# The override the same missing wine had left untested since it was
+	# written, checked here because this is where wine can be watched.
+	key='HKCU\Software\Wine\DllOverrides'
+	grep -Fq "reg.exe add $key /v dinput8 /t REG_SZ /d native,builtin /f" \
+	    "$log" || fail "the dinput8 override was not set"
+
+	# --keep-hidraw writes nothing at all, rather than a 0 over whatever
+	# CrossOver's own settings window put there.
+	build_tree alpha
+	run_install "" --no-binaries --no-app --keep-hidraw || :
+	grep -q DisableHidraw "$log" &&
+	    fail "--keep-hidraw wrote the setting anyway"
+	grep -q 'left as this bottle has it' "$work/out" ||
+	    fail "--keep-hidraw did not say the setting was left alone"
+}
+
 # Another tool's dinput8.dll is about to be overwritten, and the backup is the
 # only copy of it. Skipping the backup because a stale one existed destroyed it
 # on the second run.
@@ -330,6 +373,7 @@ test_dry_run_changes_nothing()
 	run_install "" -n --no-binaries --no-app || fail "-n exited nonzero"
 
 	installed_in alpha && fail "-n wrote into the bottle"
+	[ -f "$work/cx/wine.log" ] && fail "-n wrote into the bottle's registry"
 	grep -q 'would' "$work/out" || fail "-n said nothing about what it would do"
 }
 
@@ -340,6 +384,7 @@ test_one_bottle_needs_no_question
 test_bad_answers_are_refused
 test_the_builtin_is_what_lands_beside_the_proxy
 test_the_hidapi_setting_is_matched_by_value
+test_hidraw_is_turned_off_in_the_bottle
 test_a_third_party_wrapper_is_never_lost
 test_a_32_bit_bottle_is_refused
 test_a_bottle_without_syswow64_is_still_installed_into

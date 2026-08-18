@@ -18,6 +18,18 @@ Thrustmaster wheels, and the bottle needs
 in its environment before the wheel appears at all. With it set, games see
 the wheel again. RESEARCH.md A35, B10 and B11.
 .Pp
+The install also turns hidraw off in that bottle, a
+.Li DisableHidraw
+value under
+.Li HKLM\eSystem\eCurrentControlSet\eServices\eWineBus ,
+because with hidraw on the wheel has been measured missing from the bottle
+entirely. winebus reads it when the bottle boots, so it takes effect at the
+bottle's next start, and it is the bottle rather than the wheel: every device
+whose only copy came from the IOHID bus loses it, a wheelbase with its own
+force feedback included. The installer's checkbox, and
+.Fl -keep-hidraw ,
+leave the setting alone for a bottle that needs it. RESEARCH.md A25 and B12.
+.Pp
 Force feedback itself is missing for a structural reason: the wheel's
 descriptor contains no Physical Interface Device collection, and Wine
 performs no force feedback translation of its own on macOS. A wheelbase

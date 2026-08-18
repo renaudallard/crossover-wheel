@@ -41,6 +41,13 @@ The app then asks which CrossOver bottle your game is in and puts the proxy
 there. That is the only thing it installs: it carries its own copy of the
 daemon and runs that.
 
+"Turn hidraw off in this bottle" is ticked, and should stay ticked: with
+hidraw on, the wheel has been measured missing from the bottle altogether.
+It is one setting in that bottle, and it applies to the bottle rather than
+to the wheel, so untick it if something else in there needs hidraw, such as
+a wheelbase that brings its own force feedback. The bottle picks the setting
+up the next time it starts.
+
 IF IT SAYS IT WAS PREVENTED FROM MODIFYING APPS
 
 Turn on crossover-wheel in System Settings, Privacy and Security, App

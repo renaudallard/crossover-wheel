@@ -28,6 +28,7 @@ DRYRUN=0
 WANT_BOTTLE=1
 WANT_BINARIES=1
 WANT_APP=1
+WANT_HIDRAW_OFF=1
 
 MACOS_BINARIES="t150d t150ctl t150boot probe_hid probe_setreport probe_ep0 probe_intr"
 
@@ -35,6 +36,7 @@ usage()
 {
 	cat >&2 <<EOF
 usage: $SELF [-n] [-p prefix] [-b bottle] [-d dll] [--no-bottle] [--no-binaries]
+              [--no-app] [--keep-hidraw]
 
   -p prefix      where the macOS binaries go (default $HOME/.local)
   -b bottle      which CrossOver bottle to install the proxy into, by name.
@@ -45,6 +47,8 @@ usage: $SELF [-n] [-p prefix] [-b bottle] [-d dll] [--no-bottle] [--no-binaries]
   --no-bottle    install only the macOS binaries
   --no-binaries  install only the proxy into a bottle
   --no-app       do not install crossover-wheel.app
+  --keep-hidraw  leave the bottle's hidraw setting alone. Without this the
+                 bottle is told not to use hidraw, which the wheel needs
   -h             this
 
 Environment: PREFIX, CX_ROOT and BOTTLE_ROOT override the paths above, which
@@ -125,6 +129,7 @@ while [ $# -gt 0 ]; do
 	--no-bottle)	WANT_BOTTLE=0; shift ;;
 	--no-binaries)	WANT_BINARIES=0; shift ;;
 	--no-app)	WANT_APP=0; shift ;;
+	--keep-hidraw)	WANT_HIDRAW_OFF=0; shift ;;
 	-h|--help)	usage ;;
 	*)	warn "unknown argument: $1"; usage ;;
 	esac
@@ -527,6 +532,42 @@ install_proxy()
 		warn "  wine --bottle '$BOTTLE' --cx-app reg.exe add \\"
 		warn "    'HKCU\\Software\\Wine\\DllOverrides' /v dinput8 \\"
 		warn "    /t REG_SZ /d native,builtin /f"
+	fi
+
+	# Which of winebus's two routes carries the wheel into the bottle.
+	# hidraw hands the bottle the wheel's own report descriptor, SDL one
+	# synthesised from what SDL saw, and winebus keeps whichever the route
+	# rules pick and discards the other copy. This turns hidraw off for the
+	# whole bottle, the same switch CrossOver's own controller settings
+	# offer, because with it on the wheel has been measured absent from the
+	# bottle entirely (RESEARCH.md A25).
+	#
+	# winebus reads it in bus_options_init() when the bottle boots, so a
+	# bottle that is already running keeps the route it started with and
+	# saying so is the difference between waiting and reinstalling.
+	#
+	# The cost is that it is the bottle and not the wheel. Every device
+	# whose only copy came from the IOHID bus loses it: a pad SDL enumerates
+	# too is unaffected, a wheelbase carrying its own PID collection loses
+	# the native force feedback that route gives it (RESEARCH.md B12), which
+	# is the bottle --keep-hidraw is for.
+	#
+	# --keep-hidraw changes nothing rather than writing 0. The other writer
+	# of this value is CrossOver's own settings window, and overwriting a
+	# deliberate setting on every install is worse than not undoing ours.
+	step "the bottle's hidraw setting"
+	if [ "$WANT_HIDRAW_OFF" -eq 0 ]; then
+		say "  left as this bottle has it"
+	elif [ -x "$CX_ROOT/bin/wine" ]; then
+		run "$CX_ROOT/bin/wine" --bottle "$BOTTLE" --cx-app reg.exe add \
+		    'HKLM\System\CurrentControlSet\Services\WineBus' \
+		    /v DisableHidraw /t REG_DWORD /d 1 /f
+		say "  DisableHidraw = 1, from the bottle's next start"
+	else
+		warn "no wine at $CX_ROOT/bin/wine, turn hidraw off by hand:"
+		warn "  wine --bottle '$BOTTLE' --cx-app reg.exe add \\"
+		warn "    'HKLM\\System\\CurrentControlSet\\Services\\WineBus' \\"
+		warn "    /v DisableHidraw /t REG_DWORD /d 1 /f"
 	fi
 
 	step "the bottle's environment"

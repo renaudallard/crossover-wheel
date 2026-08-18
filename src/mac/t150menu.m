@@ -85,6 +85,7 @@ typedef enum {
 @property (strong) NSWindow *setup;
 @property (strong) NSPopUpButton *bottles;
 @property (strong) NSButton *install;
+@property (strong) NSButton *hidraw;
 @property (strong) NSTextView *out;
 @property (strong) NSMutableString *logBuf;
 @property (strong) NSMenuItem *statusLine;
@@ -1579,14 +1580,37 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	[v addSubview:self.install];
 
 	NSTextField *l2 = [NSTextField labelWithString:
-	    @"The proxy goes into that bottle. Nothing else is touched."];
-	l2.frame = NSMakeRect(24, 344, 520, 18);
+	    @"The proxy and the settings the wheel needs go into that bottle. "
+	    "Nothing outside it is touched."];
+	l2.frame = NSMakeRect(24, 344, 560, 18);
 	l2.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
 	l2.textColor = [NSColor secondaryLabelColor];
 	[v addSubview:l2];
 
+	/*
+	 * On by default, because with hidraw on the wheel has been measured
+	 * missing from the bottle entirely (RESEARCH.md A25). Turned off it
+	 * passes --keep-hidraw, and install.sh then leaves the setting alone
+	 * rather than writing a 0 over whatever CrossOver's own settings
+	 * window put there. It is the whole bottle either way, which is why
+	 * the row is here to be turned off rather than done silently.
+	 */
+	self.hidraw = [NSButton checkboxWithTitle:
+	    @"Turn hidraw off in this bottle" target:nil action:NULL];
+	self.hidraw.frame = NSMakeRect(24, 306, 420, 20);
+	self.hidraw.state = NSControlStateValueOn;
+	[v addSubview:self.hidraw];
+
+	NSTextField *l3 = [NSTextField labelWithString:
+	    @"With hidraw on, the wheel has been measured missing from the "
+	    "bottle."];
+	l3.frame = NSMakeRect(42, 286, 540, 16);
+	l3.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
+	l3.textColor = [NSColor secondaryLabelColor];
+	[v addSubview:l3];
+
 	NSScrollView *sc = [[NSScrollView alloc]
-	    initWithFrame:NSMakeRect(24, 24, 572, 300)];
+	    initWithFrame:NSMakeRect(24, 24, 572, 254)];
 	sc.hasVerticalScroller = YES;
 	sc.borderType = NSNoBorder;
 	sc.drawsBackground = YES;
@@ -1654,6 +1678,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 
 	NSTask *t = [[NSTask alloc] init];
 	NSPipe *p = [NSPipe pipe];
+	NSMutableArray<NSString *> *args;
 	NSError *err = nil;
 
 	/*
@@ -1663,9 +1688,12 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	 * install.sh is still there for anyone who wants them.
 	 */
 	t.executableURL = [NSURL fileURLWithPath:@"/bin/sh"];
-	t.arguments = @[ [self resource:@"install.sh"],
+	args = [@[ [self resource:@"install.sh"],
 	    @"-b", self.bottles.titleOfSelectedItem,
-	    @"--no-binaries", @"--no-app" ];
+	    @"--no-binaries", @"--no-app" ] mutableCopy];
+	if (self.hidraw.state != NSControlStateValueOn)
+		[args addObject:@"--keep-hidraw"];
+	t.arguments = args;
 	t.currentDirectoryURL = [NSURL fileURLWithPath:
 	    [[NSBundle mainBundle] resourcePath]];
 	t.standardOutput = p;

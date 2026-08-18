@@ -96,9 +96,17 @@ identity. That is once, ever, and **no password is needed at any point** —
 nothing is installed outside your own account.
 
 When it opens it asks which CrossOver bottle your game is in, and puts the
-proxy there, along with the registry override and the setting without which
-the wheel does not appear inside a bottle at all. That is the only thing it
-installs.
+proxy there, along with the registry override and the two settings without
+which the wheel does not appear inside a bottle at all. That is the only
+thing it installs.
+
+**"Turn hidraw off in this bottle" is ticked, and should stay ticked.** With
+hidraw on, the wheel has been measured missing from the bottle entirely
+(RESEARCH.md A25), so that tick is one registry value telling CrossOver's
+winebus not to use that route. It is the whole bottle rather than the wheel:
+untick it if something else in that bottle needs hidraw, such as a wheelbase
+with its own force feedback, which reaches it that way and no other. The
+bottle picks it up the next time it starts.
 
 Afterwards it lives in the menu bar as a small steering wheel. Start and stop
 the daemon there, see whether the wheel is connected and whether a game is
@@ -234,7 +242,8 @@ make dmg        # the disk image
 `install.sh` is the script the application runs from inside its own bundle, so
 both routes do exactly the same thing to your bottle. `./install.sh -n` shows
 what it would do and changes nothing; `-b` names the bottle so it asks
-nothing; `--no-bottle`, `--no-binaries` and `--no-app` each do less.
+nothing; `--no-bottle`, `--no-binaries` and `--no-app` each do less;
+`--keep-hidraw` is the checkbox above, unticked.
 
 ### Once it is installed
 
@@ -277,11 +286,15 @@ CrossOver 26 bundles, 2.30.12, is the last release whose HIDAPI layer
 still claims every Thrustmaster device as a possible PlayStation pad and
 drops it. `SDL_JOYSTICK_HIDAPI=0` in the bottle's environment fixes it,
 confirmed on hardware in test 16, and belongs in `cxbottle.conf` so every
-launch gets it. On the hidraw route the buttons arrive whole, all
-thirteen with their identities, and the one remaining input fault was
-measured to its cause: the T150's own descriptor labels the pedals
-backwards, which `T150_PEDALS` can correct for a game that needs it.
-[`docs/RESEARCH.md`](docs/RESEARCH.md) B10, B11, A35 and A37.
+launch gets it. The install also turns hidraw off in that bottle, because
+with hidraw on the wheel has been measured missing from it altogether
+(A25), and that pins the wheel to the SDL route: the thirteen buttons
+A37 named whole were named on the other route, so anyone who wants that
+one back unticks the box, or passes `--keep-hidraw`. The one remaining
+input fault was measured to its cause: the T150's own descriptor labels
+the pedals backwards, which `T150_PEDALS` can correct for a game that
+needs it. [`docs/RESEARCH.md`](docs/RESEARCH.md) B10, B11, A25, A35 and
+A37.
 
 **Does not work: force feedback, because the T150 brings no PID
 descriptor.** Wine's DirectInput sets `DIDC_FORCEFEEDBACK` only from a
@@ -881,7 +894,7 @@ process has its `system32` redirected to `syswow64`, where this is not, and
 Wine skips a file whose machine does not match in any case. `file "<game>.exe"`
 says which one you have. There is no i386 build.
 
-Two files, one registry value and one line in the bottle's own configuration:
+Two files, two registry values and one line in the bottle's own configuration:
 
 ```sh
 CX_ROOT="/Applications/CrossOver.app/Contents/SharedSupport/CrossOver"
@@ -896,6 +909,11 @@ cp build/bin/t150-dinput8.dll "$SYS32/dinput8.dll"
 # the override, once, in the bottle's registry
 "$CX_ROOT/bin/wine" --bottle "<name>" --cx-app reg.exe add \
     'HKCU\Software\Wine\DllOverrides' /v dinput8 /t REG_SZ /d native,builtin /f
+
+# and hidraw off for that bottle, read by winebus when the bottle next starts
+"$CX_ROOT/bin/wine" --bottle "<name>" --cx-app reg.exe add \
+    'HKLM\System\CurrentControlSet\Services\WineBus' \
+    /v DisableHidraw /t REG_DWORD /d 1 /f
 ```
 
 From a release archive, use `t150-dinput8.dll` from the extracted directory
@@ -922,6 +940,25 @@ file, right or wrong.
 signature, and Wine refuses a builtin file whose load order says native only,
 so an override for `dinput8_orig` breaks the chain-load that no entry at all
 resolves correctly.
+
+**Turning hidraw off is the whole bottle, not the wheel.**
+`is_hidraw_enabled()` reads `DisableHidraw` before anything else, so it
+overrides both the per-device `Hidraw` value under
+`...\Services\WineBus\Devices\044f/b677` and the `EnableHidraw` list, and
+winebus then discards every device whose only copy came from the IOHID bus. A
+pad SDL enumerates as well is unaffected. A wheelbase that carries its own PID
+collection is not: hidraw is the route that gives it native force feedback
+(RESEARCH.md B12), and the T150's own report descriptor, which A37 measured
+all thirteen buttons through, arrives by that route too. `--keep-hidraw`, or
+unticking the box, is how a bottle keeps it. To undo it afterwards:
+
+```sh
+"$CX_ROOT/bin/wine" --bottle "<name>" --cx-app reg.exe delete \
+    'HKLM\System\CurrentControlSet\Services\WineBus' /v DisableHidraw /f
+```
+
+winebus reads the value in `bus_options_init()` when the bottle boots, so
+either way a bottle that is already running keeps the route it started with.
 
 **For one run rather than for good**, pass `--dll dinput8=n,b` instead of
 touching the registry. Exporting `WINEDLLOVERRIDES` does nothing: CrossOver's

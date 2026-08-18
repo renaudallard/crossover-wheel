@@ -26,7 +26,9 @@ both:
   mode, and CrossOver carries it into the bottle, with one measured caveat:
   the SDL that CrossOver 26 bundles drops Thrustmaster wheels unless
   `SDL_JOYSTICK_HIDAPI=0` is set in the bottle's environment (RESEARCH.md
-  B11, A35). With it set, the wheel reaches games again.
+  B11, A35). With it set, the wheel reaches games again. The install also
+  turns hidraw off in that bottle, which pins the wheel to that same SDL
+  backend (A25).
 - CrossOver carries it into the bottle without any driver, and it opens the
   device without seizing it, so a second process can still write to it.
 

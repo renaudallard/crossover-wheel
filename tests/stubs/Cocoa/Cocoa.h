@@ -379,7 +379,9 @@ extern NSString * const NSForegroundColorAttributeName;
 
 @interface NSButton : NSView
 + (instancetype)buttonWithTitle:(NSString *)t target:(id)o action:(SEL)a;
++ (instancetype)checkboxWithTitle:(NSString *)t target:(id)o action:(SEL)a;
 @property NSInteger bezelStyle;
+@property NSInteger state;
 @property BOOL enabled;
 @property (copy) NSString *title;
 @property (copy) NSString *keyEquivalent;
