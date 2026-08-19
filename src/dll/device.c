@@ -38,6 +38,49 @@ t150_is_wheel(const GUID *product)
 }
 
 /*
+ * The instance GUID a game is given for the wheel, in place of the one
+ * DirectInput made up.
+ *
+ * Wine derives a joystick's guidInstance from the raw input handle its HID
+ * device was given: dlls/dinput/joystick_hid.c does guidInstance.Data1 ^=
+ * handle, and dlls/hidclass.sys/pnp.c hands that handle out with an
+ * InterlockedIncrement on a static counter the bottle starts at 3. So the
+ * number is a fact about the order devices were created in, not about the
+ * wheel, and this wheel is created more than once: it powers up at the boot
+ * identity every T-series wheel shares and switches to its own a few seconds
+ * later, which the bottle sees as a removal and a creation, and a replug or a
+ * wake does it again.
+ *
+ * A game stores guidInstance to find its device again, so a wheel that came
+ * back at a different number is a device it has never seen: every button has
+ * to be mapped again while the name on the screen never changes. It is the
+ * same wheel every time, and this is how it says so.
+ *
+ * A constant of this project's own rather than anything derived from Wine's,
+ * so it cannot be a guidInstance the bottle really handed out. The first word
+ * is "t150" and the two after it are the wheel's ids, so a log naming it is
+ * readable. Deliberately not the product GUID's first word: t150_is_wheel
+ * matches on that word alone and is asked about products, and two GUIDs that
+ * answer the same question are one mistake away from being confused.
+ *
+ * One wheel. Two T150s in a bottle would both answer to this, which is the
+ * same scope the daemon has.
+ */
+const GUID t150_instance_guid = {
+	0x74313530, T150_PID_FIRMWARE, T150_VID,
+	{ 0x74, 0x31, 0x35, 0x30, 0x66, 0x66, 0x62, 0x00 }
+};
+
+int
+t150_is_stable_instance(const GUID *instance)
+{
+	if (instance == NULL)
+		return 0;
+
+	return IsEqualGUID(instance, &t150_instance_guid) ? 1 : 0;
+}
+
+/*
  * One slot map for the process, not one per wrapped device.
  *
  * The slots being handed out are the daemon's, and the daemon keeps one table
@@ -710,7 +753,22 @@ dev_GetObjectInfo(IDirectInputDevice8W *self, LPDIDEVICEOBJECTINSTANCEW obj,
 static HRESULT WINAPI
 dev_GetDeviceInfo(IDirectInputDevice8W *self, LPDIDEVICEINSTANCEW inst)
 {
-	return IDirectInputDevice8_GetDeviceInfo(INNER(self), inst);
+	HRESULT hr = IDirectInputDevice8_GetDeviceInfo(INNER(self), inst);
+
+	/*
+	 * The same answer the enumeration gave. Only the wheel is wrapped, so
+	 * there is nothing else this can reach, and guidInstance is at the
+	 * same offset in the ANSI structure a game may have handed in.
+	 *
+	 * A wheel the daemon is not holding is never wrapped and so never
+	 * comes through here, and reports what DirectInput calls it. That
+	 * costs nothing: what a game stores is what the enumeration gave it,
+	 * and the enumeration substitutes whether or not the daemon answers.
+	 */
+	if (SUCCEEDED(hr) && inst != NULL)
+		inst->guidInstance = t150_instance_guid;
+
+	return hr;
 }
 
 static HRESULT WINAPI

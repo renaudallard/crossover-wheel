@@ -2283,6 +2283,79 @@ Three consequences:
 > `iohid_device_set_output_report()`; B1, B2, B4 for the measured links;
 > `main.c` `is_hidraw_enabled()` for the allowlist.
 
+**B14. A game's saved button mapping cannot survive a replug, because
+DirectInput derives the wheel's instance GUID from the order it arrived
+in.** Reported on hardware: from time to time the wheel is not recognised the
+same way and every button has to be mapped again, with the name still
+Thrustmaster T150. That last clause is what rules A51 out: A51 is the wheel
+falling back to the boot identity, where the name changes to "Thrustmaster
+FFB Wheel". Here it does not, so the wheel is at `044f:b677` and it is the
+bottle's view of it that moved.
+
+Read out of CrossOver's own tree, `dlls/dinput/joystick_hid.c`:
+
+```c
+instance->guidInstance = hid_joystick_guid;
+instance->guidInstance.Data1 ^= handle;    /* IOCTL_HID_GET_WINE_RAWINPUT_HANDLE */
+instance->guidProduct  = dinput_pidvid_guid;
+instance->guidProduct.Data1 = MAKELONG( attrs->VendorID, attrs->ProductID );
+```
+
+and `dlls/hidclass.sys/pnp.c`:
+
+```c
+static UINT32 alloc_rawinput_handle(void)
+{
+    static LONG counter = WINE_KEYBOARD_HANDLE + 1;   /* 3, 4, 5, ... */
+    return InterlockedIncrement(&counter);
+}
+```
+
+**So `guidInstance` is a fact about arrival order and nothing else.**
+`guidProduct` stays `044f:b677` and the product string stays whatever SDL
+reports, which is why the name never changes. A game stores `guidInstance` to
+find its device again, so a wheel that came back at a different handle is a
+device it has never seen.
+
+**And this wheel arrives more than once.** It powers up at the boot identity
+and switches to its own a few seconds later (A4, A50), which the bottle sees
+as a removal and a creation, so whether the wheel is at `044f:b677` before or
+after the bottle started decides whether it gets handle 3 or handle 4. A
+replug or a wake does it again, mid session. "From time to time" is exactly
+what that produces.
+
+**The counter is not disturbed by the arbitration.** winebus creates one
+device per backend and discards the copy whose `is_hidraw` disagrees, and the
+discard in the `BUS_EVENT_TYPE_DEVICE_CREATED` case happens before
+`bus_create_hid_device()`, so a rejected copy takes no handle. The
+`DisableHidraw` value the install writes therefore changes nothing about the
+arithmetic, and it changes nothing about the route either: `is_hidraw_enabled()`
+leaves `prefer_hidraw` false for `044f:b677`, which is on none of its lists,
+so the wheel comes through SDL with the value set or unset.
+
+**This is CrossOver's design and not a fault, so the fix belongs in the
+proxy.** `enum_thunk` already hands the game a rewritten `DIDEVICEINSTANCE`,
+because a game that checks `guidFFDriver` would otherwise skip the wheel. It
+now substitutes a constant `guidInstance` as well, and `CreateDevice`,
+`GetDeviceStatus` and `FindDevice` translate that constant back into whatever
+DirectInput calls the wheel at the moment of the call. `EnumDevicesBySemantics`
+is left alone: a game mapping that way is handed its devices rather than
+looking them up.
+
+**Two things this does not do**, and neither should be written up as though it
+did. A mapping saved against the old, unstable GUID is still lost once, at the
+upgrade; and a game bound to a device that has left the bus does not get force
+feedback back when it returns, which is A51's second paragraph and is not
+about GUIDs at all. What this fixes is the mapping, from the next launch
+onwards.
+
+> `sources/wine/dlls/dinput/joystick_hid.c`,
+> `hid_joystick_device_try_open()`; `dlls/hidclass.sys/pnp.c`,
+> `alloc_rawinput_handle()` and the `IRP_MN_START_DEVICE` case;
+> `dlls/winebus.sys/main.c`, `is_hidraw_enabled()` and the
+> `BUS_EVENT_TYPE_DEVICE_CREATED` case. Read in CrossOver's published
+> sources, not only upstream Wine.
+
 ---
 
 ## C. How these wheels are actually driven

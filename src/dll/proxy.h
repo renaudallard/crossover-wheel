@@ -69,6 +69,13 @@ int	t150_client_call(uint8_t op, const void *payload, size_t len);
 int	t150_is_wheel(const GUID *product);
 
 /*
+ * The instance GUID a game is given for the wheel, in place of the one
+ * DirectInput made up, and the test for it coming back.
+ */
+extern const GUID t150_instance_guid;
+int	t150_is_stable_instance(const GUID *instance);
+
+/*
  * A wrapped device. The effect objects it hands out point back at it.
  *
  * The vtable pointer is first and must stay first: a game holds this as an

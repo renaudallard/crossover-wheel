@@ -158,6 +158,22 @@ against something it can no longer find. The menu says *wheel starting up, not
 ready for a game* until the switch has happened, which takes a few seconds and
 which the app and the daemon both do by themselves.
 
+**Your button mapping now survives a replug.** It did not, and the way it
+failed was hard to read: the wheel came back under its own name, the game
+found it, and every button had to be mapped again. DirectInput builds a
+joystick's instance GUID, which is what a game stores to find its device
+again, out of the order that device arrived in the bottle, so the same wheel
+gets a different one every time it leaves and returns, and this wheel returns
+whenever it is replugged, wakes up, or makes its own switch out of boot mode
+while the bottle is already running. The proxy hands games one GUID for the
+wheel and translates it back on the way in, so the wheel is the same device
+every launch. RESEARCH.md B14.
+
+That costs you one last remap, on the first launch after this version,
+because what the game has saved is the old kind. And it is only the mapping:
+a game that was already running when the wheel left the bus still has to be
+restarted, because it is bound to a device that has gone.
+
 **The menu names the PS4 position too**, as *wheel in the PS4 position: set its
 switch to PS3 and replug*. That state is a wheel plugged in, findable at
 `044f:b66d` and rigid, at an identity nothing here drives, and the only fix is

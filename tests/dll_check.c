@@ -460,6 +460,44 @@ test_wheel_match(void)
 }
 
 /*
+ * The GUID the proxy hands out in place of the one DirectInput derives from
+ * the order the wheel arrived in.
+ *
+ * The last two cases are what the constant was chosen to keep apart. Wine
+ * builds a joystick's instance GUID by XORing a fixed one with a small
+ * counter, so anything in that family has to answer no however many times the
+ * counter has been round; and t150_is_wheel matches on the first word alone,
+ * so a constant sharing that word with the product GUID would be one mistake
+ * away from being taken for a product.
+ */
+static void
+test_stable_instance(void)
+{
+	/* dlls/dinput/joystick_hid.c, hid_joystick_guid. */
+	static const GUID wine_joystick = { 0x9e573edb, 0x7734, 0x11d2,
+	    { 0x8d, 0x4a, 0x23, 0x90, 0x3f, 0xb6, 0xbd, 0xf7 } };
+	GUID g;
+	unsigned i;
+
+	if (!t150_is_stable_instance(&t150_instance_guid))
+		fail("the proxy's own instance guid was not recognised");
+
+	if (t150_is_stable_instance(&GUID_NULL))
+		fail("a null guid was taken for the proxy's own");
+
+	for (i = 0; i < 64; i++) {
+		g = wine_joystick;
+		g.Data1 ^= i;
+		if (t150_is_stable_instance(&g))
+			fail("a wine joystick instance guid was taken for "
+			    "the proxy's own");
+	}
+
+	if (t150_is_wheel(&t150_instance_guid))
+		fail("the instance guid was taken for a product guid");
+}
+
+/*
  * Load the DLL as a game would. The chain-load target has to exist first,
  * so the caller copies the system dinput8 next to it under that name.
  */
@@ -532,6 +570,7 @@ main(int argc, char *argv[])
 	test_periodic_and_condition();
 	test_guids();
 	test_wheel_match();
+	test_stable_instance();
 
 	if (argc > 1)
 		test_load(argv[1]);

@@ -161,6 +161,18 @@ enum_thunk(const void *inst, void *ref)
 	 * Hand the game a copy with a force feedback driver named, because a
 	 * game that checks guidFFDriver before bothering with the device
 	 * would otherwise skip it.
+	 *
+	 * And with the wheel's instance GUID replaced by one that is the same
+	 * every time. This is the GUID a game stores to find its device again,
+	 * and DirectInput derives it from the order the wheel arrived in
+	 * rather than from the wheel: see t150_instance_guid. Substituting it
+	 * here is what stops a replug, a wake or the wheel's own boot mode
+	 * switch from presenting a game with a device it has never seen and
+	 * every button to map a second time.
+	 *
+	 * guidInstance is in every form of this structure, back to the DX3
+	 * one, so it needs no size test of its own. guidFFDriver comes after
+	 * the name arrays, whose sizes differ, and does.
 	 */
 	memset(&copy, 0, sizeof(copy));
 	if (w->dwSize > sizeof(copy))
@@ -168,14 +180,82 @@ enum_thunk(const void *inst, void *ref)
 	memcpy(&copy, inst, w->dwSize);
 
 	if (ctx->wide) {
+		copy.w.guidInstance = t150_instance_guid;
 		if (copy.w.dwSize >= sizeof(DIDEVICEINSTANCEW))
 			copy.w.guidFFDriver = IID_IDirectInputEffect;
 	} else {
+		copy.a.guidInstance = t150_instance_guid;
 		if (copy.a.dwSize >= sizeof(DIDEVICEINSTANCEA))
 			copy.a.guidFFDriver = IID_IDirectInputEffect;
 	}
 
 	return ctx->cb(&copy, ctx->ref);
+}
+
+/*
+ * What DirectInput calls the wheel at this moment, found by asking it.
+ *
+ * The enumeration above hands out a constant instead, so everything that
+ * takes an instance GUID back from the game has to undo that before the call
+ * reaches DirectInput. guidInstance and guidProduct sit at the same offsets
+ * in the ANSI and the wide structure, so one callback reads either.
+ */
+struct find_ctx {
+	GUID	guid;
+	int	found;
+};
+
+static BOOL WINAPI
+find_thunk(const void *inst, void *ref)
+{
+	const DIDEVICEINSTANCEW *w = inst;
+	struct find_ctx *ctx = ref;
+
+	if (!t150_is_wheel(&w->guidProduct))
+		return DIENUM_CONTINUE;
+
+	ctx->guid = w->guidInstance;
+	ctx->found = 1;
+
+	return DIENUM_STOP;
+}
+
+static int
+di_wheel_guid(IDirectInput8W *inner, GUID *out)
+{
+	struct find_ctx ctx;
+
+	memset(&ctx, 0, sizeof(ctx));
+	if (FAILED(IDirectInput8_EnumDevices(inner, DI8DEVCLASS_GAMECTRL,
+	    (void *)find_thunk, &ctx, DIEDFL_ATTACHEDONLY)) || !ctx.found)
+		return -1;
+
+	*out = ctx.guid;
+
+	return 0;
+}
+
+/*
+ * The GUID to pass on, which is the one the game gave unless it is ours.
+ *
+ * Whatever came in goes through untouched when it is not ours to translate,
+ * including a null one: DirectInput's answer to that is DirectInput's to
+ * give. A wheel that has gone leaves nothing to translate to either, and our
+ * own constant passed through would only earn DIERR_DEVICENOTREG under a name
+ * nobody can look up.
+ *
+ * scratch is where the translated GUID is put when there is one, so the
+ * caller owns the storage and this owns the decision.
+ */
+static const GUID *
+di_real_guid(IDirectInput8W *inner, REFGUID guid, GUID *scratch)
+{
+	if (!t150_is_stable_instance(guid))
+		return guid;
+	if (di_wheel_guid(inner, scratch) != 0)
+		return guid;
+
+	return scratch;
 }
 
 static HRESULT WINAPI
@@ -224,13 +304,20 @@ di_CreateDevice(IDirectInput8W *self, REFGUID guid,
 		DIDEVICEINSTANCEA a;
 	} info;
 	IDirectInputDevice8W *inner;
+	GUID cur;
 	HRESULT hr;
 	int got;
 
 	if (out == NULL)
 		return E_POINTER;
 
-	hr = IDirectInput8_CreateDevice(d->inner, guid, &inner, outer);
+	/*
+	 * The game is asking for the device it was shown, and what it was
+	 * shown for the wheel was a constant. Turn it back into whatever
+	 * DirectInput calls the wheel now.
+	 */
+	hr = IDirectInput8_CreateDevice(d->inner,
+	    di_real_guid(d->inner, guid, &cur), &inner, outer);
 	if (FAILED(hr))
 		return hr;
 
@@ -325,7 +412,11 @@ di_EnumDevices(IDirectInput8W *self, DWORD type, LPDIENUMDEVICESCALLBACKW cb,
 static HRESULT WINAPI
 di_GetDeviceStatus(IDirectInput8W *self, REFGUID guid)
 {
-	return IDirectInput8_GetDeviceStatus(DI_INNER(self), guid);
+	IDirectInput8W *inner = DI_INNER(self);
+	GUID cur;
+
+	return IDirectInput8_GetDeviceStatus(inner,
+	    di_real_guid(inner, guid, &cur));
 }
 
 static HRESULT WINAPI
@@ -343,9 +434,28 @@ di_Initialize(IDirectInput8W *self, HINSTANCE inst, DWORD ver)
 static HRESULT WINAPI
 di_FindDevice(IDirectInput8W *self, REFGUID guid, LPCWSTR name, LPGUID out)
 {
-	return IDirectInput8_FindDevice(DI_INNER(self), guid, name, out);
+	IDirectInput8W *inner = DI_INNER(self);
+	HRESULT hr = IDirectInput8_FindDevice(inner, guid, name, out);
+	GUID wheel;
+
+	/*
+	 * The other door to an instance GUID, and it has to give the same
+	 * answer the enumeration did, or a game that came this way would
+	 * store the one that does not survive a replug.
+	 */
+	if (SUCCEEDED(hr) && out != NULL && di_wheel_guid(inner, &wheel) == 0 &&
+	    IsEqualGUID(out, &wheel))
+		*out = t150_instance_guid;
+
+	return hr;
 }
 
+/*
+ * Passed through, instance GUIDs and all. A game that maps by semantics is
+ * handed its devices by DirectInput rather than looking them up by GUID, so
+ * there is nothing here for the substitution above to protect, and undoing it
+ * would mean translating every action format that comes back as well.
+ */
 static HRESULT WINAPI
 di_EnumDevicesBySemantics(IDirectInput8W *self, LPCWSTR user,
     LPDIACTIONFORMATW fmt, LPDIENUMDEVICESBYSEMANTICSCBW cb, LPVOID ref,

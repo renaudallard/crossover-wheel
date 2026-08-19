@@ -1,4 +1,4 @@
-.Dd August 8, 2026
+.Dd August 19, 2026
 .Dt CROSSOVER-WHEEL 7
 .Os
 .Sh NAME
@@ -87,6 +87,13 @@ path. It is an x86_64 PE and serves 64-bit games only, since a 32-bit process
 is redirected to
 .Pa syswow64 .
 The README has the whole procedure.
+.Pp
+It also gives games one instance GUID for the wheel and translates it back on
+every call that takes one. DirectInput derives that GUID from the order the
+device arrived in the bottle, and this wheel arrives again on every replug,
+every wake and its own switch out of boot mode, so a game's saved button
+mapping did not survive any of them: the wheel came back under its own name
+as a device the game had never seen. RESEARCH.md B14.
 .It Xr t150boot 8
 One-shot boot to firmware mode switch, unprivileged. Has switched a real
 wheel and confirmed it back at its firmware id.
