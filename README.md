@@ -199,6 +199,15 @@ bottle holds a proxy that is not the one in the application, it offers *Update
 the proxy in* that bottle, by name. That is the install you already know,
 opened on the bottle that needs it.
 
+**The row only appears when the proxy really changed.** It used to appear
+after every application update, because the proxy carries a build string and
+that string was the release: 0.3.0 and 0.3.1 have not one commit between them
+under `src/dll`, and the menu still offered to replace the one in the bottle,
+the install still replaced it, and nothing about the game changed. The string
+now names the last commit that touched what the proxy is built from, so two
+releases that leave the proxy alone build the same bytes and the row stays
+away. When it does appear, the update is one.
+
 **Two settings the wheel keeps for itself** are in that menu too, because no
 game can ask for either as you want it. DirectInput has no property for a
 wheel's rotation at all, and its centring spring property is only on or off,

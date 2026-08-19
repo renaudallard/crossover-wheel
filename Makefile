@@ -107,12 +107,6 @@ DLL_CHECK_BIN = $(BIN)/dll_check.exe
 DINPUT_PROBE_BIN = $(BIN)/probe_dinput.exe
 DLL_SRCS   = src/dll/main.c src/dll/device.c src/dll/effect.c \
 	     src/dll/client.c src/lib/proto.c
-# The proxy logs this at wrap time, so a log always says which build is in
-# the bottle. git describe is factual and needs no version decision.
-DLL_VERSION := $(shell git describe --tags --always 2>/dev/null || echo unknown)
-DLL_CPPFLAGS = -Iinclude -Isrc/dll -DT150_PROXY_VERSION=\"$(DLL_VERSION)\"
-DLL_CFLAGS   = -O2 -std=c11 $(WARNINGS) $(EXTRA_CFLAGS)
-DLL_LIBS     = -ldxguid -luuid -lole32 -lws2_32
 
 # The headers both ends of the wire protocol share. The cross build compiles
 # straight from sources to a PE, so it produces no .o for -MMD to write a .d
@@ -122,6 +116,34 @@ DLL_LIBS     = -ldxguid -luuid -lole32 -lws2_32
 # build, with make reporting success and nothing anywhere saying the two no
 # longer agreed about the protocol.
 SHARED_HDRS = $(wildcard include/t150/*.h)
+
+# Everything the proxy is built from, named once. The rule below and the
+# version stamped into it are the same list and have to stay the same list.
+DLL_DEPS   = $(DLL_SRCS) src/dll/proxy.h src/dll/dinput8.def $(SHARED_HDRS)
+
+# The proxy logs this at wrap time, so a log always says which build is in
+# the bottle.
+#
+# The last commit that touched the list above, rather than git describe. The
+# application decides whether a bottle holds an old proxy by comparing it with
+# the one in its own bundle byte for byte, which is the only record there is,
+# so a release stamped in here made every release a new proxy: 0.3.0 and 0.3.1
+# have not one commit between them under src/dll, and the menu still offered to
+# replace the one in the bottle, the install still replaced it, and nothing
+# about the game changed. This changes when the proxy changes and at no other
+# time. Empty as well as failed becomes "unknown": git log succeeds and prints
+# nothing for a checkout with no history for those paths.
+DLL_VERSION := $(shell v=$$(git log -1 --abbrev=12 --format=%h -- \
+	         $(DLL_DEPS) 2>/dev/null); echo "$${v:-unknown}")
+
+# Which tree a build came from, for tools that are not the proxy. git describe
+# is factual and needs no version decision.
+BUILD_VERSION := $(shell git describe --tags --always 2>/dev/null || \
+		 echo unknown)
+
+DLL_CPPFLAGS = -Iinclude -Isrc/dll -DT150_PROXY_VERSION=\"$(DLL_VERSION)\"
+DLL_CFLAGS   = -O2 -std=c11 $(WARNINGS) $(EXTRA_CFLAGS)
+DLL_LIBS     = -ldxguid -luuid -lole32 -lws2_32
 
 .PHONY: all probes tools daemon dll test check check-mac strict clean help \
         install app dmg probe-zip
@@ -182,8 +204,7 @@ daemon: $(DAEMON_BIN)
 ifeq ($(HAVE_DLL_CC),yes)
 dll: $(DLL_BIN) $(DLL_CHECK_BIN) $(DINPUT_PROBE_BIN)
 
-$(DLL_BIN): $(DLL_SRCS) src/dll/proxy.h src/dll/dinput8.def $(SHARED_HDRS) \
-    | $(BIN)
+$(DLL_BIN): $(DLL_DEPS) | $(BIN)
 	$(DLL_CC) $(DLL_CPPFLAGS) $(DLL_CFLAGS) -shared -o $@ $(DLL_SRCS) \
 	    src/dll/dinput8.def -static-libgcc $(DLL_LIBS)
 
@@ -199,7 +220,8 @@ $(DLL_CHECK_BIN): tests/dll_check.c $(DLL_SRCS) src/dll/proxy.h $(SHARED_HDRS) \
 # header for the wheel's ids, because it exists to report what DirectInput
 # says rather than what this project believes.
 $(DINPUT_PROBE_BIN): src/tools/probe_dinput.c $(SHARED_HDRS) | $(BIN)
-	$(DLL_CC) $(DLL_CPPFLAGS) $(DLL_CFLAGS) -o $@ src/tools/probe_dinput.c \
+	$(DLL_CC) $(DLL_CPPFLAGS) -DT150_BUILD_VERSION=\"$(BUILD_VERSION)\" \
+	    $(DLL_CFLAGS) -o $@ src/tools/probe_dinput.c \
 	    -static-libgcc -ldinput8 $(DLL_LIBS)
 else
 dll:
@@ -375,7 +397,7 @@ install:
 # string. That is the DMG filename and CFBundleShortVersionString, and the
 # update check reads the latter back and treats anything unequal to the
 # published tag as out of date, so a build from a source tarball nagged about
-# an update on every launch. DLL_VERSION above has the same intent and no
+# an update on every launch. BUILD_VERSION above has the same intent and no
 # pipe, which is why it was right.
 #
 # The tag exactly, never a description of how far past one this is. With
@@ -383,9 +405,12 @@ install:
 # not a release and is not equal to one either, so the update check treated it
 # as out of date and offered the tag it had been built from on every launch.
 # Anything that is not a release now says 0, which is what the application
-# already reads as a source build and declines to compare. DLL_VERSION keeps
+# already reads as a source build and declines to compare. BUILD_VERSION keeps
 # --always on purpose: it names the build in a log rather than being compared
-# against anything.
+# against anything. DLL_VERSION is not that, and this comment used to say it
+# was: the application compares the proxy byte for byte, so what is stamped
+# into it is compared, and stamping the release in there made every release a
+# proxy the menu offered to replace for nothing.
 REL_VERSION := $(shell { git describe --tags --exact-match 2>/dev/null || \
 	         echo 0; } | sed 's/^v//')
 #

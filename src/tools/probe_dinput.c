@@ -1285,7 +1285,7 @@ main(int argc, char *argv[])
 	else
 		printf("writing this run to %s\n", logpath);
 
-	out("probe_dinput %s\n", T150_PROXY_VERSION);
+	out("probe_dinput %s\n", T150_BUILD_VERSION);
 
 	if (FAILED(CoInitializeEx(NULL, COINIT_APARTMENTTHREADED))) {
 		out("CoInitializeEx failed\n");
