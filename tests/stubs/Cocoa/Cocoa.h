@@ -50,7 +50,8 @@ typedef NSUInteger NSStringEncoding;
 typedef NSUInteger NSDataSearchOptions;
 typedef NSUInteger NSJSONReadingOptions;
 
-@class NSString, NSArray, NSDictionary, NSData, NSError, NSURL;
+@class NSString, NSArray, NSDictionary, NSMutableDictionary, NSData,
+    NSError, NSURL;
 @class NSMenu, NSMenuItem, NSView, NSFont, NSColor, NSImage, NSTimer;
 @class NSNotificationCenter, NSStatusBarButton;
 
@@ -85,6 +86,7 @@ typedef NSInteger NSComparisonResult;
 - (BOOL)isEqualToString:(NSString *)s;
 - (BOOL)hasPrefix:(NSString *)s;
 - (BOOL)hasSuffix:(NSString *)s;
+- (NSRange)rangeOfString:(NSString *)s;
 - (BOOL)containsString:(NSString *)s;
 - (NSString *)substringFromIndex:(NSUInteger)i;
 - (NSString *)stringByAppendingString:(NSString *)s;
@@ -152,7 +154,15 @@ typedef struct {
     count:(NSUInteger)n;
 - (id)objectForKeyedSubscript:(id)k;
 - (id)objectForKey:(id)k;
+- (id)mutableCopy;
 - (BOOL)writeToFile:(NSString *)p atomically:(BOOL)a;
+@end
+
+@interface NSMutableDictionary : NSDictionary
++ (instancetype)dictionary;
+- (void)setObject:(id)o forKeyedSubscript:(id)k;
+- (void)setObject:(id)o forKey:(id)k;
+- (void)removeObjectForKey:(id)k;
 @end
 
 @interface NSData : NSObject
@@ -181,6 +191,7 @@ typedef struct {
 @property (readonly) NSString *resourcePath;
 @property (readonly) NSString *bundlePath;
 @property (readonly) NSString *bundleIdentifier;
+@property (readonly) NSString *executablePath;
 - (id)objectForInfoDictionaryKey:(NSString *)k;
 @end
 

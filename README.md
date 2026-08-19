@@ -116,6 +116,26 @@ daemon to launchd and starts it now, turning it off stops the one that is
 running. Only one daemon runs at a time, so if one was started some other way
 the menu says so and leaves it alone rather than starting a second beside it.
 
+**Start at login brings this application up as well as the daemon**, and it
+used to bring up only the daemon. The wheel worked and there was no menu bar
+icon to see it with, no status line, no *Copy the log*, and no way to change
+the rotation, which is the whole of what somebody who logs in and finds
+nothing there means by "start at login does not work". They are two launchd
+jobs, because they run two different programs: the daemon's carries
+`KeepAlive` so a death is repaired, and this application's carries none,
+because an application you quit has to stay quit. The daemon starts the
+moment you tick the row; the menu bar item is already running, so it starts
+itself from the next login rather than opening a second copy beside this one.
+
+**Tick it from a copy in Applications**, not from the disk image. The item
+records where this bundle is, and macOS runs an app that is still in the
+folder it was downloaded to from a temporary place of its own that is gone
+before the next login. Ticking the row from either now says so and does
+nothing, rather than writing an item that can never start anything and a tick
+that looks exactly like one that works. If launchd refuses the item for any
+other reason the row goes back off and says so, and any daemon that was
+running is left running.
+
 **A daemon that dies rather than being stopped leaves the wheel holding its
 last force**, because putting the wheel back into a safe state is something it
 does on its way out and a death is exactly the exit that does not. The menu
@@ -153,7 +173,11 @@ nearly every fault in this project was found, so if something looks wrong it
 is the thing worth sending. It works in either mode: a daemon the app started
 is read from its pipe, and one started at login is read from
 `~/Library/Logs/t150d.log`, which
-is where the login item sends it. Nothing else would ever shorten that file,
+is where the login item sends it. Both of the daemon's output streams go
+there, so that file opens with the port it is listening on and the backend it
+got, which are the two lines that say it started at all; with only one stream
+captured, a login daemon that came up perfectly and one that was never spawned
+left the same empty file. Nothing else would ever shorten that file,
 so the application empties it once it passes a few megabytes: what a log is
 for here is the session you are about to describe.
 

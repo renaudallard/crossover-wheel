@@ -36,6 +36,17 @@
 #define AGENT_LABEL	@"it.allard.t150d"
 
 /*
+ * The application's own login item, beside the daemon's.
+ *
+ * Two jobs rather than one, because they run two different programs. The
+ * daemon's is the one that has to be there for a game; this one is the menu
+ * bar item, and without it a login starts a daemon nobody can see, stop,
+ * read the log of, or change the rotation on. This is an accessory
+ * application whose only surface is that icon.
+ */
+#define MENU_LABEL	@"it.allard.t150menu"
+
+/*
  * How large the login agent's log may get before this empties it. Four
  * megabytes is many hours of driving at the one line a second the effect
  * parameters cost, and small enough that nothing anybody sends by mail is
@@ -1060,11 +1071,55 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 
 #pragma mark - start at login
 
-- (NSString *)agentPath
+- (NSString *)agentPathFor:(NSString *)label
 {
 	return [NSHomeDirectory() stringByAppendingPathComponent:
 	    [NSString stringWithFormat:@"Library/LaunchAgents/%@.plist",
-	    AGENT_LABEL]];
+	    label]];
+}
+
+- (NSString *)agentPath
+{
+	return [self agentPathFor:AGENT_LABEL];
+}
+
+- (NSString *)menuAgentPath
+{
+	return [self agentPathFor:MENU_LABEL];
+}
+
+/* What launchctl calls one of these jobs, once it has been loaded. */
+- (NSString *)agentTarget:(NSString *)label
+{
+	return [[self agentDomain] stringByAppendingPathComponent:label];
+}
+
+/*
+ * Why this copy of the application cannot be named in a login item, or nil
+ * when it can.
+ *
+ * The plist records an absolute path into this bundle and launchd reads it
+ * again at every login, so where the bundle is decides whether the item can
+ * ever work. Run straight from the disk image it names a volume that is not
+ * mounted then. Run from a copy that still carries the quarantine attribute,
+ * macOS runs it from a random read only mount under AppTranslocation which is
+ * torn down when it quits, so the path is gone before the login even happens.
+ * Both write an item that can never start anything, and nothing about a tick
+ * that only means "the file is there" would ever say so.
+ */
+- (NSString *)unstableBundleReason
+{
+	NSString *p = [[NSBundle mainBundle] bundlePath];
+
+	if ([p hasPrefix:@"/Volumes/"])
+		return @"This copy is running from a disk image or another "
+		    "removable volume, which is not mounted when you log in.";
+	if ([p rangeOfString:@"/AppTranslocation/"].location != NSNotFound)
+		return @"macOS is running this copy from a temporary place of "
+		    "its own, which it does while the app is still where it "
+		    "was downloaded.";
+
+	return nil;
 }
 
 /*
@@ -1285,13 +1340,27 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 - (void)migrateLoginAgent
 {
 	NSDictionary *have;
+	BOOL stale;
 
 	if (![self loginEnabled])
 		return;
 
 	have = [NSDictionary dictionaryWithContentsOfFile:[self agentPath]];
-	if ([[have objectForKey:@"ProgramArguments"]
-	    isEqualToArray:[self loginArguments]])
+	stale = ![[have objectForKey:@"ProgramArguments"]
+	    isEqualToArray:[self loginArguments]];
+
+	/*
+	 * And an item written before this application had one of its own. The
+	 * daemon's arguments do not change in every release, so asking about
+	 * those alone would leave everybody who already had the feature on
+	 * with a login that starts a daemon and no menu bar item to see it
+	 * with, which is the fault this pair of jobs exists to fix.
+	 */
+	if (![[NSFileManager defaultManager]
+	    fileExistsAtPath:[self menuAgentPath]])
+		stale = YES;
+
+	if (!stale)
 		return;
 
 	if ([self writeLoginAgent])
@@ -1318,7 +1387,8 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 - (void)toggleLogin:(id)sender
 {
 	(void)sender;
-	NSString *path = [self agentPath];
+	NSString *path = [self agentPath], *why;
+	BOOL handed = NO;
 
 	/*
 	 * launchd does not watch the file. A job loaded at login stays loaded
@@ -1332,16 +1402,36 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	if ([self loginEnabled]) {
 		[self say:@"start at login turned off\n"];
 		(void)[self run:@"/bin/launchctl" args:@[ @"bootout",
-		    [[self agentDomain] stringByAppendingPathComponent:
-		    AGENT_LABEL] ]];
-		[[NSFileManager defaultManager] removeItemAtPath:path
-		    error:NULL];
+		    [self agentTarget:AGENT_LABEL] ]];
+		/*
+		 * The menu bar item's job is left loaded and only its plist is
+		 * removed. Booting it out is booting out this application, so
+		 * unticking the row would quit the very menu it was unticked
+		 * from. It carries no KeepAlive, so nothing puts it back, and
+		 * with the plist gone the next login does not start it.
+		 */
+		[self removeLoginAgents];
+		[self refresh];
+		return;
+	}
+
+	/*
+	 * Asked before anything is written, because an item naming a path
+	 * that will not exist at the next login is worse than no item: it
+	 * looks exactly like one that works.
+	 */
+	if ((why = [self unstableBundleReason]) != nil) {
+		[self note:[NSString stringWithFormat:@"%@\n\nDrag "
+		    "crossover-wheel into your Applications folder, open it "
+		    "from there, and switch Start at login on again.", why]];
 		[self refresh];
 		return;
 	}
 
 	if (![self writeLoginAgent]) {
-		[self say:@"could not write the login item\n"];
+		[self removeLoginAgents];
+		[self note:@"Could not write the login item into "
+		    "~/Library/LaunchAgents, so start at login is still off."];
 		[self refresh];
 		return;
 	}
@@ -1356,44 +1446,120 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		self.daemonWanted = NO;
 		[self.daemon terminate];
 		[self.daemon waitUntilExit];
+		handed = YES;
 	}
 
+	/*
+	 * launchd keeps its own record of services somebody has switched off,
+	 * in System Settings under Login Items or with launchctl itself, and
+	 * it outlives the plist. bootstrap honours that record and says
+	 * nothing, so without this a person who had once turned the item off
+	 * could tick this row for ever and never get a daemon.
+	 */
+	(void)[self run:@"/bin/launchctl" args:@[ @"enable",
+	    [self agentTarget:AGENT_LABEL] ]];
+
 	if ([self run:@"/bin/launchctl" args:@[ @"bootstrap",
-	    [self agentDomain], path ]] == 0)
-		[self say:@"start at login turned on, and started\n"];
-	else
-		[self say:@"start at login turned on, from the next login\n"];
+	    [self agentDomain], path ]] == 0) {
+		/*
+		 * The daemon now, the menu bar item at the next login. Its job
+		 * is not bootstrapped here because this application is already
+		 * running, and a job with RunAtLoad would start a second copy
+		 * of it beside this one.
+		 */
+		[self say:@"start at login turned on: the daemon is running "
+		    "now, and both it and this menu come up by themselves "
+		    "from the next login\n"];
+		[self refresh];
+		return;
+	}
+
+	/*
+	 * launchd would not take it, so put back everything this took away
+	 * rather than leaving a ticked row, no daemon and a wheel nobody is
+	 * driving. It used to say the item would work from the next login,
+	 * which was an assertion about the one thing that had just failed.
+	 */
+	[self removeLoginAgents];
+	if (handed)
+		[self startDaemon];
+	[self note:@"launchd would not load the login item, so start at "
+	    "login is still off.\n\nIf you have switched crossover-wheel off "
+	    "under Login Items in System Settings, switch it back on there "
+	    "and try again."];
 
 	[self refresh];
 }
 
 /*
- * The login item, which carries the rotation and the spring on its command
- * line. Written again whenever either of those changes, or the next login
- * would start a daemon that restates the value the user has just replaced.
+ * One launchd job. Both of this application's differ only in what they run
+ * and in what launchd should do about it afterwards, so they are written
+ * here rather than twice.
  */
-- (BOOL)writeLoginAgent
+- (BOOL)writeAgent:(NSString *)label args:(NSArray *)args daemon:(BOOL)daemon
 {
-	NSString *path = [self agentPath];
-	NSDictionary *plist = @{
-		@"Label" : AGENT_LABEL,
-		@"ProgramArguments" : [self loginArguments],
+	NSString *path = [self agentPathFor:label];
+	NSMutableDictionary *plist = [@{
+		@"Label" : label,
+		@"ProgramArguments" : args,
 		@"RunAtLoad" : @YES,
+	} mutableCopy];
+
+	if (daemon) {
 		/*
 		 * Restarted if it dies, which is what makes this worth
 		 * having: an unplugged wheel does not end the daemon, it
-		 * waits, so this only fires on a real failure.
+		 * waits, so this only fires on a real failure. The menu bar
+		 * item gets none of this on purpose, because a job launchd
+		 * puts back the moment it exits is one nobody can quit.
 		 */
-		@"KeepAlive" : @YES,
-		@"StandardErrorPath" : [NSHomeDirectory()
-		    stringByAppendingPathComponent:@"Library/Logs/t150d.log"],
-	};
+		plist[@"KeepAlive"] = @YES;
+		/*
+		 * Both descriptors, not stderr alone. The daemon says which
+		 * port it is listening on and which backend it got on stdout,
+		 * and those are the two lines that prove it started at all.
+		 * With stdout left where launchd puts it by default, a login
+		 * daemon that came up perfectly and one that was never spawned
+		 * left the same empty file, which is the file the README tells
+		 * people to send.
+		 */
+		plist[@"StandardOutPath"] = [self agentLogPath];
+		plist[@"StandardErrorPath"] = [self agentLogPath];
+	}
 
 	[[NSFileManager defaultManager] createDirectoryAtPath:
 	    [path stringByDeletingLastPathComponent]
 	    withIntermediateDirectories:YES attributes:nil error:NULL];
 
 	return [plist writeToFile:path atomically:YES];
+}
+
+/*
+ * Both halves of the login item: the daemon, which carries the rotation and
+ * the spring on its command line and is written again whenever either of
+ * those changes, and the menu bar application, without which a login brings
+ * up a wheel nobody can see or stop.
+ *
+ * Written together and removed together, so there is no state in which one of
+ * them is on disk and the other is not.
+ */
+- (BOOL)writeLoginAgent
+{
+	if (![self writeAgent:AGENT_LABEL args:[self loginArguments]
+	    daemon:YES])
+		return NO;
+
+	return [self writeAgent:MENU_LABEL
+	    args:@[ [[NSBundle mainBundle] executablePath] ] daemon:NO];
+}
+
+/* Neither plist, whether or not either was there. */
+- (void)removeLoginAgents
+{
+	NSFileManager *fm = [NSFileManager defaultManager];
+
+	[fm removeItemAtPath:[self agentPath] error:NULL];
+	[fm removeItemAtPath:[self menuAgentPath] error:NULL];
 }
 
 /*
@@ -1484,8 +1650,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	 * person put it until the next replug.
 	 */
 	if (elsewhere) {
-		NSString *target = [[self agentDomain]
-		    stringByAppendingPathComponent:AGENT_LABEL];
+		NSString *target = [self agentTarget:AGENT_LABEL];
 
 		if (![self loginEnabled]) {
 			[self say:@"a daemon started outside this application "

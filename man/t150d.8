@@ -1,4 +1,4 @@
-.Dd August 8, 2026
+.Dd August 19, 2026
 .Dt T150D 8
 .Os
 .Sh NAME
@@ -566,6 +566,22 @@ A46.
 .Bl -tag -width Ds
 .It Pa ~/Library/Application Support/t150ffb/endpoint
 The port and token, removed on exit.
+.It Pa ~/Library/LaunchAgents/it.allard.t150d.plist
+The login agent the application writes when
+.Em Start at login
+is switched on. It names this daemon inside the application's own bundle,
+carries the rotation and the spring on its command line, has
+.Li KeepAlive
+so a daemon that dies is replaced, and sends both output streams to the log
+below.
+.It Pa ~/Library/LaunchAgents/it.allard.t150menu.plist
+The other half of the same switch, which starts the menu bar application. It
+has no
+.Li KeepAlive ,
+because an application somebody quits has to stay quit.
+.It Pa ~/Library/Logs/t150d.log
+Where the login agent sends this daemon's output. Nothing but the application
+ever shortens it, and it does so once it passes a few megabytes.
 .El
 .Sh EXIT STATUS
 .Ex -std
