@@ -2315,23 +2315,40 @@ static UINT32 alloc_rawinput_handle(void)
 `guidProduct` stays `044f:b677` and the product string stays whatever SDL
 reports, which is why the name never changes. A game stores `guidInstance` to
 find its device again, so a wheel that came back at a different handle is a
-device it has never seen.
+device it has never seen: `hid_joystick_device_open()` matches a GUID against
+`guidProduct` or `guidInstance` and against nothing else.
 
-**And this wheel arrives more than once.** It powers up at the boot identity
-and switches to its own a few seconds later (A4, A50), which the bottle sees
-as a removal and a creation, so whether the wheel is at `044f:b677` before or
-after the bottle started decides whether it gets handle 3 or handle 4. A
-replug or a wake does it again, mid session. "From time to time" is exactly
-what that produces.
+**The counter is initialised to 3 and `InterlockedIncrement` returns the
+incremented value, so the first joystick in a bottle is handle 4.** Mouse and
+keyboard collections take the fixed 1 and 2 by usage and never touch it. The
+handle is stamped in `create_child_pdos()`, which runs under
+`IRP_MN_START_DEVICE`, so it is one per collection per arrival.
 
-**The counter is not disturbed by the arbitration.** winebus creates one
-device per backend and discards the copy whose `is_hidraw` disagrees, and the
-discard in the `BUS_EVENT_TYPE_DEVICE_CREATED` case happens before
-`bus_create_hid_device()`, so a rejected copy takes no handle. The
-`DisableHidraw` value the install writes therefore changes nothing about the
-arithmetic, and it changes nothing about the route either: `is_hidraw_enabled()`
-leaves `prefer_hidraw` false for `044f:b677`, which is on none of its lists,
-so the wheel comes through SDL with the value set or unset.
+**And this wheel arrives more than once.** A replug, a wake, and the switch
+out of the boot identity (A4, A50) are each a removal and a creation as far as
+the bottle is concerned, so the handle advances and never returns to a
+previous value inside one bottle session. It goes back to the start only when
+winedevice does, which is a full bottle shutdown. **That is what makes it
+intermittent rather than permanent**: somebody who restarts the game without
+restarting the bottle gets a new instance GUID, and somebody who restarts the
+bottle gets the old one back, so a saved binding alternately matches and does
+not. "From time to time" is exactly what that produces.
+
+**Do not attribute the extra arrival to the boot identity's own device.**
+Whether `044f:b65d` reaches the bottle at all and takes a handle of its own is
+untested here, and it does not need to be true: the guaranteed term is the
+`044f:b677` device's own removal and recreation. What is settled is that the
+route cannot be the difference. winebus creates one device per backend and
+discards the copy whose `is_hidraw` disagrees, and the discard in the
+`BUS_EVENT_TYPE_DEVICE_CREATED` case happens before `bus_create_hid_device()`,
+so a rejected copy takes no handle; and `is_hidraw_enabled()` leaves
+`prefer_hidraw` false for `044f:b677`, which is on none of its lists, so the
+wheel comes through SDL whether or not `DisableHidraw` is written. B8 and B10
+already said the second half.
+
+**This is generic Wine behaviour that every wheel in every bottle has.** What
+this project adds is extra arrivals, by switching the wheel out of boot mode
+and by recovering it after a replug.
 
 **This is CrossOver's design and not a fault, so the fix belongs in the
 proxy.** `enum_thunk` already hands the game a rewritten `DIDEVICEINSTANCE`,
@@ -2348,6 +2365,18 @@ upgrade; and a game bound to a device that has left the bus does not get force
 feedback back when it returns, which is A51's second paragraph and is not
 about GUIDs at all. What this fixes is the mapping, from the next launch
 onwards.
+
+**The last link is assumed and not measured, and should stay written down as
+assumed.** That the game in the report stores `guidInstance` rather than the
+name or the product GUID is the conventional reading, because `guidInstance`
+is the documented handle to pass to `CreateDevice`, but it is an assumption
+about somebody else's software. A51's boot identity fallback produces the same
+complaint from the person's side and is told apart only by which name they
+read. `probe_dinput` now prints the instance GUID beside the product name,
+which is what settles it: run it twice with a replug in between and no proxy
+in the chain, and two different lines are the measurement. With the proxy in
+the chain the same two runs should print the same line, which is the other
+half.
 
 > `sources/wine/dlls/dinput/joystick_hid.c`,
 > `hid_joystick_device_try_open()`; `dlls/hidclass.sys/pnp.c`,

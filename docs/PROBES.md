@@ -570,7 +570,13 @@ instead of a dialog box.
 
 The plain run prints the device and every object it declares: each axis and
 button with its offset, the axle number a game's configuration records, the
-declared range, and whether any axis is marked a force feedback actuator.
+declared range, and whether any axis is marked a force feedback actuator. It
+also prints the wheel's DirectInput instance GUID, which is the handle a game
+stores to find the wheel again: run this twice with a replug in between and
+no proxy in the chain, and two different lines say a game's saved buttons
+cannot have survived it. With the proxy in the chain the same two runs print
+the same line, because the proxy substitutes one of its own. RESEARCH.md
+B14.
 It then prints where each control sits in the state struct a game reads.
 That second number is not the first one: the enumeration offset is the
 device's own, and the state offset is the one `c_dfDIJoystick2` assigns, so

@@ -44,12 +44,14 @@ t150_is_wheel(const GUID *product)
  * Wine derives a joystick's guidInstance from the raw input handle its HID
  * device was given: dlls/dinput/joystick_hid.c does guidInstance.Data1 ^=
  * handle, and dlls/hidclass.sys/pnp.c hands that handle out with an
- * InterlockedIncrement on a static counter the bottle starts at 3. So the
- * number is a fact about the order devices were created in, not about the
- * wheel, and this wheel is created more than once: it powers up at the boot
- * identity every T-series wheel shares and switches to its own a few seconds
- * later, which the bottle sees as a removal and a creation, and a replug or a
- * wake does it again.
+ * InterlockedIncrement on a static counter, so the first joystick in a bottle
+ * gets 4 and each one after it the next number. The handle is stamped when
+ * the device's collections are built, which happens once per arrival, so the
+ * number is a fact about the order devices arrived in and not about the
+ * wheel. This wheel arrives more than once: a replug, a wake, and the switch
+ * out of the boot identity every T-series wheel shares are each a removal and
+ * a creation as far as the bottle is concerned, and the counter only goes
+ * back to the start when the bottle itself is shut down.
  *
  * A game stores guidInstance to find its device again, so a wheel that came
  * back at a different number is a device it has never seen: every button has

@@ -16,6 +16,12 @@ force feedback actuator. It then prints where each control sits in the state
 struct a game reads, which is a different number from the enumeration offset
 beside it and is the one that decides which value a game gets.
 
+It also prints the wheel's DirectInput instance GUID, which is the handle a
+game stores to find the wheel again. Run this twice with a replug in between:
+two different lines mean a game's saved buttons cannot have survived the
+replug. With the proxy installed the two lines are the same, because the proxy
+gives games one GUID for this wheel and translates it back.
+
   wine --bottle "<name>" --no-gui --cx-app probe_dinput.exe
 
 Give the name of the executable rather than a path to it. The wrapper then

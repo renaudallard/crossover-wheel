@@ -373,8 +373,27 @@ dump_caps(void)
 
 	memset(&inst, 0, sizeof(inst));
 	inst.dwSize = sizeof(inst);
-	if (SUCCEEDED(IDirectInputDevice8_GetDeviceInfo(dev, &inst)))
+	if (SUCCEEDED(IDirectInputDevice8_GetDeviceInfo(dev, &inst))) {
 		out("product     %s\n", inst.tszProductName);
+		/*
+		 * The GUID a game stores to find this device again, printed
+		 * because nothing in this project ever has and the one
+		 * question it answers cannot be answered any other way: run
+		 * this twice with a replug between, and if the two lines
+		 * differ then a game's saved buttons cannot have survived it.
+		 * RESEARCH.md B14. With the proxy in the chain it is the
+		 * proxy's own constant and does not differ, which is the same
+		 * run used the other way round.
+		 */
+		out("instance    %08lx-%04x-%04x-"
+		    "%02x%02x-%02x%02x%02x%02x%02x%02x\n",
+		    (unsigned long)inst.guidInstance.Data1,
+		    inst.guidInstance.Data2, inst.guidInstance.Data3,
+		    inst.guidInstance.Data4[0], inst.guidInstance.Data4[1],
+		    inst.guidInstance.Data4[2], inst.guidInstance.Data4[3],
+		    inst.guidInstance.Data4[4], inst.guidInstance.Data4[5],
+		    inst.guidInstance.Data4[6], inst.guidInstance.Data4[7]);
+	}
 }
 
 /*
