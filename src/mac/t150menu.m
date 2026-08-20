@@ -128,9 +128,12 @@ typedef enum {
 /*
  * The bottles the next press of the install button must cover, when the menu
  * named them. Empty is the plain install, which is the one the list is
- * showing. See updateProxy.
+ * showing. See updateProxy and syncSetupMode.
  */
 @property (strong) NSArray<NSString *> *pendingBottles;
+/* The setup window's two top lines, which say which job this window is. */
+@property (strong) NSTextField *headline;
+@property (strong) NSTextField *subhead;
 @end
 
 @implementation T150Menu
@@ -291,8 +294,9 @@ typedef enum {
 }
 
 /*
- * Open on the first of the bottles the menu named. The run covers all of
- * them; this is only where the list starts out.
+ * Show the first of the bottles the menu named. Only what the list has to be
+ * showing while it is disabled: the run covers all of them, and syncSetupMode
+ * is what names them where the reader can see them.
  */
 - (void)selectPendingBottle
 {
@@ -1686,6 +1690,37 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 #pragma mark - the setup window
 
 /*
+ * Which of the two jobs this window is doing, said in the window and not only
+ * in the row that opened it. An update arrives here from a row that reads as
+ * an order already given, so a window that asks which bottle the game is in
+ * and offers Install reads as though pressing the row did nothing.
+ *
+ * The list is disabled while it is an update, because the run covers every
+ * bottle named on the first line and a live selector beside that would be
+ * saying otherwise. Set up in the menu is still the way into any other
+ * bottle.
+ */
+- (void)syncSetupMode
+{
+	BOOL update = self.pendingBottles.count > 0;
+
+	if (self.setup == nil)
+		return;
+
+	self.headline.stringValue = update ?
+	    [NSString stringWithFormat:@"Update the proxy in %@",
+	    [self.pendingBottles componentsJoinedByString:@", "]] :
+	    @"Which CrossOver bottle is the game in?";
+	self.subhead.stringValue = update ?
+	    @"The proxy in each of them is replaced with the one this "
+	    "application carries. Nothing else in them is touched." :
+	    @"The proxy and the settings the wheel needs go into that bottle. "
+	    "Nothing outside it is touched.";
+	self.install.title = update ? @"Update" : @"Install";
+	self.bottles.enabled = !update;
+}
+
+/*
  * The menu's own way in, which is a first install and not an update. What the
  * proxy row left in pendingBottles was that row's intent, and somebody
  * pressing this one is saying which bottle themselves.
@@ -1705,6 +1740,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		[self.bottles removeAllItems];
 		[self.bottles addItemsWithTitles:[self findBottles]];
 		[self selectPendingBottle];
+		[self syncSetupMode];
 		[NSApp activateIgnoringOtherApps:YES];
 		[self.setup makeKeyAndOrderFront:nil];
 		return;
@@ -1743,12 +1779,18 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	 * machine in dark mode that is black text the reader cannot see. A
 	 * system colour is two values, and macOS picks the right one.
 	 */
-	NSTextField *l1 = [NSTextField labelWithString:
-	    @"Which CrossOver bottle is the game in?"];
-	l1.font = [NSFont systemFontOfSize:[NSFont systemFontSize]
+	self.headline = [NSTextField labelWithString:@""];
+	self.headline.font = [NSFont systemFontOfSize:[NSFont systemFontSize]
 	    weight:NSFontWeightSemibold];
-	l1.frame = NSMakeRect(24, 408, 420, 22);
-	[v addSubview:l1];
+	/*
+	 * Wider than the question it used to hold, and truncating, because in
+	 * update mode this line is as long as the bottle names somebody gave
+	 * their bottles. It clears the button, which starts at 486 on the row
+	 * below.
+	 */
+	self.headline.frame = NSMakeRect(24, 408, 572, 22);
+	self.headline.lineBreakMode = NSLineBreakByTruncatingTail;
+	[v addSubview:self.headline];
 
 	self.bottles = [[NSPopUpButton alloc]
 	    initWithFrame:NSMakeRect(24, 372, 340, 26) pullsDown:NO];
@@ -1763,13 +1805,13 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	self.install.keyEquivalent = @"\r";
 	[v addSubview:self.install];
 
-	NSTextField *l2 = [NSTextField labelWithString:
-	    @"The proxy and the settings the wheel needs go into that bottle. "
-	    "Nothing outside it is touched."];
-	l2.frame = NSMakeRect(24, 344, 560, 18);
-	l2.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
-	l2.textColor = [NSColor secondaryLabelColor];
-	[v addSubview:l2];
+	self.subhead = [NSTextField labelWithString:@""];
+	self.subhead.frame = NSMakeRect(24, 344, 560, 18);
+	self.subhead.font = [NSFont
+	    systemFontOfSize:[NSFont smallSystemFontSize]];
+	self.subhead.textColor = [NSColor secondaryLabelColor];
+	self.subhead.lineBreakMode = NSLineBreakByTruncatingTail;
+	[v addSubview:self.subhead];
 
 	/*
 	 * On by default, because with hidraw on the wheel has been measured
@@ -1816,6 +1858,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	[v addSubview:sc];
 
 	self.setup = w;
+	[self syncSetupMode];
 	[w center];
 	[NSApp activateIgnoringOtherApps:YES];
 	[w makeKeyAndOrderFront:nil];
@@ -1840,6 +1883,10 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		    "and Security, Files and Folders. If they are somewhere "
 		    "else, or there are none yet, make one in CrossOver and "
 		    "install the game into it first.\n", [self bottleRoot]]];
+	} else if (self.pendingBottles.count > 0) {
+		[self say:[NSString stringWithFormat:
+		    @"Ready. Press Update to replace the proxy in %@.\n\n",
+		    [self.pendingBottles componentsJoinedByString:@", "]]];
 	} else {
 		[self say:@"Ready. Pick the bottle your game is in and press "
 		    "Install.\n\n"];
@@ -1953,7 +2000,8 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	/*
 	 * The commonest failure is macOS refusing this app access to
 	 * CrossOver.app, which the script explains in its own output, so
-	 * repeating it here would be noise. What this adds is what to do next.
+	 * repeating it here would be noise. What this adds is what to do next,
+	 * naming the button as it currently reads.
 	 *
 	 * It used to promise that nothing had been left half done, and that is
 	 * not the script's promise to make. install.sh orders its work so that
@@ -1969,10 +2017,11 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	[self say:st == 0 ?
 	    @"\nDone. Start the daemon from the menu bar, then start your "
 	    "game.\n" :
-	    @"\nThat did not work. Read what it said above: the installer stops "
-	    "at the first thing it cannot verify, so nothing was left in a state "
-	    "a second run will not put right. Fix what it names and press Install "
-	    "again.\n"];
+	    [NSString stringWithFormat:
+	    @"\nThat did not work. Read what it said above: the installer "
+	    "stops at the first thing it cannot verify, so nothing was left "
+	    "in a state a second run will not put right. Fix what it names "
+	    "and press %@ again.\n", self.install.title]];
 
 	/*
 	 * And what did not happen. Stopping at the first failure leaves the
@@ -1983,6 +2032,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		[self say:[NSString stringWithFormat:@"Not tried: %@\n",
 		    [untried componentsJoinedByString:@", "]]];
 	[self refresh];
+	[self syncSetupMode];
 }
 
 - (void)runInstall:(id)sender

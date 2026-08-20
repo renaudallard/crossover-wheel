@@ -347,10 +347,24 @@ extern NSString * const NSForegroundColorAttributeName;
 #define NSVisualEffectBlendingModeBehindWindow ((NSInteger)0)
 #define NSVisualEffectStateFollowsWindowActiveState ((NSInteger)0)
 
-@interface NSTextField : NSView
+typedef NSUInteger NSLineBreakMode;
+#define NSLineBreakByTruncatingTail ((NSLineBreakMode)4)
+
+/*
+ * NSTextField, NSButton and NSPopUpButton are all NSControls in AppKit, and
+ * stringValue, enabled, font and lineBreakMode are declared here rather than
+ * on any of them.
+ */
+@interface NSControl : NSView
+@property (copy) NSString *stringValue;
+@property (getter=isEnabled) BOOL enabled;
+@property (strong) NSFont *font;
+@property NSLineBreakMode lineBreakMode;
+@end
+
+@interface NSTextField : NSControl
 + (instancetype)labelWithString:(NSString *)s;
 + (instancetype)labelWithAttributedString:(NSAttributedString *)s;
-@property (strong) NSFont *font;
 @property (strong) NSColor *textColor;
 @end
 
@@ -389,18 +403,17 @@ extern NSString * const NSForegroundColorAttributeName;
 @end
 #define NSNoBorder ((NSUInteger)0)
 
-@interface NSButton : NSView
+@interface NSButton : NSControl
 + (instancetype)buttonWithTitle:(NSString *)t target:(id)o action:(SEL)a;
 + (instancetype)checkboxWithTitle:(NSString *)t target:(id)o action:(SEL)a;
 @property NSInteger bezelStyle;
 @property NSInteger state;
-@property BOOL enabled;
 @property (copy) NSString *title;
 @property (copy) NSString *keyEquivalent;
 @end
 #define NSBezelStyleRounded ((NSInteger)1)
 
-@interface NSPopUpButton : NSView
+@interface NSPopUpButton : NSButton
 - (instancetype)initWithFrame:(NSRect)f pullsDown:(BOOL)p;
 - (void)addItemsWithTitles:(NSArray<NSString *> *)t;
 - (void)removeAllItems;
