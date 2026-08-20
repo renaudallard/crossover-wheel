@@ -63,6 +63,8 @@ typedef NSInteger NSComparisonResult;
 @interface NSObject <NSObject>
 + (instancetype)alloc;
 - (instancetype)init;
+- (id)copy;
+- (id)mutableCopy;
 - (BOOL)isEqual:(id)other;
 - (BOOL)respondsToSelector:(SEL)s;
 - (BOOL)isKindOfClass:(Class)c;
@@ -129,8 +131,8 @@ typedef struct {
 - (T)objectAtIndex:(NSUInteger)i;
 - (NSString *)componentsJoinedByString:(NSString *)s;
 - (NSArray *)sortedArrayUsingSelector:(SEL)s;
+- (NSArray<T> *)subarrayWithRange:(NSRange)r;
 - (BOOL)containsObject:(id)o;
-- (id)mutableCopy;
 - (BOOL)isEqualToArray:(NSArray *)a;
 @end
 
@@ -154,7 +156,6 @@ typedef struct {
     count:(NSUInteger)n;
 - (id)objectForKeyedSubscript:(id)k;
 - (id)objectForKey:(id)k;
-- (id)mutableCopy;
 - (BOOL)writeToFile:(NSString *)p atomically:(BOOL)a;
 @end
 

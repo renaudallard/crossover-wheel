@@ -212,8 +212,9 @@ rather than nothing at all.
 **An update replaces the application and not the bottle.** The proxy lives
 inside CrossOver and only the install puts it there, so the menu checks: when a
 bottle holds a proxy that is not the one in the application, it offers *Update
-the proxy in* that bottle, by name. That is the install you already know,
-opened on the bottle that needs it.
+the proxy in* those bottles, by name. That is the install you already know, and
+one press does every bottle the row names, one after another. It stops at the
+first that fails and says which were not tried.
 
 **The row only appears when the proxy really changed.** It used to appear
 after every application update, because the proxy carries a build string and

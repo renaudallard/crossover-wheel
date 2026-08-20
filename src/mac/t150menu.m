@@ -125,8 +125,12 @@ typedef enum {
 /* Bottles whose proxy is not the one in this bundle. See checkBottleProxies. */
 @property (strong) NSArray<NSString *> *staleBottles;
 @property (strong) NSMenuItem *proxyItem;
-/* Which bottle the setup window should open on, when the menu named one. */
-@property (strong) NSString *pendingBottle;
+/*
+ * The bottles the next press of the install button must cover, when the menu
+ * named them. Empty is the plain install, which is the one the list is
+ * showing. See updateProxy.
+ */
+@property (strong) NSArray<NSString *> *pendingBottles;
 @end
 
 @implementation T150Menu
@@ -287,28 +291,32 @@ typedef enum {
 }
 
 /*
- * Open on the bottle the menu named, when it named one. A hint and not a
- * decision: the list is still there and still changeable, and pressing Install
- * does what it has always done.
+ * Open on the first of the bottles the menu named. The run covers all of
+ * them; this is only where the list starts out.
  */
 - (void)selectPendingBottle
 {
-	if (self.pendingBottle == nil)
+	NSString *first = self.pendingBottles.firstObject;
+
+	if (first == nil)
 		return;
-	if ([self.bottles indexOfItemWithTitle:self.pendingBottle] >= 0)
-		[self.bottles selectItemWithTitle:self.pendingBottle];
-	self.pendingBottle = nil;
+	if ([self.bottles indexOfItemWithTitle:first] >= 0)
+		[self.bottles selectItemWithTitle:first];
 }
 
 /*
- * Offer the install the person already knows, on the bottle that needs it,
- * rather than a second path into the same script. Which bottle is a hint to
- * the setup window; everything the install itself decides stays in install.sh.
+ * Offer the install the person already knows, on the bottles that need it,
+ * rather than a second path into the same script. All of them, because the
+ * row names all of them: updating the first and leaving the row there naming
+ * the next is the same complaint the row was written to answer. Everything
+ * the install itself decides stays in install.sh.
  */
 - (void)updateProxy:(id)sender
 {
-	self.pendingBottle = self.staleBottles.firstObject;
-	[self openSetup:sender];
+	(void)sender;
+
+	self.pendingBottles = [self.staleBottles copy];
+	[self showSetup];
 }
 
 #pragma mark - the menu
@@ -1677,10 +1685,21 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 
 #pragma mark - the setup window
 
+/*
+ * The menu's own way in, which is a first install and not an update. What the
+ * proxy row left in pendingBottles was that row's intent, and somebody
+ * pressing this one is saying which bottle themselves.
+ */
 - (void)openSetup:(id)sender
 {
 	(void)sender;
 
+	self.pendingBottles = nil;
+	[self showSetup];
+}
+
+- (void)showSetup
+{
 	if (self.setup != nil) {
 		/* A bottle may have been made since this was last opened. */
 		[self.bottles removeAllItems];
@@ -1831,16 +1850,15 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
  * Everything the installer does is install.sh's, run from Resources so it
  * finds the binaries, the man pages and the proxy beside itself exactly as it
  * does from an extracted release.
+ *
+ * One bottle, and done says how it ended. The bottle is a parameter because
+ * an update covers every bottle whose proxy is old, and those go one after
+ * another rather than together: the script runs CrossOver's wine to write the
+ * bottle's registry, and two of those against the same CrossOver at once is a
+ * wineserver race nobody should have to debug.
  */
-- (void)runInstall:(id)sender
+- (void)installInto:(NSString *)bottle then:(void (^)(int st))done
 {
-	(void)sender;
-
-	if (self.bottles.numberOfItems == 0) {
-		[self say:@"There is no bottle to install into.\n"];
-		return;
-	}
-
 	NSTask *t = [[NSTask alloc] init];
 	NSPipe *p = [NSPipe pipe];
 	NSMutableArray<NSString *> *args;
@@ -1854,7 +1872,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	 */
 	t.executableURL = [NSURL fileURLWithPath:@"/bin/sh"];
 	args = [@[ [self resource:@"install.sh"],
-	    @"-b", self.bottles.titleOfSelectedItem,
+	    @"-b", bottle,
 	    @"--no-binaries", @"--no-app" ] mutableCopy];
 	if (self.hidraw.state != NSControlStateValueOn)
 		[args addObject:@"--keep-hidraw"];
@@ -1884,49 +1902,114 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		int st = task.terminationStatus;
 
 		dispatch_async(dispatch_get_main_queue(), ^{
-			weak.install.enabled = YES;
-			if (st == 0)
-				[[NSUserDefaults standardUserDefaults]
-				    setBool:YES forKey:@"installedOnce"];
-			/*
-			 * The commonest failure is macOS refusing this app
-			 * access to CrossOver.app, which the script explains
-			 * in its own output, so repeating it here would be
-			 * noise. What this adds is what to do next.
-			 *
-			 * It used to promise that nothing had been left half
-			 * done, and that is not the script's promise to make.
-			 * install.sh orders its work so that the bottle's own
-			 * configuration is written last and says so, but the
-			 * two files it copies into system32 go before the
-			 * registry override, and that step runs CrossOver's
-			 * wine and can fail on its own: an expired trial, a
-			 * bottle wanting an upgrade, a wineserver from another
-			 * version holding the registry. Running the install
-			 * again is the answer to all of them, and telling
-			 * somebody nothing had changed when the proxy is
-			 * already in their bottle is the kind of wrong that
-			 * sends them looking somewhere else.
-			 */
-			[weak say:st == 0 ?
-			    @"\nDone. Start the daemon from the menu bar, then "
-			    "start your game.\n" :
-			    @"\nThat did not work. Read what it said above: the "
-			    "installer stops at the first thing it cannot "
-			    "verify, so nothing was left in a state a second "
-			    "run will not put right. Fix what it names and "
-			    "press Install again.\n"];
-			[weak refresh];
+			done(st);
 		});
 	};
 
-	self.install.enabled = NO;
-	[self say:@"\n"];
 	if (![t launchAndReturnError:&err]) {
-		self.install.enabled = YES;
 		[self say:[NSString stringWithFormat:@"cannot run the "
 		    "installer: %@\n", err.localizedDescription]];
+		done(-1);
 	}
+}
+
+/*
+ * Each bottle in turn, stopping at the first that fails. install.sh stops at
+ * the first thing it cannot verify and says what it was, and going on to the
+ * next bottle from there would only bury it.
+ */
+- (void)installQueue:(NSArray<NSString *> *)bottles at:(NSUInteger)i
+{
+	__weak __typeof__(self) weak = self;
+
+	/* Which bottle a block of output belongs to, when there are several. */
+	if (bottles.count > 1)
+		[self say:[NSString stringWithFormat:@"\n== %@ ==\n",
+		    bottles[i]]];
+
+	[self installInto:bottles[i] then:^(int st) {
+		if (st == 0 && i + 1 < bottles.count) {
+			[weak installQueue:bottles at:i + 1];
+			return;
+		}
+		[weak installFinished:st untried:[bottles subarrayWithRange:
+		    NSMakeRange(i + 1, bottles.count - i - 1)]];
+	}];
+}
+
+- (void)installFinished:(int)st untried:(NSArray<NSString *> *)untried
+{
+	self.install.enabled = YES;
+	if (st == 0) {
+		[[NSUserDefaults standardUserDefaults]
+		    setBool:YES forKey:@"installedOnce"];
+		/*
+		 * Every bottle the row named has been done, so the next press
+		 * of this button is whatever the list says again.
+		 */
+		self.pendingBottles = nil;
+	}
+
+	/*
+	 * The commonest failure is macOS refusing this app access to
+	 * CrossOver.app, which the script explains in its own output, so
+	 * repeating it here would be noise. What this adds is what to do next.
+	 *
+	 * It used to promise that nothing had been left half done, and that is
+	 * not the script's promise to make. install.sh orders its work so that
+	 * the bottle's own configuration is written last and says so, but the
+	 * two files it copies into system32 go before the registry override,
+	 * and that step runs CrossOver's wine and can fail on its own: an
+	 * expired trial, a bottle wanting an upgrade, a wineserver from another
+	 * version holding the registry. Running it again is the answer to all
+	 * of them, and telling somebody nothing had changed when the proxy is
+	 * already in their bottle is the kind of wrong that sends them looking
+	 * somewhere else.
+	 */
+	[self say:st == 0 ?
+	    @"\nDone. Start the daemon from the menu bar, then start your "
+	    "game.\n" :
+	    @"\nThat did not work. Read what it said above: the installer stops "
+	    "at the first thing it cannot verify, so nothing was left in a state "
+	    "a second run will not put right. Fix what it names and press Install "
+	    "again.\n"];
+
+	/*
+	 * And what did not happen. Stopping at the first failure leaves the
+	 * bottles after it as they were, and somebody who pressed one button
+	 * for all of them has no other way to know which those are.
+	 */
+	if (untried.count > 0)
+		[self say:[NSString stringWithFormat:@"Not tried: %@\n",
+		    [untried componentsJoinedByString:@", "]]];
+	[self refresh];
+}
+
+- (void)runInstall:(id)sender
+{
+	(void)sender;
+
+	NSArray<NSString *> *targets = self.pendingBottles;
+
+	/*
+	 * What the press is for: the bottles the proxy row named, or else the
+	 * one the list is showing. Nothing selected and nothing named is a
+	 * machine with no bottles this could read, which is the one case where
+	 * there is nothing to run at all.
+	 */
+	if (targets.count == 0) {
+		NSString *pick = self.bottles.titleOfSelectedItem;
+
+		if (pick == nil) {
+			[self say:@"There is no bottle to install into.\n"];
+			return;
+		}
+		targets = @[ pick ];
+	}
+
+	self.install.enabled = NO;
+	[self say:@"\n"];
+	[self installQueue:targets at:0];
 }
 
 - (void)say:(NSString *)s
