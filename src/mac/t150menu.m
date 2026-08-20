@@ -134,6 +134,13 @@ typedef enum {
 /* The setup window's two top lines, which say which job this window is. */
 @property (strong) NSTextField *headline;
 @property (strong) NSTextField *subhead;
+/*
+ * Whether the installer is running, which outlives the window it was started
+ * from: closing that window and opening it again builds a new button, and a
+ * button built while a run is in flight must not come up ready to start a
+ * second one. See syncSetupMode.
+ */
+@property (assign) BOOL installing;
 @end
 
 @implementation T150Menu
@@ -1718,6 +1725,12 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	    "Nothing outside it is touched.";
 	self.install.title = update ? @"Update" : @"Install";
 	self.bottles.enabled = !update;
+
+	/*
+	 * The one place the button is enabled or disabled, because a window can
+	 * be built at any point in a run.
+	 */
+	self.install.enabled = !self.installing;
 }
 
 /*
@@ -1904,7 +1917,8 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
  * bottle's registry, and two of those against the same CrossOver at once is a
  * wineserver race nobody should have to debug.
  */
-- (void)installInto:(NSString *)bottle then:(void (^)(int st))done
+- (void)installInto:(NSString *)bottle keepHidraw:(BOOL)keep
+    then:(void (^)(int st))done
 {
 	NSTask *t = [[NSTask alloc] init];
 	NSPipe *p = [NSPipe pipe];
@@ -1921,7 +1935,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	args = [@[ [self resource:@"install.sh"],
 	    @"-b", bottle,
 	    @"--no-binaries", @"--no-app" ] mutableCopy];
-	if (self.hidraw.state != NSControlStateValueOn)
+	if (keep)
 		[args addObject:@"--keep-hidraw"];
 	t.arguments = args;
 	t.currentDirectoryURL = [NSURL fileURLWithPath:
@@ -1966,6 +1980,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
  * next bottle from there would only bury it.
  */
 - (void)installQueue:(NSArray<NSString *> *)bottles at:(NSUInteger)i
+    keepHidraw:(BOOL)keep
 {
 	__weak __typeof__(self) weak = self;
 
@@ -1974,9 +1989,9 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		[self say:[NSString stringWithFormat:@"\n== %@ ==\n",
 		    bottles[i]]];
 
-	[self installInto:bottles[i] then:^(int st) {
+	[self installInto:bottles[i] keepHidraw:keep then:^(int st) {
 		if (st == 0 && i + 1 < bottles.count) {
-			[weak installQueue:bottles at:i + 1];
+			[weak installQueue:bottles at:i + 1 keepHidraw:keep];
 			return;
 		}
 		[weak installFinished:st untried:[bottles subarrayWithRange:
@@ -1986,7 +2001,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 
 - (void)installFinished:(int)st untried:(NSArray<NSString *> *)untried
 {
-	self.install.enabled = YES;
+	self.installing = NO;
 	if (st == 0) {
 		[[NSUserDefaults standardUserDefaults]
 		    setBool:YES forKey:@"installedOnce"];
@@ -2040,6 +2055,13 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	(void)sender;
 
 	NSArray<NSString *> *targets = self.pendingBottles;
+	/*
+	 * Read once, for the whole run. An update is one press over several
+	 * bottles and the checkbox stays live while they go, so asking it
+	 * again per bottle would install the rest of a queue differently from
+	 * the ones already done.
+	 */
+	BOOL keep = self.hidraw.state != NSControlStateValueOn;
 
 	/*
 	 * What the press is for: the bottles the proxy row named, or else the
@@ -2057,9 +2079,10 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		targets = @[ pick ];
 	}
 
-	self.install.enabled = NO;
+	self.installing = YES;
+	[self syncSetupMode];
 	[self say:@"\n"];
-	[self installQueue:targets at:0];
+	[self installQueue:targets at:0 keepHidraw:keep];
 }
 
 - (void)say:(NSString *)s
