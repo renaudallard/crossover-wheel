@@ -1563,11 +1563,22 @@ session_replay_starts(struct t150_session *s)
 
 		if (!sl->used || !sl->playing || sl->dirty)
 			continue;
-		if (s->verbose)
-			fprintf(stderr, "t150d: slot %u was playing before the "
-			    "wheel went, starting it again\n", (unsigned)i);
-		if (control(s, (uint8_t)i, 1, sl->iterations) != 0)
+		/*
+		 * Said after the write, like do_start's own line and for the
+		 * same reason: this announced the start and then threw the
+		 * answer away, so a replay the wheel refused was reported as
+		 * a force that had come back. It is also the one line here
+		 * whose repeat rate is set by the tick rather than by the
+		 * game, because the flag that brings us here is cleared only
+		 * once a whole pass has succeeded, so it goes through the
+		 * same latch as the rest.
+		 */
+		if (control(s, (uint8_t)i, 1, sl->iterations) != 0) {
+			start_refused(s, (uint8_t)i);
 			failed = 1;
+			continue;
+		}
+		start_taken(s, (uint8_t)i, ", the wheel had been away");
 	}
 
 	return failed;

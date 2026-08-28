@@ -3447,6 +3447,58 @@ test_a_start_with_nothing_uploaded_says_so_once(void)
 		fail("and loading the slot lets the next answer be said");
 }
 
+/*
+ * The replay announced the start and then discarded the wheel's answer, so a
+ * replay the wheel refused was reported as a force that had come back, and it
+ * said so again on every tick for as long as it kept failing. It was the one
+ * verbose line in the file whose repeat rate the game did not set.
+ */
+static void
+test_the_replay_does_not_announce_a_start_the_wheel_refused(void)
+{
+	struct t150_effect ef;
+	char out[4096];
+	const char *bad, *good;
+
+	reset_session();
+	hello(0);
+	load_and_play(0, 0);
+
+	/* A pass at t=0 puts the emit floor in front of the ticks below. */
+	constant(&ef, 0, 10000);
+	upload_at(&ef, 0);
+	(void)tick(0);
+	drain_log();
+
+	if (capture_start() != 0)
+		return;
+
+	frame(T150_OP_KEEPALIVE, NULL, 0, 1, T150_OP_OK, T150_ERR_NONE);
+	be.epoch++;
+	(void)tick(1);
+
+	/*
+	 * The three parameter packets land and the play packet is the one the
+	 * wheel refuses, which is the case the old line got wrong.
+	 */
+	fail_write_number(4);
+	frame(T150_OP_KEEPALIVE, NULL, 0, 1 + T150_EMIT_MS, T150_OP_OK,
+	    T150_ERR_NONE);
+	(void)tick(1 + T150_EMIT_MS);
+	(void)tick(1 + 2 * T150_EMIT_MS);
+
+	capture_end(out, sizeof(out));
+
+	bad = strstr(out, "could not be started");
+	good = strstr(out, "slot 0 constant started, the wheel had been away");
+	if (count_substr(out, "could not be started") != 1)
+		fail("a replay the wheel refused says so once");
+	if (count_substr(out, "the wheel had been away") != 1)
+		fail("and the replay that lands says so once");
+	if (bad == NULL || good == NULL || bad > good)
+		fail("and the refusal comes before the recovery");
+}
+
 
 int
 main(void)
@@ -3518,6 +3570,7 @@ main(void)
 	test_a_refused_start_says_so_once_and_the_good_news_comes_back();
 	test_a_re_upload_does_not_repeat_the_start_line();
 	test_a_start_with_nothing_uploaded_says_so_once();
+	test_the_replay_does_not_announce_a_start_the_wheel_refused();
 	test_hello_states_the_settings();
 	test_only_the_packet_that_moved_is_sent();
 	test_an_idle_writer_emits_ahead_of_the_floor();
