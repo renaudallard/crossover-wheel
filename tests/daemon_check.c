@@ -2955,6 +2955,83 @@ count_substr(const char *hay, const char *needle)
 	return n;
 }
 
+static FILE *cap;
+static int cap_saved;
+
+/*
+ * Take stderr over for the length of a test, because the -v lines go there
+ * and everything else in this file is checked against the packet log.
+ *
+ * One pair rather than a copy in every test that wants it, and the size check
+ * in capture_end is not a buffer check. Everything captured here is bounded to
+ * one line per transition or one a second, so a capture that does not fit
+ * means a line is being said per call, which is the flood these tests exist to
+ * prevent. It says so, rather than leaving an empty string behind for four
+ * assertions to fail against, which is what both copies of this used to do.
+ */
+static int
+capture_start(void)
+{
+	sess.verbose = 1;
+
+	if ((cap = tmpfile()) == NULL) {
+		fail("no temporary file for the capture");
+		return -1;
+	}
+
+	(void)fflush(stderr);
+	if ((cap_saved = dup(fileno(stderr))) < 0) {
+		(void)fclose(cap);
+		cap = NULL;
+		fail("cannot take over stderr");
+		return -1;
+	}
+	(void)dup2(fileno(cap), fileno(stderr));
+
+	return 0;
+}
+
+static void
+capture_end(char *out, size_t outlen)
+{
+	long n;
+
+	out[0] = '\0';
+
+	(void)fflush(stderr);
+	(void)dup2(cap_saved, fileno(stderr));
+	(void)close(cap_saved);
+
+	if ((n = ftell(cap)) >= (long)outlen)
+		fail("the log grew past the transitions it should hold");
+	else if (n > 0) {
+		rewind(cap);
+		if (fread(out, 1, (size_t)n, cap) == (size_t)n)
+			out[n] = '\0';
+	}
+
+	(void)fclose(cap);
+	cap = NULL;
+	sess.verbose = 0;
+}
+
+/*
+ * A damper on a slot, which is what the tester's own log holds on slot 1.
+ */
+static void
+damper(struct t150_effect *ef, uint8_t slot)
+{
+	memset(ef, 0, sizeof(*ef));
+	ef->kind = T150_EFFECT_DAMPER;
+	ef->slot = slot;
+	ef->duration = T150_DURATION_INFINITE;
+	ef->gain = T150_DI_MAX;
+	ef->u.condition.pos_coeff = 9998;
+	ef->u.condition.neg_coeff = 9998;
+	ef->u.condition.pos_saturation = 10000;
+	ef->u.condition.neg_saturation = 10000;
+}
+
 
 /*
  * The verbose parameter line has to say which condition it is. A spring
@@ -2971,13 +3048,9 @@ upload_condition_verbose(uint8_t kind, char *out, size_t outlen)
 {
 	uint8_t buf[T150_PROTO_EFFECT_LEN];
 	struct t150_effect ef;
-	FILE *cap;
-	int saved;
-	long n;
 
 	reset_session();
 	hello(0);
-	sess.verbose = 1;
 
 	memset(&ef, 0, sizeof(ef));
 	ef.kind = kind;
@@ -2991,20 +3064,8 @@ upload_condition_verbose(uint8_t kind, char *out, size_t outlen)
 	ef.u.condition.neg_saturation = 10000;
 	ef.u.condition.deadband = 0;
 
-	out[0] = '\0';
-	if ((cap = tmpfile()) == NULL)
+	if (capture_start() != 0)
 		return;
-
-	/*
-	 * The line goes to stderr, so take it over for the length of the
-	 * upload and put it back afterwards however that turns out.
-	 */
-	(void)fflush(stderr);
-	if ((saved = dup(fileno(stderr))) < 0) {
-		(void)fclose(cap);
-		return;
-	}
-	(void)dup2(fileno(cap), fileno(stderr));
 
 	/*
 	 * Any time at all past the one second rate limit, which starts at
@@ -3013,23 +3074,13 @@ upload_condition_verbose(uint8_t kind, char *out, size_t outlen)
 	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 2000, T150_OP_OK,
 	    T150_ERR_NONE);
 
-	(void)fflush(stderr);
-	(void)dup2(saved, fileno(stderr));
-	(void)close(saved);
-
-	if ((n = ftell(cap)) > 0 && (size_t)n < outlen) {
-		rewind(cap);
-		if (fread(out, 1, (size_t)n, cap) == (size_t)n)
-			out[n] = '\0';
-	}
-	(void)fclose(cap);
-	sess.verbose = 0;
+	capture_end(out, outlen);
 }
 
 static void
 test_the_parameter_log_names_the_condition(void)
 {
-	char out[512];
+	char out[4096];
 
 	upload_condition_verbose(T150_EFFECT_SPRING, out, sizeof(out));
 	if (strstr(out, "slot 3 spring:") == NULL)
@@ -3069,39 +3120,18 @@ test_start_and_stop_are_logged_once_per_transition(void)
 	uint8_t buf[T150_PROTO_EFFECT_LEN];
 	uint8_t arg[2] = { 3, 1 };
 	struct t150_effect ef;
-	char out[1024];
-	FILE *cap;
-	int saved, i;
-	long n;
+	char out[4096];
+	int i;
 
 	reset_session();
 	hello(0);
 
-	memset(&ef, 0, sizeof(ef));
-	ef.kind = T150_EFFECT_DAMPER;
-	ef.slot = 3;
-	ef.duration = T150_DURATION_INFINITE;
-	ef.gain = T150_DI_MAX;
-	ef.u.condition.pos_coeff = 9998;
-	ef.u.condition.neg_coeff = 9998;
-	ef.u.condition.pos_saturation = 10000;
-	ef.u.condition.neg_saturation = 10000;
+	damper(&ef, 3);
 	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 0, T150_OP_OK,
 	    T150_ERR_NONE);
 
-	sess.verbose = 1;
-	out[0] = '\0';
-	if ((cap = tmpfile()) == NULL) {
-		fail("no temporary file for the capture");
+	if (capture_start() != 0)
 		return;
-	}
-	(void)fflush(stderr);
-	if ((saved = dup(fileno(stderr))) < 0) {
-		(void)fclose(cap);
-		fail("cannot take over stderr");
-		return;
-	}
-	(void)dup2(fileno(cap), fileno(stderr));
 
 	/* Started once, then started again nine times the way a game does. */
 	for (i = 0; i < 10; i++)
@@ -3111,16 +3141,7 @@ test_start_and_stop_are_logged_once_per_transition(void)
 	frame(T150_OP_EFFECT_STOP, arg, 1, 100, T150_OP_OK, T150_ERR_NONE);
 	frame(T150_OP_EFFECT_STOP, arg, 1, 101, T150_OP_OK, T150_ERR_NONE);
 
-	(void)fflush(stderr);
-	(void)dup2(saved, fileno(stderr));
-	(void)close(saved);
-	if ((n = ftell(cap)) > 0 && (size_t)n < sizeof(out)) {
-		rewind(cap);
-		if (fread(out, 1, (size_t)n, cap) == (size_t)n)
-			out[n] = '\0';
-	}
-	(void)fclose(cap);
-	sess.verbose = 0;
+	capture_end(out, sizeof(out));
 
 	if (count_substr(out, "slot 3 damper started") != 1)
 		fail("ten starts of one slot say so once");
