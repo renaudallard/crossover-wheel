@@ -373,6 +373,7 @@ static void
 session_safe_state(struct t150_session *s, const char *why)
 {
 	uint8_t stopped[T150_SLOT_MAX];
+	uint8_t held[T150_SLOT_MAX];
 	unsigned int lost0 = atomic_load(&s->be->lost);
 	size_t i;
 
@@ -384,8 +385,15 @@ session_safe_state(struct t150_session *s, const char *why)
 	 * all been answered for, because with a writer the answer to one of
 	 * them is not known until the queue behind it has drained.
 	 */
-	for (i = 0; i < T150_SLOT_MAX; i++)
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		/*
+		 * What each slot was doing on the way in, because slot_stop
+		 * clears it and the loop below is where there is anything
+		 * true left to say about it.
+		 */
+		held[i] = s->slots[i].playing;
 		stopped[i] = slot_stop(s, (uint8_t)i) == 0;
+	}
 
 	/*
 	 * With a writer thread those answers only say the packets were queued.
@@ -419,6 +427,31 @@ session_safe_state(struct t150_session *s, const char *why)
 	 * it. Anything else keeps the debt, which is what holds armed below.
 	 */
 	for (i = 0; i < T150_SLOT_MAX; i++) {
+		/*
+		 * Which slots this took, said here rather than beside the
+		 * stop above, because with a writer thread the answer up
+		 * there is only that the packet was queued and the drain may
+		 * have taken it back. A safe state that said a slot stopped
+		 * when the wheel refused it would be telling the same lie
+		 * do_stop used to tell about its own.
+		 *
+		 * Only the slots that were playing, so this is bounded by
+		 * what the game had running rather than by the slot count. A
+		 * tester's log showed one damper started twice with nothing
+		 * at all between the two lines, and this is what was missing
+		 * from the middle of it.
+		 */
+		if (s->verbose && held[i]) {
+			if (stopped[i])
+				fprintf(stderr, "t150d: slot %u %s stopped by "
+				    "the safe state\n", (unsigned int)i,
+				    kind_name(s->slots[i].ef.kind));
+			else
+				fprintf(stderr, "t150d: slot %u %s could not "
+				    "be stopped by the safe state\n",
+				    (unsigned int)i,
+				    kind_name(s->slots[i].ef.kind));
+		}
 		if (stopped[i])
 			memset(&s->slots[i], 0, sizeof(s->slots[i]));
 		else if (s->slots[i].used)

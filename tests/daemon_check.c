@@ -3183,6 +3183,8 @@ test_the_watchdog_says_how_long_and_what_it_took(void)
 
 	if (strstr(out, "safe state: no frame for 600 ms") == NULL)
 		fail("the safe state says how long the client was quiet");
+	if (strstr(out, "slot 1 damper stopped by the safe state") == NULL)
+		fail("and names the playing slot it took");
 }
 
 /*
