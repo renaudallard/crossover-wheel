@@ -63,6 +63,13 @@ filter, `EnumEffects`, `CreateEffect`, `IDirectInputEffect::SetParameters`,
 `Start` and `Stop`, `SetProperty` for `DIPROP_FFGAIN` and
 `DIPROP_AUTOCENTER`, and `SendForceFeedbackCommand`.
 
+`SetParameters` takes one of the three routes DirectInput defines, in the
+order Wine's own `joystick_hid.c` takes them: `DIEP_NODOWNLOAD` sends nothing,
+`DIEP_START` starts and downloads on its way, and anything else downloads. It
+used to download first and start afterwards, so a start the game asked for was
+dropped whenever the download failed, and with `DIEP_NODOWNLOAD` set as well it
+sent a bare start for parameters the daemon had never been given.
+
 The wheel keeps arriving in the bottle through the normal path for input, so
 there is no synthetic device, no descriptor to splice, and no duplicate wheel
 to hide.

@@ -946,44 +946,39 @@ eff_GetParameters(IDirectInputEffect *self, DIEFFECT *p, DWORD flags)
  * feedback still did not come back, because the game had been told its input
  * was lost during the seconds the wheel was away and stopped asking.
  */
-static HRESULT WINAPI
-eff_SetParameters(IDirectInputEffect *self, const DIEFFECT *p, DWORD flags)
+/*
+ * A start the game asked for, wherever it asked from.
+ *
+ * Both doors lead here. SetParameters with DIEP_START is a start of exactly
+ * one pass and nothing else, which is how Wine reads it as well: for that flag
+ * dlls/dinput/joystick_hid.c calls Start(iface, 1, 0) rather than repeating
+ * the work. eff_SetParameters had a copy of this of its own, and the copy was
+ * the one that went wrong.
+ *
+ * Start downloads the effect first unless the caller says not to, which is the
+ * whole purpose of DIES_NODOWNLOAD. Skipping it meant that anything releasing
+ * the daemon's slots, an Unacquire or a
+ * SendForceFeedbackCommand(DISFFC_RESET), left the game's effect objects
+ * pointing at slots that no longer existed. Every later Start then failed and
+ * the game had no way to know why.
+ *
+ * Logged once per effect rather than on every call. A game may Start an effect
+ * as often as it updates it, and the log opens its file per line, so logging
+ * each one would cost more than the diagnosis is worth. What matters is
+ * whether a Start ever happens at all. Either door produces the line now, so a
+ * game that only ever starts through DIEP_START is no longer silent here.
+ */
+static HRESULT
+start_effect(struct effect_obj *e, DWORD iterations, DWORD flags)
 {
-	struct effect_obj *e = from_iface(self);
-
-	t150_effect_convert(&e->ef, p, flags);
-
-	if ((flags & DIEP_NODOWNLOAD) == 0 && upload(e) != 0)
-		return DIERR_NOTDOWNLOADED;
-
-	if (flags & DIEP_START) {
-		e->iterations = 1;	/* DIEP_START is one pass of it */
-		if (send_start(e) != 0)
-			return DIERR_NOTDOWNLOADED;
-	}
-
-	return DI_OK;
-}
-
-static HRESULT WINAPI
-eff_Start(IDirectInputEffect *self, DWORD iterations, DWORD flags)
-{
-	struct effect_obj *e = from_iface(self);
-
 	/*
-	 * Start downloads the effect first unless the caller says not to,
-	 * which is the whole purpose of DIES_NODOWNLOAD. Skipping it meant
-	 * that anything releasing the daemon's slots, an Unacquire or a
-	 * SendForceFeedbackCommand(DISFFC_RESET), left the game's effect
-	 * objects pointing at slots that no longer existed. Every later
-	 * Start then failed and the game had no way to know why.
+	 * What the game asked for goes down before anything can fail, because
+	 * the count is the one thing a later start has no other way to learn:
+	 * a rumble asked to repeat twenty times came back as one pass of it
+	 * once already, one step further along.
 	 */
-	/*
-	 * Logged once per effect rather than on every call. A game may Start
-	 * an effect as often as it updates it, and the log opens its file per
-	 * line, so logging each one would cost more than the diagnosis is
-	 * worth. What matters is whether a Start ever happens at all.
-	 */
+	e->iterations = iterations >= 255 ? 255 : (uint8_t)iterations;
+
 	if (!(flags & DIES_NODOWNLOAD) && upload(e) != 0) {
 		if (!e->logged) {
 			e->logged = 1;
@@ -997,8 +992,6 @@ eff_Start(IDirectInputEffect *self, DWORD iterations, DWORD flags)
 		    (unsigned long)iterations);
 	}
 
-	e->iterations = iterations >= 255 ? 255 : (uint8_t)iterations;
-
 	/*
 	 * A refused start is the daemon saying it does not hold this slot, so
 	 * whatever upload() believes it has is wrong. send_start clears that,
@@ -1011,6 +1004,41 @@ eff_Start(IDirectInputEffect *self, DWORD iterations, DWORD flags)
 		return DIERR_NOTDOWNLOADED;
 
 	return DI_OK;
+}
+
+static HRESULT WINAPI
+eff_SetParameters(IDirectInputEffect *self, const DIEFFECT *p, DWORD flags)
+{
+	struct effect_obj *e = from_iface(self);
+
+	t150_effect_convert(&e->ef, p, flags);
+
+	/*
+	 * One of the three, which is what DirectInput defines and what Wine
+	 * does: DIEP_NODOWNLOAD says send nothing, DIEP_START says start, and
+	 * a start downloads on its way. Downloading here and starting
+	 * separately afterwards is how the start came to be thrown away
+	 * whenever the download failed, which is a force lost for the rest of
+	 * the run on one refused upload, and it also sent a bare start for
+	 * parameters the daemon was never given when DIEP_NODOWNLOAD was set
+	 * as well.
+	 *
+	 * The flags are deliberately not handed on. DIEP_NODOWNLOAD and
+	 * DIES_NODOWNLOAD are the same bit, so passing them through would send
+	 * that bare start again by another route.
+	 */
+	if (flags & DIEP_NODOWNLOAD)
+		return DI_OK;
+	if (flags & DIEP_START)
+		return start_effect(e, 1, 0);
+
+	return upload(e) == 0 ? DI_OK : DIERR_NOTDOWNLOADED;
+}
+
+static HRESULT WINAPI
+eff_Start(IDirectInputEffect *self, DWORD iterations, DWORD flags)
+{
+	return start_effect(from_iface(self), iterations, flags);
 }
 
 static HRESULT WINAPI
