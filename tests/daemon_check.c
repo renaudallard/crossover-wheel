@@ -3344,8 +3344,7 @@ test_a_refused_start_says_so_once_and_the_good_news_comes_back(void)
 
 	capture_end(out, sizeof(out));
 
-	bad = strstr(out, "slot 3 damper could not be started: the write "
-	    "failed");
+	bad = strstr(out, "slot 3 could not be started: the write failed");
 	good = strstr(out, "slot 3 damper started");
 	if (count_substr(out, "could not be started") != 1)
 		fail("three refused starts say so once");
@@ -3439,12 +3438,65 @@ test_a_start_with_nothing_uploaded_says_so_once(void)
 	capture_end(out, sizeof(out));
 
 	if (count_substr(out,
-	    "slot 3 was started with nothing uploaded to it") != 1)
+	    "slot 3 could not be started: nothing is uploaded to it") != 1)
 		fail("ten starts of an empty slot say so once");
 	if (count_substr(out, "which does not exist") != 1)
 		fail("and a slot that cannot exist says so once");
 	if (count_substr(out, "slot 3 damper started") != 1)
 		fail("and loading the slot lets the next answer be said");
+}
+
+/*
+ * A slot inherited from a displaced client is marked used and holds nothing.
+ * A start on one of those reached flush_slot, which cannot encode a kind that
+ * was never set and returns before writing anything, so the log said the write
+ * had failed when nothing had been written, about an effect it had to call
+ * "nothing". The refusal has to be the one that names an empty slot.
+ */
+static void
+test_a_start_on_an_inherited_slot_is_not_a_failed_write(void)
+{
+	struct t150_session next;
+	struct t150_effect ef;
+	uint8_t start[2] = { 3, 1 };
+	char out[4096];
+
+	reset_session();
+	hello(0);
+
+	constant(&ef, 3, 10000);
+	upload_at(&ef, 0);
+	frame(T150_OP_EFFECT_START, start, 2, 0, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(0);
+
+	/* A refused stop is what leaves a debt to inherit. */
+	write_fails = 1;
+	t150_session_panic(&sess, NULL);
+	write_fails = 0;
+
+	t150_session_init(&next, &be, TOKEN);
+	t150_session_inherit_stops(&next, &sess);
+	sess = next;
+	drain_log();
+	hello(0);
+	drain_log();
+
+	if (!sess.slots[3].used || sess.slots[3].ef.kind != T150_EFFECT_NONE)
+		fail("the inherited slot is used and holds nothing");
+
+	if (capture_start() != 0)
+		return;
+
+	frame(T150_OP_EFFECT_START, start, 2, 10, T150_OP_ERROR,
+	    T150_ERR_BAD_SLOT);
+
+	capture_end(out, sizeof(out));
+
+	if (count_substr(out,
+	    "slot 3 could not be started: nothing is uploaded to it") != 1)
+		fail("an inherited slot says nothing is uploaded to it");
+	if (strstr(out, "the write failed") != NULL)
+		fail("and never says a write failed when none was tried");
 }
 
 /*
@@ -3570,6 +3622,7 @@ main(void)
 	test_a_refused_start_says_so_once_and_the_good_news_comes_back();
 	test_a_re_upload_does_not_repeat_the_start_line();
 	test_a_start_with_nothing_uploaded_says_so_once();
+	test_a_start_on_an_inherited_slot_is_not_a_failed_write();
 	test_the_replay_does_not_announce_a_start_the_wheel_refused();
 	test_hello_states_the_settings();
 	test_only_the_packet_that_moved_is_sent();

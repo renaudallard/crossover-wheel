@@ -307,12 +307,13 @@ went, so neither can stand in a report as evidence for something that never
 left the daemon: a start the wheel would not take says the write failed, and
 the next one it does take says the slot started.
 .Pp
-A start that is turned away says so on the same terms: once, when the answer
-changes rather than every time it is asked for. A start for a slot with nothing
-uploaded to it names the slot, which is the window a reset or a safe state
-leaves behind. So once a client has said hello, a start either produces a line
-or repeats an answer already printed for that slot, and a slot with no start
-line anywhere is a slot nothing ever got playing.
+A start that is turned away says so on the same terms: once for each of the two
+answers rather than every time it is asked for. A start for a slot holding no
+effect names the slot and says so, which is the window a reset or a safe state
+leaves behind, and it is told apart from a start the wheel would not take. So a
+start that names a slot this daemon has either produces a line or repeats an
+answer already printed for that slot, and a slot with no start line anywhere is
+a slot nothing ever got playing.
 .Pp
 A safe state names each playing slot it stopped, and says it after the writer's
 queue has drained rather than when the packet was handed over, so a stop that

@@ -913,13 +913,18 @@ start_taken(struct t150_session *s, uint8_t slot, const char *how)
 }
 
 /*
- * And the other answer. Which of the two writes a start takes went wrong, the
- * parameters that have to land before it or the play packet itself, is the
- * backend's line to give: what a reader needs here is that the force the game
- * believes is running is not on the wheel.
+ * And the other answer, with why on the end of it. Which of the two writes a
+ * start takes went wrong, the parameters that have to land before it or the
+ * play packet itself, is the backend's line to give: what a reader needs here
+ * is that the force the game believes is running is not on the wheel.
+ *
+ * The reason is a tail rather than a second function because the latch is the
+ * whole of the machinery and there is only one of it per slot. A refusal for a
+ * slot that holds nothing cannot name a kind, which is why the kind is not in
+ * the sentence.
  */
 static void
-start_refused(struct t150_session *s, uint8_t slot)
+start_refused(struct t150_session *s, uint8_t slot, const char *why)
 {
 	struct t150_slot *sl = &s->slots[slot];
 
@@ -927,8 +932,8 @@ start_refused(struct t150_session *s, uint8_t slot)
 		return;
 	sl->start_said |= T150_SAID_REFUSED;
 	if (s->verbose)
-		fprintf(stderr, "t150d: slot %u %s could not be started: the "
-		    "write failed\n", slot, kind_name(sl->ef.kind));
+		fprintf(stderr, "t150d: slot %u could not be started: %s\n",
+		    slot, why);
 }
 
 static void
@@ -971,15 +976,16 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 	 * game asking on every frame against a slot a reset emptied therefore
 	 * costs one line, and the same game after the next reset costs one
 	 * more.
+	 *
+	 * Whether the slot holds an effect, not whether it is marked used. A
+	 * slot inherited from a displaced session is used with nothing in it,
+	 * and a start on one of those reached flush_slot, which cannot encode
+	 * a kind that was never set and returns before writing anything: the
+	 * log then said the write failed when no write had been attempted,
+	 * about an effect it had to call "nothing".
 	 */
-	if (!sl->used) {
-		if (!(sl->start_said & T150_SAID_REFUSED)) {
-			sl->start_said |= T150_SAID_REFUSED;
-			if (s->verbose)
-				fprintf(stderr, "t150d: slot %u was started "
-				    "with nothing uploaded to it\n",
-				    payload[0]);
-		}
+	if (!sl->used || sl->ef.kind == T150_EFFECT_NONE) {
+		start_refused(s, payload[0], "nothing is uploaded to it");
 		reply_err(rep, T150_ERR_BAD_SLOT);
 		return;
 	}
@@ -1037,7 +1043,7 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 	if (flush_slot(s, sl) < 0) {
 		/* Reported here, so the next upload does not repeat it. */
 		s->io_err = 0;
-		start_refused(s, payload[0]);
+		start_refused(s, payload[0], "the write failed");
 		reply_err(rep, T150_ERR_DEVICE_IO);
 		return;
 	}
@@ -1070,7 +1076,7 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 	sl->started_ms = now_ms;
 
 	if (control(s, payload[0], 1, payload[1]) != 0) {
-		start_refused(s, payload[0]);
+		start_refused(s, payload[0], "the write failed");
 		reply_err(rep, T150_ERR_DEVICE_IO);
 		return;
 	}
@@ -1586,7 +1592,7 @@ session_replay_starts(struct t150_session *s)
 		 * same latch as the rest.
 		 */
 		if (control(s, (uint8_t)i, 1, sl->iterations) != 0) {
-			start_refused(s, (uint8_t)i);
+			start_refused(s, (uint8_t)i, "the write failed");
 			failed = 1;
 			continue;
 		}
