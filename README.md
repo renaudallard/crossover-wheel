@@ -746,12 +746,12 @@ this, a restarted `t150d` cost the game its force feedback until the game was
 restarted too, because nothing reachable from a device the game already holds
 ever reconnected.
 
-**And when the re-start itself is refused, the game is told.** The replay used
-to throw that answer away and report success, so an effect the new daemon had
-never been told to play was reported as playing and every later Download was
-skipped against a slot that held nothing. A refusal now clears what the skip
-compares against, and every start in the proxy goes through the one place that
-knows what a refusal means.
+**And a re-start the new daemon refuses is no longer reported as playing.** The
+replay used to throw that answer away, so an effect the daemon had never been
+told to play was marked as running and every later Download was skipped against
+a slot that held nothing. A refusal now clears what the skip compares against
+and leaves the start owed, and every start in the proxy goes through the one
+place that knows what a refusal means.
 
 **A start the daemon never got is sent by the next upload.** The proxy used to
 drop it: `SetParameters` answered the game before it looked at `DIEP_START`, so
@@ -760,7 +760,11 @@ anywhere would ever say it again. It is remembered instead, and paid by the
 first upload that reaches the daemon. That memory is the thing that could start
 a force the player has since turned off, so it is dropped by everything that
 means the game no longer wants it: a stop, an unload, a device reset, a
-stop-everything and a pause.
+stop-everything and a pause. It carries which of those it was taken on and how
+long ago, so one arriving while the debt was being raised drops it rather than
+racing it, and a debt nothing has been able to pay for two seconds is dropped
+too. A force arriving late is one thing; a force arriving in a different corner
+is another.
 
 **A client taking the wheel sets its device gain to full.** The wheel keeps a
 gain of its own, nothing here ever set it, and so every force was scaled by

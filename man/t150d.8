@@ -544,8 +544,11 @@ because the daemon refused it, so that one transient error does not cost a game
 its force for the rest of the session. That memory is exactly the thing that
 could start an effect the player has since turned off, so it is dropped by
 everything that means the game no longer wants the force: a stop, an unload, a
-device reset, a stop-everything and a pause. A start owed by nobody is a force
-nobody asked for.
+device reset, a stop-everything and a pause. It carries which of those it was
+taken on and how long ago, so one arriving while the debt was being raised
+drops it rather than racing it, and a debt no upload has been able to pay for
+two seconds is dropped as well. A debt that outlives the intent behind it is a
+force nobody asked for.
 .Pp
 When the stop does land, the slot is left exactly as one the wheel took at once
 would have been. A plain

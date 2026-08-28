@@ -45,6 +45,26 @@ struct effect_obj {
 	 */
 	LONG			 start_owed;
 	/*
+	 * How many times this effect has been told the game no longer wants
+	 * the force. A debt holds this plus one, so zero still means no debt,
+	 * and a payment that finds the two no longer agree drops it.
+	 *
+	 * The window is a whole round trip to the daemon rather than two
+	 * instructions: the reset that empties the daemon's slots is usually
+	 * the very thing that makes the start it races fail, so the refusal
+	 * and the raise land on either side of it. A lock cannot close that,
+	 * because it makes the two stores exclusive and leaves the order
+	 * alone. Only the request the debt was taken on can say whether it is
+	 * still the request the game wants, and that is what this counts.
+	 */
+	volatile LONG		 quiet_gen;
+	/*
+	 * When the debt was taken on. A start is the game asking for a force
+	 * now, and for a game that downloads once and starts on events the
+	 * next upload able to pay it may be a track reload away.
+	 */
+	ULONGLONG		 owed_ms;
+	/*
 	 * What the game passed to Start, which nothing kept: the reconnect
 	 * replay below built its own payload with a hard coded 1, so a rumble
 	 * a game had asked to repeat twenty times came back as one pass of it
@@ -237,8 +257,11 @@ t150_effect_all_stopped(void)
 		/*
 		 * And no start is left waiting to go out on it. The next
 		 * upload would carry one, which is a force arriving on a wheel
-		 * the game had just turned off.
+		 * the game had just turned off. The counter moves with it, so
+		 * a debt raised by a call that is still in flight is dropped
+		 * rather than paid.
 		 */
+		(void)InterlockedIncrement(&e->quiet_gen);
 		(void)InterlockedExchange(&e->start_owed, 0);
 	}
 	LeaveCriticalSection(&registry);
@@ -274,6 +297,7 @@ t150_effect_all_paused(void)
 		 * across the pause and have the next upload start a force on a
 		 * wheel the game has just quietened.
 		 */
+		(void)InterlockedIncrement(&e->quiet_gen);
 		(void)InterlockedExchange(&e->start_owed, 0);
 		if (!e->playing)
 			continue;
@@ -310,6 +334,19 @@ t150_effect_all_paused(void)
  * caller that has it from the game records it before anything can fail and the
  * other two are saying a start again on the game's behalf.
  */
+/*
+ * Take on a start the daemon was never told about, against the request the
+ * game made rather than against nothing. quiet is what quiet_gen read before
+ * the call that failed: if the game has said in the meantime that it no longer
+ * wants the force, the two no longer agree and the payment drops the debt.
+ */
+static void
+owe_start(struct effect_obj *e, LONG quiet)
+{
+	e->owed_ms = GetTickCount64();
+	(void)InterlockedExchange(&e->start_owed, quiet + 1);
+}
+
 static int
 send_start(struct effect_obj *e)
 {
@@ -344,6 +381,7 @@ t150_effect_all_continued(void)
 {
 	struct effect_obj *seen[T150_SLOT_MAX];
 	size_t n, i;
+	LONG quiet;
 
 	n = registry_snapshot(seen, NULL);
 
@@ -366,8 +404,9 @@ t150_effect_all_continued(void)
 		 * continue and has no reason to send another, so it is left
 		 * for the next upload to carry.
 		 */
+		quiet = e->quiet_gen;
 		if (send_start(e) != 0)
-			(void)InterlockedExchange(&e->start_owed, 1);
+			owe_start(e, quiet);
 
 		IDirectInputEffect_Release(&e->iface);
 	}
@@ -410,6 +449,17 @@ static volatile LONG unload_gen;
  * of every sixteen redundant uploads at Assetto Corsa's 333 Hz.
  */
 #define ASSUME_MS	50u
+
+/*
+ * How long a start the daemon never got may wait for an upload to carry it.
+ *
+ * Longer than the proxy's reconnect interval, or a debt raised while the
+ * daemon was restarting would expire before anything could reach the daemon to
+ * pay it, which is the one case it most exists for. ASSUME_MS is far too short
+ * for the same reason. Past this the game has moved on: it is the difference
+ * between a force arriving late and a force arriving in a different corner.
+ */
+#define OWED_MS		2000u
 
 /*
  * A device level reset releases every slot without naming one, so nothing
@@ -662,7 +712,7 @@ upload(struct effect_obj *e)
 {
 	uint8_t buf[T150_PROTO_EFFECT_LEN];
 	unsigned int gen;
-	LONG ugen, owed;
+	LONG ugen, owed, quiet;
 	int up;
 
 	if (t150_proto_pack_effect(buf, sizeof(buf), &e->ef) == 0)
@@ -681,6 +731,12 @@ upload(struct effect_obj *e)
 	 * still believing what it read on the way in.
 	 */
 	ugen = unload_gen;
+	/*
+	 * And what the game currently wants, read before the round trip below
+	 * for the same reason the unload counter is: a debt raised from an
+	 * answer to this call belongs to the state the call was made in.
+	 */
+	quiet = e->quiet_gen;
 
 	/*
 	 * A game that re-uploads an effect it has not changed pays a round
@@ -778,7 +834,7 @@ upload(struct effect_obj *e)
 			 * game as a running effect, and every later Download
 			 * was skipped against a slot that held nothing.
 			 */
-			(void)InterlockedExchange(&e->start_owed, 1);
+			owe_start(e, quiet);
 		}
 	}
 
@@ -789,14 +845,19 @@ upload(struct effect_obj *e)
 	 * the reconnect above has just raised is folded into one already
 	 * outstanding rather than sent twice.
 	 *
+	 * Only if it is still the start the game wants and it has not gone
+	 * stale, because this is the one place a debt can turn into a force on
+	 * the wheel and the wheel is what a person is holding.
+	 *
 	 * Owed again if it fails, because for two of the three debts this is
 	 * the only thing that will ever say the start. start_effect's has the
 	 * game behind it, which was told DIERR_NOTDOWNLOADED and may ask
 	 * again; the reconnect replay above and the continue were both
 	 * answered DI_OK and have no second asker, and the replay cannot raise
 	 * it a second time because send_start has just cleared the playing
-	 * flag it tests. Cleared on the way out and put back, so a Stop
-	 * landing during the call still takes it.
+	 * flag it tests. Cleared on the way out and put back unchanged, so a
+	 * Stop landing during the call still takes it and the age keeps
+	 * running from when the game asked rather than from the last attempt.
 	 *
 	 * Nothing spins against a dead socket: an upload that cannot reach the
 	 * daemon has already returned -1 above, and start_effect clears any
@@ -810,7 +871,9 @@ upload(struct effect_obj *e)
 	 * and the game's answer to that is to call Download again.
 	 */
 	owed = InterlockedExchange(&e->start_owed, 0);
-	if (owed != 0 && send_start(e) != 0)
+	if (owed != 0 && owed - 1 == e->quiet_gen &&
+	    GetTickCount64() - e->owed_ms < OWED_MS &&
+	    send_start(e) != 0)
 		(void)InterlockedExchange(&e->start_owed, owed);
 
 	return 0;
@@ -1052,6 +1115,8 @@ eff_GetParameters(IDirectInputEffect *self, DIEFFECT *p, DWORD flags)
 static HRESULT
 start_effect(struct effect_obj *e, DWORD iterations, DWORD flags)
 {
+	LONG quiet;
+
 	/*
 	 * What the game asked for goes down before anything can fail, because
 	 * the count is the one thing a later start has no other way to learn:
@@ -1066,6 +1131,12 @@ start_effect(struct effect_obj *e, DWORD iterations, DWORD flags)
 	 */
 	e->iterations = iterations >= 255 ? 255 : (uint8_t)iterations;
 	(void)InterlockedExchange(&e->start_owed, 0);
+	/*
+	 * After that clear and not before it, because this call is the game
+	 * asking now: only a later change of mind should invalidate what it
+	 * asks for here.
+	 */
+	quiet = e->quiet_gen;
 
 	if (!(flags & DIES_NODOWNLOAD) && upload(e) != 0) {
 		/*
@@ -1074,7 +1145,7 @@ start_effect(struct effect_obj *e, DWORD iterations, DWORD flags)
 		 * else would ever say it again and a game has no reason to ask
 		 * twice for something it was told had failed.
 		 */
-		(void)InterlockedExchange(&e->start_owed, 1);
+		owe_start(e, quiet);
 		if (!e->logged) {
 			e->logged = 1;
 			t150_log("Start: upload failed, slot %d\n", e->slot);
@@ -1097,7 +1168,7 @@ start_effect(struct effect_obj *e, DWORD iterations, DWORD flags)
 	 * game that does not take the invitation.
 	 */
 	if (send_start(e) != 0) {
-		(void)InterlockedExchange(&e->start_owed, 1);
+		owe_start(e, quiet);
 		return DIERR_NOTDOWNLOADED;
 	}
 
@@ -1151,6 +1222,7 @@ eff_Stop(IDirectInputEffect *self)
 	 * an effect the wheel never heard the start for has changed its mind,
 	 * and the next upload would otherwise carry it.
 	 */
+	(void)InterlockedIncrement(&e->quiet_gen);
 	(void)InterlockedExchange(&e->start_owed, 0);
 
 	if (t150_client_call(T150_OP_EFFECT_STOP, &slot, 1) != 0) {
@@ -1245,6 +1317,7 @@ eff_Unload(IDirectInputEffect *self)
 	e->playing = 0;
 	e->paused = 0;		/* nor after the game has unloaded it */
 	/* And no start is left waiting for a slot being dropped. */
+	(void)InterlockedIncrement(&e->quiet_gen);
 	(void)InterlockedExchange(&e->start_owed, 0);
 	/* The daemon has no copy to compare the next upload against. */
 	e->sent_valid = 0;
