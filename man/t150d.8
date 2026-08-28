@@ -537,6 +537,15 @@ the quietest, because between the disconnect and the reconnect the emitter is
 retrying the stop on every pass, and it is the arrival of the next game that
 ends the retry.
 .Pp
+That promise now has to be kept on both sides of the socket. The proxy
+remembers a start it could not deliver, because the upload it rode on failed or
+because the daemon refused it, so that one transient error does not cost a game
+its force for the rest of the session. That memory is exactly the thing that
+could start an effect the player has since turned off, so it is dropped by
+everything that means the game no longer wants the force: a stop, an unload, a
+device reset, a stop-everything and a pause. A start owed by nobody is a force
+nobody asked for.
+.Pp
 When the stop does land, the slot is left exactly as one the wheel took at once
 would have been. A plain
 .Dv T150_OP_EFFECT_STOP

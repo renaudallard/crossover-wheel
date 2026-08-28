@@ -753,6 +753,15 @@ skipped against a slot that held nothing. A refusal now clears what the skip
 compares against, and every start in the proxy goes through the one place that
 knows what a refusal means.
 
+**A start the daemon never got is sent by the next upload.** The proxy used to
+drop it: `SetParameters` answered the game before it looked at `DIEP_START`, so
+one refused upload cost that force for the rest of the run, and nothing
+anywhere would ever say it again. It is remembered instead, and paid by the
+first upload that reaches the daemon. That memory is the thing that could start
+a force the player has since turned off, so it is dropped by everything that
+means the game no longer wants it: a stop, an unload, a device reset, a
+stop-everything and a pause.
+
 **A client taking the wheel sets its device gain to full.** The wheel keeps a
 gain of its own, nothing here ever set it, and so every force was scaled by
 whatever the wheel powered up with or whatever the last process left behind.
