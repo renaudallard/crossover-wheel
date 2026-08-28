@@ -890,7 +890,16 @@ started at all: an effect uploaded and never started renders nothing, and from
 the daemon's side that looks exactly like one the wheel ignores. Both lines are
 said after the write and say which way it went, so neither can stand in a
 report as evidence for something that never left the daemon, and every release
-says which slots it took rather than only the game's own stop. The watchdog
+says which slots it took rather than only the game's own stop.
+
+**A start the daemon turns away says so as well, and that is the half that was
+missing.** One hardware report came down to a game whose constant force was
+uploaded all session and never played, and the log could not say whether the
+game never asked or whether it asked and was refused for a slot the daemon no
+longer held. The two were byte for byte identical from here. A refusal now
+names the slot and the reason, once per slot rather than once per call, so a
+report of that shape answers itself. See
+[`docs/RESEARCH.md`](docs/RESEARCH.md) A52. The watchdog
 carries the silence it measured with it, in milliseconds, which is the only
 duration anywhere in an untimestamped log: half a second is a game that
 hitched over a track load and five seconds is a game or a socket that stopped.

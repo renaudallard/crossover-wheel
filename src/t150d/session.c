@@ -941,12 +941,48 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 		reply_err(rep, T150_ERR_BAD_FRAME);
 		return;
 	}
-	if (payload[0] >= T150_SLOT_MAX || !s->slots[payload[0]].used) {
+	/*
+	 * The two refusals are separated because they are opposite faults and
+	 * the log used to show neither. A slot number this daemon does not
+	 * have can only come from a client that is not our proxy, which sends
+	 * two bytes from both of its doors, and is said once for the session
+	 * because a repeat is a broken client saying the same thing again. An
+	 * empty slot is the ordinary window a reset or a safe state opens
+	 * under a game that does not know about it, and telling that apart
+	 * from a game that never asked for a start at all is what a whole
+	 * hardware report was spent on.
+	 */
+	if (payload[0] >= T150_SLOT_MAX) {
+		if (!s->bad_slot_said) {
+			s->bad_slot_said = 1;
+			if (s->verbose)
+				fprintf(stderr, "t150d: a start named slot %u, "
+				    "which does not exist\n", payload[0]);
+		}
 		reply_err(rep, T150_ERR_BAD_SLOT);
 		return;
 	}
 
 	sl = &s->slots[payload[0]];
+
+	/*
+	 * Latched in the slot the start named, and dropped when that slot is
+	 * loaded again, because that is when the refusal stops being true. A
+	 * game asking on every frame against a slot a reset emptied therefore
+	 * costs one line, and the same game after the next reset costs one
+	 * more.
+	 */
+	if (!sl->used) {
+		if (!(sl->start_said & T150_SAID_REFUSED)) {
+			sl->start_said |= T150_SAID_REFUSED;
+			if (s->verbose)
+				fprintf(stderr, "t150d: slot %u was started "
+				    "with nothing uploaded to it\n",
+				    payload[0]);
+		}
+		reply_err(rep, T150_ERR_BAD_SLOT);
+		return;
+	}
 
 	/*
 	 * Start is an event and goes out now, but it must not overtake the

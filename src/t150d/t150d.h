@@ -299,6 +299,12 @@ struct t150_session {
 	uint8_t			 io_err;	/* a write failed, owed to the next upload */
 	uint8_t			 replay_starts;	/* the wheel came back, re-start what was playing */
 	uint8_t			 emit_failed;	/* last pass failed, do not spin on it */
+	/*
+	 * A start frame that named a slot this daemon does not have, said once
+	 * for the session. Our own proxy cannot send one, so a second is a
+	 * broken client repeating itself rather than news.
+	 */
+	uint8_t			 bad_slot_said;
 	unsigned		 peer_port;	/* which connection this is, for the log */
 	char			 token[T150_TOKEN_LEN + 1];
 };

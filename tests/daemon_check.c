@@ -3398,6 +3398,55 @@ test_a_re_upload_does_not_repeat_the_start_line(void)
 		fail("ten uploads and ten starts say started once");
 }
 
+/*
+ * The line the whole of this exists for. A start for a slot the daemon does
+ * not hold was refused in complete silence, so a game that asked and was
+ * turned away and a game that never asked at all produced byte for byte the
+ * same log, and one hardware report could not be taken any further than that.
+ */
+static void
+test_a_start_with_nothing_uploaded_says_so_once(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	uint8_t arg[2] = { 3, 1 };
+	uint8_t none[2] = { T150_SLOT_MAX, 1 };
+	struct t150_effect ef;
+	char out[4096];
+	int i;
+
+	reset_session();
+	hello(0);
+
+	if (capture_start() != 0)
+		return;
+
+	/* A game asking on every frame for a slot that was never loaded. */
+	for (i = 0; i < 10; i++)
+		frame(T150_OP_EFFECT_START, arg, 2, (uint64_t)(10 + i),
+		    T150_OP_ERROR, T150_ERR_BAD_SLOT);
+	/* And a client that is not our proxy, naming a slot that cannot exist. */
+	frame(T150_OP_EFFECT_START, none, 2, 30, T150_OP_ERROR,
+	    T150_ERR_BAD_SLOT);
+	frame(T150_OP_EFFECT_START, none, 2, 31, T150_OP_ERROR,
+	    T150_ERR_BAD_SLOT);
+
+	/* Loading the slot makes the next answer news again. */
+	damper(&ef, 3);
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 40, T150_OP_OK,
+	    T150_ERR_NONE);
+	frame(T150_OP_EFFECT_START, arg, 2, 40, T150_OP_OK, T150_ERR_NONE);
+
+	capture_end(out, sizeof(out));
+
+	if (count_substr(out,
+	    "slot 3 was started with nothing uploaded to it") != 1)
+		fail("ten starts of an empty slot say so once");
+	if (count_substr(out, "which does not exist") != 1)
+		fail("and a slot that cannot exist says so once");
+	if (count_substr(out, "slot 3 damper started") != 1)
+		fail("and loading the slot lets the next answer be said");
+}
+
 
 int
 main(void)
@@ -3468,6 +3517,7 @@ main(void)
 	test_a_reset_and_a_stop_all_say_what_they_took();
 	test_a_refused_start_says_so_once_and_the_good_news_comes_back();
 	test_a_re_upload_does_not_repeat_the_start_line();
+	test_a_start_with_nothing_uploaded_says_so_once();
 	test_hello_states_the_settings();
 	test_only_the_packet_that_moved_is_sent();
 	test_an_idle_writer_emits_ahead_of_the_floor();
