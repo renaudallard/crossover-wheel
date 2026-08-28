@@ -919,12 +919,13 @@ missing.** One hardware report came down to a game whose constant force was
 uploaded all session and never played, and the log could not say whether the
 game never asked or whether it asked and was refused for a slot the daemon no
 longer held. The two were byte for byte identical from here. A refusal now
-names the slot and the reason, once per slot rather than once per call, so a
-report of that shape answers itself. See
+names the slot and the reason, once for each answer rather than once per call,
+so the next report of that shape carries the half the daemon can see. See
 [`docs/RESEARCH.md`](docs/RESEARCH.md) A52. The watchdog
 carries the silence it measured with it, in milliseconds, which is the only
-duration anywhere in an untimestamped log: half a second is a game that
-hitched over a track load and five seconds is a game or a socket that stopped.
+duration anywhere in an untimestamped log. It separates a game that hitched
+just past the deadline from one that stopped for seconds, which read the same
+without it.
 
 **A condition's coefficient is held at 80% of what the wheel takes, and this
 is the one place the daemon knowingly gives a game less than it asked for.**

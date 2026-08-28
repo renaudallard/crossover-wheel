@@ -1896,9 +1896,10 @@ from launch, about two and a half minutes, and it holds 147 parameter lines
 for a constant on slot 2 with magnitudes to plus and minus 10000, and not one
 "slot 2 constant started".
 
-The started line is a transition and is not rate limited, and `sl->playing` is
-set in exactly one place, one line after it, so the absence is real rather
-than a gap in the logging. An effect that is uploaded and never played renders
+In the daemon that produced this log the started line was printed above the
+write, on the transition, and `sl->playing` was set one line below it, so the
+absence is real rather than a gap in the logging. Both of those moved after
+this report; the reasoning below is about the daemon that wrote the log. An effect that is uploaded and never played renders
 nothing: play is a separate control packet, and the vendor's own `spring0`
 capture commits nine effects into nine slots and sends exactly one play packet,
 which would be absurd if committing were enough. So the wheel rendered nothing
@@ -1913,14 +1914,26 @@ which is why the log has two "damper started" lines with nothing between them.
 Slot 2 had no start to lose.
 
 **Why no start arrived cannot be answered from a daemon log, and that is the
-finding.** Two explanations survive and they are byte for byte identical from
-this side: the game never asked, or it asked with a bare start and was refused
-because the daemon did not hold the slot. `do_start` printed nothing on either
-refusal, `do_reset` printed nothing at all, and a dropped packet sets `io_err`
-in silence, so none of the three could be told from the others. The lines that
-close that gap went in after this report; what settles the remaining question
-is the proxy's own log, which needs `T150_LOG` in the bottle's environment with
-a `Z:` path (see A48) and which nothing shipped can turn on.
+finding.** Three explanations survive and they are byte for byte identical from
+this side:
+
+1. the game never called Start at all;
+2. it asked with a bare start and was refused because the daemon did not hold
+   the slot, which `do_start` answered in silence;
+3. it asked and the proxy never put a start on the wire, because
+   `eff_SetParameters` answered `DIERR_NOTDOWNLOADED` the moment the upload
+   failed and never looked at `DIEP_START`.
+
+`do_start` printed nothing on either refusal, `do_reset` printed nothing at
+all, and a dropped packet sets `io_err` in silence, so none of them could be
+told from the others. The third was a real defect and is fixed, which removes
+it from any future report but not from this one, since the proxy in that bottle
+is not identified by anything on the wire.
+
+The daemon lines that close the second went in after this report. What still
+separates the first from the third is the proxy's own log, which needs
+`T150_LOG` in the bottle's environment with a `Z:` path (see A48) and which
+nothing shipped can turn on.
 
 ---
 

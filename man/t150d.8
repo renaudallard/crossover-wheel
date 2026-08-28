@@ -303,9 +303,13 @@ Corsa does, so a line per call would be several hundred a second. The question
 this answers is whether a slot was ever started at all, because an effect that
 is uploaded and never started renders nothing and looks from here exactly like
 one the wheel ignores. Both lines are said after the write and say which way it
-went, so neither can stand in a report as evidence for something that never
-left the daemon: a start the wheel would not take says the write failed, and
-the next one it does take says the slot started.
+went, so neither can stand in a report as evidence for something the daemon
+never sent: a start the wheel would not take says the write failed, and the
+next one it does take says the slot started. With
+.Fl w
+the write they are said after is the queueing, since that is the only answer
+there is at that point; a packet the wheel accepts and then refuses shows up a
+tick later as a lost packet instead.
 .Pp
 A start that is turned away says so on the same terms: once for each of the two
 answers rather than every time it is asked for. A start for a slot holding no
@@ -325,9 +329,11 @@ playing; both are silent when there was nothing to take, which is what keeps a
 game that sends either of them often off the terminal.
 .Pp
 The watchdog carries the silence it measured, in milliseconds, because nothing
-in this log is timestamped and that is the only duration in it: half a second
-is a game that hitched and five seconds is a game or a socket that stopped, and
-the two read the same without it.
+in this log is timestamped and that is the only duration in it. It is the
+silence at the tick that noticed rather than at the deadline, so it always
+reads a little over the watchdog, and what it separates is a game that hitched
+just past it from one that stopped for seconds. Those two read the same without
+it.
 .El
 .Sh LOSING THE WHEEL
 A wheel unplugged while a game is running takes the mach port behind its
