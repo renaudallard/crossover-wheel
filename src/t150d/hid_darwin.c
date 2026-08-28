@@ -747,13 +747,38 @@ hid_drain(void *priv)
 static int
 queue_push(struct hid_be *h, const uint8_t *buf, size_t len)
 {
-	int r;
+	unsigned int was;
+	int r, first;
 
 	pthread_mutex_lock(&h->mtx);
+	was = h->q.dropped;
 	r = t150_wq_push(&h->q, buf, len);
+	first = was == 0 && h->q.dropped != 0;
 	pthread_mutex_unlock(&h->mtx);
-	if (r != 0)
+	if (r != 0) {
+		/*
+		 * The first refusal, when it happens. The totals go out at
+		 * close, and a report is copied off a machine while the daemon
+		 * is still running, so a session that spent its whole length
+		 * with a full queue read exactly like one that never refused a
+		 * packet. After coalescing, full means the wheel has stopped
+		 * taking writes rather than that it is merely behind, which is
+		 * the difference between a wheel that feels late and a wheel
+		 * that has stopped, and nothing in a running log could say it.
+		 *
+		 * Read off the queue's own counter, under the queue's own
+		 * lock, and by comparison rather than against a value, because
+		 * t150_wq_push also refuses a packet it cannot represent and
+		 * that one does not move the counter. A flag of ours would be
+		 * set by this thread and want clearing by the writer, and the
+		 * whole of this file's thread safety is that the two never
+		 * touch the same thing.
+		 */
+		if (h->verbose && first)
+			fprintf(stderr, "t150d: the writer's queue is full, "
+			    "the wheel has stopped taking writes\n");
 		return r;
+	}
 	pthread_cond_signal(&h->cv);
 
 	return 0;

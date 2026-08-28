@@ -855,7 +855,9 @@ newest packet waiting for a given target is merged into, so a repeat cannot
 overtake something queued behind it: a stop, a play and a stop for one slot
 stay three packets in that order. `-v` prints the merged and refused counts on
 the way out, and after coalescing a refusal means the wheel stopped taking
-writes altogether. A refusal is reported to the session as a failed write, so
+writes altogether. The first refusal is said when it happens too, because a log
+copied off a machine that is still running never reaches the line on the way
+out. A refusal is reported to the session as a failed write, so
 the effect stays owed and goes again on the next pass; the queue never discards
 a packet it has already accepted, because accepting one is what tells the
 session it need not keep a copy.

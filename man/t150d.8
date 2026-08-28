@@ -227,6 +227,11 @@ to the next made
 stop a set of packets that had already gone, which puts a bare first packet on
 the wire with no update or commit behind it.
 .Pp
+The first refusal is also said when it happens. The counts on the way out are
+only in a log that was kept until the daemon exited, and a report is usually
+copied off a machine that is still running, so a session that spent its whole
+length full read exactly like one that never refused a packet.
+.Pp
 The session reads that count around its own writes rather than being told. A
 watchdog safe state notes it before the stops and again after, and a rise
 means the wheel is not where the daemon believes: it forgets what the wheel
