@@ -1119,6 +1119,7 @@ do_setting(struct t150_session *s, uint8_t op, const uint8_t *payload,
 static void
 do_reset(struct t150_session *s, struct t150_reply *rep)
 {
+	unsigned int released = 0;
 	size_t i;
 
 	int failed = 0;
@@ -1135,11 +1136,37 @@ do_reset(struct t150_session *s, struct t150_reply *rep)
 	 * so.
 	 */
 	for (i = 0; i < T150_SLOT_MAX; i++) {
-		if (slot_stop(s, (uint8_t)i) != 0)
+		if (slot_stop(s, (uint8_t)i) != 0) {
 			failed = 1;
-		else
-			memset(&s->slots[i], 0, sizeof(s->slots[i]));
+			continue;
+		}
+		/*
+		 * Counted before the memset takes it, and only a slot that
+		 * really held an effect: a slot inherited from a displaced
+		 * session carries nothing but that session's unpaid stop, and
+		 * calling that a released effect would report one that never
+		 * existed.
+		 */
+		if (s->slots[i].used &&
+		    s->slots[i].ef.kind != T150_EFFECT_NONE)
+			released++;
+		memset(&s->slots[i], 0, sizeof(s->slots[i]));
 	}
+
+	/*
+	 * Said, because a reset is the one thing a game can do that empties
+	 * every slot with the connection still up, and it was invisible. It
+	 * opens the window in which a later start is answered with a bad slot,
+	 * and a log showing neither could not tell that window from a game
+	 * that never asked for a start at all.
+	 *
+	 * Only when it released something, which is also what keeps a game
+	 * that resets often off the terminal: the second reset in a row has
+	 * nothing left to take.
+	 */
+	if (s->verbose && released > 0)
+		fprintf(stderr, "t150d: the game reset force feedback, %u "
+		    "effect(s) released\n", released);
 
 	if (failed) {
 		reply_err(rep, T150_ERR_DEVICE_IO);
@@ -1159,6 +1186,7 @@ do_reset(struct t150_session *s, struct t150_reply *rep)
 static void
 do_stop_all(struct t150_session *s, struct t150_reply *rep)
 {
+	unsigned int were_playing = 0;
 	size_t i;
 
 	int failed = 0;
@@ -1171,9 +1199,24 @@ do_stop_all(struct t150_session *s, struct t150_reply *rep)
 	for (i = 0; i < T150_SLOT_MAX; i++) {
 		if (!s->slots[i].used)
 			continue;
+		were_playing += s->slots[i].playing;
 		if (slot_stop(s, (uint8_t)i) != 0)
 			failed = 1;
 	}
+
+	/*
+	 * Said separately from the reset above, because the two commands are
+	 * different and the whole of this function is that difference: the
+	 * effects stay downloaded here. This is also what the proxy sends for
+	 * a pause and for actuators off, so it is the line that explains a
+	 * wheel that went quiet without the game losing anything.
+	 *
+	 * Only when something was playing, which is what keeps a game sitting
+	 * on a paused menu quiet: the second one stops nothing.
+	 */
+	if (s->verbose && were_playing > 0)
+		fprintf(stderr, "t150d: the game stopped every effect, %u of "
+		    "them playing\n", were_playing);
 
 	if (failed) {
 		reply_err(rep, T150_ERR_DEVICE_IO);

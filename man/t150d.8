@@ -305,7 +305,10 @@ A safe state names each playing slot it stopped, and says it after the writer's
 queue has drained rather than when the packet was handed over, so a stop that
 was only queued and then refused is not reported as one that landed. Without
 those lines a slot silently lost its start in the middle of a session and the
-only trace was the same slot being started twice with nothing between.
+only trace was the same slot being started twice with nothing between. A reset
+says how many loaded effects it released and a stop-everything how many were
+playing; both are silent when there was nothing to take, which is what keeps a
+game that sends either of them often off the terminal.
 .Pp
 The watchdog carries the silence it measured, in milliseconds, because nothing
 in this log is timestamped and that is the only duration in it: half a second

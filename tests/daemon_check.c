@@ -3233,6 +3233,75 @@ test_a_stop_the_wheel_refused_is_not_logged_as_a_stop(void)
 		fail("and is never logged as a stop that landed");
 }
 
+/*
+ * A reset is the one thing a game can do that empties every slot with the
+ * connection still up, and it said nothing at all. That is the window in which
+ * a later start is turned away for a slot the daemon no longer holds, and a
+ * log showing neither could not tell that window from a game that never asked
+ * for a start in the first place. A whole hardware report was spent on exactly
+ * that distinction.
+ */
+static void
+test_a_reset_and_a_stop_all_say_what_they_took(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	uint8_t one[2] = { 1, 1 };
+	struct t150_effect ef;
+	char out[4096];
+
+	reset_session();
+	hello(0);
+
+	damper(&ef, 1);
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+	frame(T150_OP_EFFECT_START, one, 2, 100, T150_OP_OK, T150_ERR_NONE);
+	damper(&ef, 2);
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+
+	if (capture_start() != 0)
+		return;
+
+	frame(T150_OP_RESET, NULL, 0, 110, T150_OP_OK, T150_ERR_NONE);
+	frame(T150_OP_RESET, NULL, 0, 111, T150_OP_OK, T150_ERR_NONE);
+
+	capture_end(out, sizeof(out));
+
+	if (count_substr(out,
+	    "the game reset force feedback, 2 effect(s) released") != 1)
+		fail("a reset says how many effects it released");
+	if (count_substr(out, "reset force feedback") != 1)
+		fail("and the second reset, with nothing left, is silent");
+
+	reset_session();
+	hello(0);
+
+	damper(&ef, 1);
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+	frame(T150_OP_EFFECT_START, one, 2, 100, T150_OP_OK, T150_ERR_NONE);
+	damper(&ef, 2);
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+	one[0] = 2;
+	frame(T150_OP_EFFECT_START, one, 2, 100, T150_OP_OK, T150_ERR_NONE);
+
+	if (capture_start() != 0)
+		return;
+
+	frame(T150_OP_STOP_ALL, NULL, 0, 110, T150_OP_OK, T150_ERR_NONE);
+	frame(T150_OP_STOP_ALL, NULL, 0, 111, T150_OP_OK, T150_ERR_NONE);
+
+	capture_end(out, sizeof(out));
+
+	if (count_substr(out,
+	    "the game stopped every effect, 2 of them playing") != 1)
+		fail("a stop-everything says how many were playing");
+	if (count_substr(out, "stopped every effect") != 1)
+		fail("and the second one, with nothing playing, is silent");
+}
+
 
 int
 main(void)
@@ -3300,6 +3369,7 @@ main(void)
 	test_start_and_stop_are_logged_once_per_transition();
 	test_the_watchdog_says_how_long_and_what_it_took();
 	test_a_stop_the_wheel_refused_is_not_logged_as_a_stop();
+	test_a_reset_and_a_stop_all_say_what_they_took();
 	test_hello_states_the_settings();
 	test_only_the_packet_that_moved_is_sent();
 	test_an_idle_writer_emits_ahead_of_the_floor();
