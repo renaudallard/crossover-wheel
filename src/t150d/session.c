@@ -1295,11 +1295,23 @@ do_stop_all(struct t150_session *s, struct t150_reply *rep)
 	 * opposite of what STOPALL was asked to do.
 	 */
 	for (i = 0; i < T150_SLOT_MAX; i++) {
+		uint8_t was_playing;
+
 		if (!s->slots[i].used)
 			continue;
-		were_playing += s->slots[i].playing;
-		if (slot_stop(s, (uint8_t)i) != 0)
+		/*
+		 * Read before slot_stop clears it, counted after the write is
+		 * known to have landed: a stop the wheel refused leaves the
+		 * slot owing one and the wheel possibly still pulling, and
+		 * saying it was stopped is the lie do_stop was just taught not
+		 * to tell.
+		 */
+		was_playing = s->slots[i].playing;
+		if (slot_stop(s, (uint8_t)i) != 0) {
 			failed = 1;
+			continue;
+		}
+		were_playing += was_playing;
 	}
 
 	/*
