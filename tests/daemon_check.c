@@ -2972,8 +2972,6 @@ static int cap_saved;
 static int
 capture_start(void)
 {
-	sess.verbose = 1;
-
 	if ((cap = tmpfile()) == NULL) {
 		fail("no temporary file for the capture");
 		return -1;
@@ -2987,6 +2985,14 @@ capture_start(void)
 		return -1;
 	}
 	(void)dup2(fileno(cap), fileno(stderr));
+
+	/*
+	 * Last, because the callers answer a failure above by returning, which
+	 * skips the capture_end that would have put this back. Set first, a
+	 * failed capture left every later -v line printing onto the harness's
+	 * own stderr for the rest of the run.
+	 */
+	sess.verbose = 1;
 
 	return 0;
 }
@@ -3325,8 +3331,10 @@ test_a_refused_start_says_so_once_and_the_good_news_comes_back(void)
 	damper(&ef, 3);
 	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
 	    T150_ERR_NONE);
-	/* So the parameters are already on the wheel and the play packet is
-	 * the write that fails below. */
+	/*
+	 * So the parameters are already on the wheel and the play packet is
+	 * the write that fails below.
+	 */
 	(void)t150_session_tick(&sess, 110);
 
 	if (capture_start() != 0)
