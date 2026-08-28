@@ -84,6 +84,18 @@ struct hid_be {
 	unsigned int	 gap_ms;
 	int		 verbose;
 	int		 opened;
+	/*
+	 * Whether the last write to the wheel failed and has been said. A
+	 * wheel that is present and refusing with a status that does not mean
+	 * removal is written to again on the very next pass, and a game
+	 * driving at its physics rate turns that into a thousand identical
+	 * lines a second: enough to bury everything else the session had to
+	 * say, on exactly the failure the rest of the log exists to diagnose.
+	 * The first status is the news and a run of them is one fault, so it
+	 * is said once and again after a write that worked, which is the only
+	 * thing that makes the next one news.
+	 */
+	int		 write_failed_said;
 
 	/*
 	 * The writer, when -w asked for one. Everything about the device is
@@ -606,10 +618,11 @@ writer_main(void *arg)
 			IOReturn r = raw_write(h, p.buf, p.len);
 
 			if (r != kIOReturnSuccess) {
-				if (h->verbose)
+				if (h->verbose && !h->write_failed_said)
 					fprintf(stderr, "t150d: SetReport "
 					    "failed: 0x%08x\n",
 					    (unsigned int)r);
+				h->write_failed_said = 1;
 				if (means_removed(r)) {
 					drop_device(h);
 					h->next_scan_ms = mono_ms() + RESCAN_MS;
@@ -638,6 +651,12 @@ writer_main(void *arg)
 				 */
 				if (h->be != NULL)
 					h->be->lost++;
+			} else {
+				/*
+				 * A write that worked makes the next failure
+				 * news again.
+				 */
+				h->write_failed_said = 0;
 			}
 			nap_ms(h->gap_ms);
 			queue_done(h);
@@ -828,9 +847,10 @@ hid_write(void *priv, const uint8_t *buf, size_t len)
 
 	r = raw_write(h, buf, len);
 	if (r != kIOReturnSuccess) {
-		if (h->verbose)
+		if (h->verbose && !h->write_failed_said)
 			fprintf(stderr, "t150d: SetReport failed: 0x%08x\n",
 			    (unsigned int)r);
+		h->write_failed_said = 1;
 		/*
 		 * Only let go of the wheel when the error says it has gone.
 		 * Dropping on any failure meant one transient refusal took
@@ -845,6 +865,9 @@ hid_write(void *priv, const uint8_t *buf, size_t len)
 		}
 		return -1;
 	}
+
+	/* A write that worked makes the next failure news again. */
+	h->write_failed_said = 0;
 
 	/*
 	 * An optional pause between packets. probe_setreport has always left
