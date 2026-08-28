@@ -3151,6 +3151,40 @@ test_start_and_stop_are_logged_once_per_transition(void)
 		fail("and the start is said before the stop");
 }
 
+/*
+ * The safe state has to say how long the client was quiet, because nothing
+ * else in the log is timestamped and the number was being computed and thrown
+ * away. Half a second past the deadline is a game that hitched over a track
+ * load; five seconds is a game or a socket that has gone. A report cannot tell
+ * those apart from a fixed sentence, and one arrived that could not.
+ */
+static void
+test_the_watchdog_says_how_long_and_what_it_took(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	uint8_t arg[2] = { 1, 1 };
+	struct t150_effect ef;
+	char out[4096];
+
+	reset_session();
+	hello(0);
+
+	damper(&ef, 1);
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+	frame(T150_OP_EFFECT_START, arg, 2, 100, T150_OP_OK, T150_ERR_NONE);
+
+	if (capture_start() != 0)
+		return;
+
+	(void)t150_session_tick(&sess, 700);
+
+	capture_end(out, sizeof(out));
+
+	if (strstr(out, "safe state: no frame for 600 ms") == NULL)
+		fail("the safe state says how long the client was quiet");
+}
+
 
 int
 main(void)
@@ -3216,6 +3250,7 @@ main(void)
 	test_a_start_every_frame_does_not_starve_other_slots();
 	test_the_parameter_log_names_the_condition();
 	test_start_and_stop_are_logged_once_per_transition();
+	test_the_watchdog_says_how_long_and_what_it_took();
 	test_hello_states_the_settings();
 	test_only_the_packet_that_moved_is_sent();
 	test_an_idle_writer_emits_ahead_of_the_floor();

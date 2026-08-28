@@ -298,6 +298,11 @@ Corsa does, so a line per call would be several hundred a second. The question
 this answers is whether a slot was ever started at all, because an effect that
 is uploaded and never started renders nothing and looks from here exactly like
 one the wheel ignores.
+.Pp
+The watchdog carries the silence it measured, in milliseconds, because nothing
+in this log is timestamped and that is the only duration in it: half a second
+is a game that hitched and five seconds is a game or a socket that stopped, and
+the two read the same without it.
 .El
 .Sh LOSING THE WHEEL
 A wheel unplugged while a game is running takes the mach port behind its

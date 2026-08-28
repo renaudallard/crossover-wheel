@@ -1634,7 +1634,22 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 	if (s->hello && s->armed) {
 		quiet = now_ms - s->last_frame_ms;
 		if (quiet >= T150_WATCHDOG_MS) {
-			t150_session_panic(s, "no frame within the watchdog");
+			char why[48];
+
+			/*
+			 * With the silence it measured in it. Nothing in this
+			 * log is timestamped, so this is the only duration
+			 * anywhere in it, and it was computed and thrown
+			 * away: a game that hitched for half a second and a
+			 * game that stopped dead for five printed the same
+			 * line. The first is a frame that ran long and the
+			 * second is a client or a socket that went, and a
+			 * report cannot tell them apart without this.
+			 */
+			(void)snprintf(why, sizeof(why),
+			    "no frame for %llu ms",
+			    (unsigned long long)quiet);
+			t150_session_panic(s, why);
 			return T150_WATCHDOG_MS;
 		}
 		if (next > T150_WATCHDOG_MS - (unsigned int)quiet)
