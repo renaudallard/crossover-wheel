@@ -187,6 +187,16 @@ int	t150_backend_hid(struct t150_backend *be, long vid, long pid,
 /* Every packet the daemon builds fits in this. */
 #define T150_PKT_MAX		16u
 
+/*
+ * What the -v log has already said about starting a slot. Two bits rather than
+ * one flag, because a start has two answers and each is worth exactly one
+ * line: a wheel that has gone says it could not start, the wheel that comes
+ * back says it did, and a wheel alternating between the two at frame rate says
+ * each of them once and then nothing at all.
+ */
+#define T150_SAID_STARTED	0x01u
+#define T150_SAID_REFUSED	0x02u
+
 /* One packet exactly as it went out, for deciding whether it need go again. */
 struct t150_wire {
 	uint8_t	len;			/* 0 when nothing has been sent yet */
@@ -211,6 +221,22 @@ struct t150_slot {
 	uint8_t			source_kind;	/* what the game asked for */
 	uint8_t			iterations;
 	uint8_t			dirty;		/* desired state is not on the wheel */
+	/*
+	 * Which of the two answers above the log has already given for this
+	 * slot. It cannot be read off playing, which is what it used to be:
+	 * playing is what the game wants and do_start records it before the
+	 * write on purpose, so a start the wheel refused left it standing and
+	 * the start that finally landed said nothing at all.
+	 *
+	 * A stop reopens it, and so does a slot being loaded from empty,
+	 * because either makes the next start a new event. A re-upload of a
+	 * slot that is already loaded does not, because a game animating a
+	 * force re-uploads it and starts it again on every frame and losing it
+	 * there would put three hundred lines a second into a report. The
+	 * wheel going away reopens it too, since what was said was said about
+	 * a wheel that is no longer there.
+	 */
+	uint8_t			start_said;
 	uint64_t		started_ms;
 	struct t150_ramp	ramp;		/* kept for the slicing */
 	struct t150_effect	ef;		/* downgraded, as desired */

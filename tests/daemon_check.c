@@ -3302,6 +3302,102 @@ test_a_reset_and_a_stop_all_say_what_they_took(void)
 		fail("and the second one, with nothing playing, is silent");
 }
 
+/*
+ * The started line was printed before the write that carries it, so a start
+ * the wheel refused still said "started" and the start that finally landed
+ * said nothing: the old guard was the playing flag, which the first refused
+ * start had already set. That line is the one a report of this class leans on
+ * hardest, because an effect uploaded and never started renders nothing and
+ * from here looks exactly like one the wheel ignores.
+ */
+static void
+test_a_refused_start_says_so_once_and_the_good_news_comes_back(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	uint8_t arg[2] = { 3, 1 };
+	struct t150_effect ef;
+	char out[4096];
+	const char *bad, *good;
+
+	reset_session();
+	hello(0);
+
+	damper(&ef, 3);
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+	/* So the parameters are already on the wheel and the play packet is
+	 * the write that fails below. */
+	(void)t150_session_tick(&sess, 110);
+
+	if (capture_start() != 0)
+		return;
+
+	write_fails = 1;
+	frame(T150_OP_EFFECT_START, arg, 2, 120, T150_OP_ERROR,
+	    T150_ERR_DEVICE_IO);
+	frame(T150_OP_EFFECT_START, arg, 2, 121, T150_OP_ERROR,
+	    T150_ERR_DEVICE_IO);
+	frame(T150_OP_EFFECT_START, arg, 2, 122, T150_OP_ERROR,
+	    T150_ERR_DEVICE_IO);
+	write_fails = 0;
+	frame(T150_OP_EFFECT_START, arg, 2, 123, T150_OP_OK, T150_ERR_NONE);
+
+	capture_end(out, sizeof(out));
+
+	bad = strstr(out, "slot 3 damper could not be started: the write "
+	    "failed");
+	good = strstr(out, "slot 3 damper started");
+	if (count_substr(out, "could not be started") != 1)
+		fail("three refused starts say so once");
+	if (count_substr(out, "slot 3 damper started") != 1)
+		fail("and the one the wheel took says so, which the old guard "
+		    "could never do");
+	if (bad == NULL || good == NULL || bad > good)
+		fail("and the refusal is said before the recovery");
+}
+
+/*
+ * The flood guard. A game animating a force uploads it and starts it again on
+ * every frame, which is Assetto Corsa's shape and the shape of the report this
+ * came from, so the latch has to survive a re-upload of a slot that is already
+ * loaded.
+ */
+static void
+test_a_re_upload_does_not_repeat_the_start_line(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	uint8_t arg[2] = { 2, 1 };
+	struct t150_effect ef;
+	char out[4096];
+	int i;
+
+	reset_session();
+	hello(0);
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_CONSTANT;
+	ef.slot = 2;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+
+	if (capture_start() != 0)
+		return;
+
+	for (i = 0; i < 10; i++) {
+		ef.u.constant.magnitude = (int32_t)(100 * i);
+		frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef),
+		    (uint64_t)(3 * i), T150_OP_OK, T150_ERR_NONE);
+		frame(T150_OP_EFFECT_START, arg, 2, (uint64_t)(3 * i),
+		    T150_OP_OK, T150_ERR_NONE);
+	}
+
+	capture_end(out, sizeof(out));
+
+	if (count_substr(out, "slot 2 constant started") != 1)
+		fail("ten uploads and ten starts say started once");
+}
+
 
 int
 main(void)
@@ -3370,6 +3466,8 @@ main(void)
 	test_the_watchdog_says_how_long_and_what_it_took();
 	test_a_stop_the_wheel_refused_is_not_logged_as_a_stop();
 	test_a_reset_and_a_stop_all_say_what_they_took();
+	test_a_refused_start_says_so_once_and_the_good_news_comes_back();
+	test_a_re_upload_does_not_repeat_the_start_line();
 	test_hello_states_the_settings();
 	test_only_the_packet_that_moved_is_sent();
 	test_an_idle_writer_emits_ahead_of_the_floor();

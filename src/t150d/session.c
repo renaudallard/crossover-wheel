@@ -295,6 +295,11 @@ slot_stop(struct t150_session *s, uint8_t slot)
 	 */
 	sl->dirty = 0;
 	sl->stop_owed = r != 0;
+	/*
+	 * And the next start on this slot is a new event worth a line,
+	 * whichever release path this was.
+	 */
+	sl->start_said = 0;
 
 	return r;
 }
@@ -665,7 +670,7 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 	struct t150_slot *sl;
 	struct t150_wire sent[3];
 	uint64_t started_ms;
-	uint8_t want, was_playing, was_ramp, was_owed, iterations;
+	uint8_t want, was_playing, was_ramp, was_owed, was_said, iterations;
 
 	if (len < T150_PROTO_EFFECT_LEN ||
 	    t150_proto_unpack_effect(payload, len, &ef) != 0) {
@@ -738,6 +743,15 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 	 */
 	was_owed = sl->used ? sl->stop_owed : 0;
 	/*
+	 * And what the log has already said about starting this slot, for the
+	 * same reason those survive: a game animating a force re-uploads it
+	 * and starts it again on every frame, and losing the record here would
+	 * put a started line behind every one of them. A slot being loaded
+	 * from empty keeps nothing, which is what lets a start refused after a
+	 * reset be said again the next time that window opens.
+	 */
+	was_said = sl->used ? sl->start_said : 0;
+	/*
 	 * What the wheel already holds has to survive this, or every upload
 	 * would look like the first one and the comparison in flush_slot
 	 * would never match. It is the one field here that describes the
@@ -748,6 +762,7 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 	memset(sl, 0, sizeof(*sl));
 	sl->playing = was_playing;
 	sl->stop_owed = was_owed;
+	sl->start_said = was_said;
 	sl->started_ms = started_ms;
 	sl->iterations = iterations;
 	memcpy(sl->sent, sent, sizeof(sl->sent));
@@ -871,6 +886,51 @@ do_upload(struct t150_session *s, const uint8_t *payload, size_t len,
 	reply_ok(rep);
 }
 
+/*
+ * A start the wheel took, said the first time the answer is that one.
+ *
+ * do_start is a hot path: Assetto Corsa starts an already playing slot on
+ * every frame, so a line per call would be several hundred a second, and a
+ * wheel that has gone refuses just as many. The latch is what keeps both
+ * answers to one line each, and the record moves whether or not anything is
+ * being logged, because a slot's state must not depend on a command line
+ * option.
+ *
+ * The tail is for the caller that is saying this on the game's behalf rather
+ * than at its request.
+ */
+static void
+start_taken(struct t150_session *s, uint8_t slot, const char *how)
+{
+	struct t150_slot *sl = &s->slots[slot];
+
+	if (sl->start_said & T150_SAID_STARTED)
+		return;
+	sl->start_said |= T150_SAID_STARTED;
+	if (s->verbose)
+		fprintf(stderr, "t150d: slot %u %s started%s\n", slot,
+		    kind_name(sl->ef.kind), how);
+}
+
+/*
+ * And the other answer. Which of the two writes a start takes went wrong, the
+ * parameters that have to land before it or the play packet itself, is the
+ * backend's line to give: what a reader needs here is that the force the game
+ * believes is running is not on the wheel.
+ */
+static void
+start_refused(struct t150_session *s, uint8_t slot)
+{
+	struct t150_slot *sl = &s->slots[slot];
+
+	if (sl->start_said & T150_SAID_REFUSED)
+		return;
+	sl->start_said |= T150_SAID_REFUSED;
+	if (s->verbose)
+		fprintf(stderr, "t150d: slot %u %s could not be started: the "
+		    "write failed\n", slot, kind_name(sl->ef.kind));
+}
+
 static void
 do_start(struct t150_session *s, const uint8_t *payload, size_t len,
     uint64_t now_ms, struct t150_reply *rep)
@@ -941,6 +1001,7 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 	if (flush_slot(s, sl) < 0) {
 		/* Reported here, so the next upload does not repeat it. */
 		s->io_err = 0;
+		start_refused(s, payload[0]);
 		reply_err(rep, T150_ERR_DEVICE_IO);
 		return;
 	}
@@ -958,18 +1019,6 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 	 * is that failure: two refused starts, then a game that carried on
 	 * happily and was never told anything was wrong.
 	 */
-	/*
-	 * Said once, when the slot actually changes state. Assetto Corsa
-	 * starts an already playing slot on every frame, so logging the call
-	 * rather than the transition would put 333 lines a second into a
-	 * report. What a reader needs is whether a slot was ever started at
-	 * all: an effect uploaded and never started renders nothing, and
-	 * nothing here could tell that apart from one that plays badly.
-	 */
-	if (s->verbose && !sl->playing)
-		fprintf(stderr, "t150d: slot %u %s started\n", payload[0],
-		    kind_name(sl->ef.kind));
-
 	sl->playing = 1;
 	/*
 	 * A start also settles any stop still owed on this slot. Both flags say
@@ -985,9 +1034,22 @@ do_start(struct t150_session *s, const uint8_t *payload, size_t len,
 	sl->started_ms = now_ms;
 
 	if (control(s, payload[0], 1, payload[1]) != 0) {
+		start_refused(s, payload[0]);
 		reply_err(rep, T150_ERR_DEVICE_IO);
 		return;
 	}
+
+	/*
+	 * Said after the write rather than before it. This printed above, so a
+	 * start the wheel never received still put "started" in the log, and
+	 * that is the one line a report of this class leans on hardest: what a
+	 * reader wants from it is whether a slot was ever started at all,
+	 * because an effect uploaded and never started renders nothing and
+	 * looks from here exactly like one the wheel ignores. The intent still
+	 * goes down before the write, for the reason given above it. Only what
+	 * the log claims has moved.
+	 */
+	start_taken(s, payload[0], "");
 
 	reply_ok(rep);
 }
@@ -1385,6 +1447,12 @@ session_forget_wheel(struct t150_session *s)
 
 	for (i = 0; i < T150_SLOT_MAX; i++) {
 		memset(s->slots[i].sent, 0, sizeof(s->slots[i].sent));
+		/*
+		 * And what the log has said about starting the slot, because
+		 * it was said about a wheel that is no longer there. The
+		 * replay has to be able to say the force came back.
+		 */
+		s->slots[i].start_said = 0;
 		/*
 		 * Only a slot that holds something to teach. A slot inherited
 		 * from a displaced session carries nothing but that session's

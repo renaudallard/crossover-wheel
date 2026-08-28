@@ -297,9 +297,10 @@ call: a game may start an already playing slot on every frame, and Assetto
 Corsa does, so a line per call would be several hundred a second. The question
 this answers is whether a slot was ever started at all, because an effect that
 is uploaded and never started renders nothing and looks from here exactly like
-one the wheel ignores. The stop is said after the write and says which way it
-went, because a wheel left holding a force is the worst thing this daemon can
-do and a stop it would not take used to read exactly like one that landed.
+one the wheel ignores. Both lines are said after the write and say which way it
+went, so neither can stand in a report as evidence for something that never
+left the daemon: a start the wheel would not take says the write failed, and
+the next one it does take says the slot started.
 .Pp
 A safe state names each playing slot it stopped, and says it after the writer's
 queue has drained rather than when the packet was handed over, so a stop that

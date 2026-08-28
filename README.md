@@ -887,7 +887,10 @@ A slot that starts or stops says so too, **once per transition rather than
 once per call**, because a game may start an already playing slot on every
 frame and Assetto Corsa does. What that answers is whether a slot was ever
 started at all: an effect uploaded and never started renders nothing, and from
-the daemon's side that looks exactly like one the wheel ignores. The watchdog
+the daemon's side that looks exactly like one the wheel ignores. Both lines are
+said after the write and say which way it went, so neither can stand in a
+report as evidence for something that never left the daemon, and every release
+says which slots it took rather than only the game's own stop. The watchdog
 carries the silence it measured with it, in milliseconds, which is the only
 duration anywhere in an untimestamped log: half a second is a game that
 hitched over a track load and five seconds is a game or a socket that stopped.
