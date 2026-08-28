@@ -34,7 +34,8 @@ struct effect_obj {
 	 *
 	 * Sent by the first upload that reaches the daemon, if the game makes
 	 * one, and dropped by everything that means the game no longer wants
-	 * it: a stop, an unload, a device reset and a pause. How many passes
+	 * it: a stop, an unload, a device reset, a stop-everything and a
+	 * pause. How many passes
 	 * it is worth is in iterations below, which start_effect records
 	 * before anything can fail for exactly this reason.
 	 *
@@ -268,10 +269,10 @@ t150_effect_all_paused(void)
 		/*
 		 * A start that never reached the wheel is not the continue's
 		 * to put back: only what was really playing is. Before the
-		 * test below rather than after it, because an effect holding a
-		 * debt is not playing by construction and would otherwise keep
-		 * it across the pause and have the next upload start a force
-		 * on a wheel the game has just quietened.
+		 * test below rather than after it, because a start the wheel
+		 * never heard is not playing and would otherwise keep its debt
+		 * across the pause and have the next upload start a force on a
+		 * wheel the game has just quietened.
 		 */
 		(void)InterlockedExchange(&e->start_owed, 0);
 		if (!e->playing)
@@ -661,7 +662,7 @@ upload(struct effect_obj *e)
 {
 	uint8_t buf[T150_PROTO_EFFECT_LEN];
 	unsigned int gen;
-	LONG ugen;
+	LONG ugen, owed;
 	int up;
 
 	if (t150_proto_pack_effect(buf, sizeof(buf), &e->ef) == 0)
@@ -694,8 +695,9 @@ upload(struct effect_obj *e)
 	 * carries padding and the inactive tail of a union, neither of which
 	 * is a difference the wheel could tell.
 	 *
-	 * Skipping is only sound while nothing can have emptied the daemon's
-	 * slot behind us, and there are four ways that happens:
+	 * Skipping is only sound while the daemon's slot still holds what this
+	 * object last sent and owes it nothing, and there are five ways that
+	 * stops being true:
 	 *
 	 * - The connection went. t150_client_call is what reconnects, so
 	 *   skipping it while the socket is down would leave a game that keeps
@@ -704,12 +706,12 @@ upload(struct effect_obj *e)
 	 *   reconnect reachable.
 	 * - The daemon was restarted. That is the generation, and the block
 	 *   below already exists to say the effect again over a new one.
- * - A start the game asked for has not reached the daemon. That is the debt
- *   below, which this function is the only thing that pays, so an upload
- *   carrying one must not be skipped. Every path that leaves a debt behind has
- *   just had a call refused and so has cleared the acknowledgement as well,
- *   but one load here is worth more than an argument that has to be
- *   re-derived every time this list is read.
+	 * - A start the game asked for has not reached the daemon. That is the
+	 *   debt below, which this function is the only thing that pays, so an
+	 *   upload carrying one must not be skipped. Every path that leaves a
+	 *   debt behind has just had a call refused and so has cleared the
+	 *   acknowledgement as well, but one load here is worth more than an
+	 *   argument that has to be re-derived every time this list is read.
 	 * - The game reset the device, which releases every slot without
 	 *   naming one. That is the unload counter above, which
 	 *   t150_effect_all_unloaded moves.
@@ -768,21 +770,13 @@ upload(struct effect_obj *e)
 			t150_log("the daemon is a new one, starting slot %d "
 			    "again\n", e->slot);
 			/*
-			 * Through the one place that starts a slot, and the
-			 * one place that is right about what a refusal means.
-			 * This built its own payload and threw the answer
-			 * away, so a start a new daemon had refused was
-			 * reported to the game as a running effect, and every
-			 * later Download was skipped against a slot that held
-			 * nothing.
-			 */
-			/*
-			 * Owed rather than sent from here, because the line
-			 * above is the one that logs it and the payment
-			 * belongs with every other one. This built its own
-			 * payload and threw the answer away, so a start a new
-			 * daemon had refused was reported to the game as a
-			 * running effect.
+			 * Owed rather than sent from here, so it goes out
+			 * through the one place that starts a slot and the one
+			 * place that is right about what a refusal means. This
+			 * built its own payload and threw the answer away, so
+			 * a start a new daemon had refused was reported to the
+			 * game as a running effect, and every later Download
+			 * was skipped against a slot that held nothing.
 			 */
 			(void)InterlockedExchange(&e->start_owed, 1);
 		}
@@ -795,10 +789,18 @@ upload(struct effect_obj *e)
 	 * the reconnect above has just raised is folded into one already
 	 * outstanding rather than sent twice.
 	 *
-	 * Not owed again if it fails. The game was told DIERR_NOTDOWNLOADED
-	 * when it asked, GetEffectStatus answers that the effect is not
-	 * playing, and a debt that renewed itself would put a start on every
-	 * upload for as long as the wheel refused them.
+	 * Owed again if it fails, because for two of the three debts this is
+	 * the only thing that will ever say the start. start_effect's has the
+	 * game behind it, which was told DIERR_NOTDOWNLOADED and may ask
+	 * again; the reconnect replay above and the continue were both
+	 * answered DI_OK and have no second asker, and the replay cannot raise
+	 * it a second time because send_start has just cleared the playing
+	 * flag it tests. Cleared on the way out and put back, so a Stop
+	 * landing during the call still takes it.
+	 *
+	 * Nothing spins against a dead socket: an upload that cannot reach the
+	 * daemon has already returned -1 above, and start_effect clears any
+	 * older debt before its own upload.
 	 *
 	 * Dropping the answer here is not the mistake the replay above made
 	 * with it. send_start has already recorded what a refusal means, and a
@@ -807,8 +809,9 @@ upload(struct effect_obj *e)
 	 * answer DIERR_NOTDOWNLOADED to a Download that really did download,
 	 * and the game's answer to that is to call Download again.
 	 */
-	if (InterlockedExchange(&e->start_owed, 0) != 0)
-		(void)send_start(e);
+	owed = InterlockedExchange(&e->start_owed, 0);
+	if (owed != 0 && send_start(e) != 0)
+		(void)InterlockedExchange(&e->start_owed, owed);
 
 	return 0;
 }
