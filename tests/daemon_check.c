@@ -3185,6 +3185,52 @@ test_the_watchdog_says_how_long_and_what_it_took(void)
 		fail("the safe state says how long the client was quiet");
 }
 
+/*
+ * A stop the wheel would not take used to read exactly like one that landed,
+ * because the line went out before the write. A wheel left holding a force is
+ * the worst thing this daemon can do, so that is the one line that has to be
+ * earned rather than announced.
+ */
+static void
+test_a_stop_the_wheel_refused_is_not_logged_as_a_stop(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	uint8_t arg[2] = { 0, 1 };
+	struct t150_effect ef;
+	char out[4096];
+
+	reset_session();
+	hello(0);
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_CONSTANT;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.constant.magnitude = 10000;
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+	frame(T150_OP_EFFECT_START, arg, 2, 100, T150_OP_OK, T150_ERR_NONE);
+
+	if (capture_start() != 0)
+		return;
+
+	write_fails = 1;
+	frame(T150_OP_EFFECT_STOP, arg, 1, 110, T150_OP_ERROR,
+	    T150_ERR_DEVICE_IO);
+	frame(T150_OP_EFFECT_STOP, arg, 1, 111, T150_OP_ERROR,
+	    T150_ERR_DEVICE_IO);
+	write_fails = 0;
+
+	capture_end(out, sizeof(out));
+
+	if (count_substr(out,
+	    "slot 0 constant could not be stopped: the write failed") != 1)
+		fail("a refused stop says the write failed, once");
+	if (count_substr(out, "slot 0 constant stopped") != 0)
+		fail("and is never logged as a stop that landed");
+}
+
 
 int
 main(void)
@@ -3251,6 +3297,7 @@ main(void)
 	test_the_parameter_log_names_the_condition();
 	test_start_and_stop_are_logged_once_per_transition();
 	test_the_watchdog_says_how_long_and_what_it_took();
+	test_a_stop_the_wheel_refused_is_not_logged_as_a_stop();
 	test_hello_states_the_settings();
 	test_only_the_packet_that_moved_is_sent();
 	test_an_idle_writer_emits_ahead_of_the_floor();

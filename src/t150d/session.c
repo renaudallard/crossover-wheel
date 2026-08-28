@@ -964,6 +964,7 @@ do_stop(struct t150_session *s, const uint8_t *payload, size_t len, int destroy,
     struct t150_reply *rep)
 {
 	struct t150_slot *sl;
+	uint8_t was_playing;
 
 	if (len < 1) {
 		reply_err(rep, T150_ERR_BAD_FRAME);
@@ -975,16 +976,31 @@ do_stop(struct t150_session *s, const uint8_t *payload, size_t len, int destroy,
 	}
 
 	sl = &s->slots[payload[0]];
+	was_playing = sl->playing;
 
-	/* The transition only, for the reason do_start says. */
-	if (s->verbose && sl->playing)
-		fprintf(stderr, "t150d: slot %u %s stopped\n", payload[0],
-		    kind_name(sl->ef.kind));
-
+	/*
+	 * Said after the write and saying which way it went. This announced
+	 * the stop first, so a stop the wheel would not take read exactly
+	 * like one that landed, and a wheel left holding a force is the worst
+	 * thing this daemon can do: that is the one case where the log has to
+	 * be right.
+	 *
+	 * The transition only, for the reason do_start says. A second stop of
+	 * the same slot finds it already stopped and says nothing, which is
+	 * something games do.
+	 */
 	if (slot_stop(s, payload[0]) != 0) {
+		if (s->verbose && was_playing)
+			fprintf(stderr, "t150d: slot %u %s could not be "
+			    "stopped: the write failed\n", payload[0],
+			    kind_name(sl->ef.kind));
 		reply_err(rep, T150_ERR_DEVICE_IO);
 		return;
 	}
+
+	if (s->verbose && was_playing)
+		fprintf(stderr, "t150d: slot %u %s stopped\n", payload[0],
+		    kind_name(sl->ef.kind));
 
 	if (destroy)
 		memset(sl, 0, sizeof(*sl));
