@@ -746,6 +746,13 @@ this, a restarted `t150d` cost the game its force feedback until the game was
 restarted too, because nothing reachable from a device the game already holds
 ever reconnected.
 
+**And when the re-start itself is refused, the game is told.** The replay used
+to throw that answer away and report success, so an effect the new daemon had
+never been told to play was reported as playing and every later Download was
+skipped against a slot that held nothing. A refusal now clears what the skip
+compares against, and every start in the proxy goes through the one place that
+knows what a refusal means.
+
 **A client taking the wheel sets its device gain to full.** The wheel keeps a
 gain of its own, nothing here ever set it, and so every force was scaled by
 whatever the wheel powered up with or whatever the last process left behind.

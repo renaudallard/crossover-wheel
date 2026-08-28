@@ -253,6 +253,53 @@ t150_effect_all_paused(void)
 	LeaveCriticalSection(&registry);
 }
 
+/*
+ * Tell the daemon to play this slot, and keep this object's idea of what is
+ * playing in step with the answer.
+ *
+ * Four places built this payload and each decided for itself what a refusal
+ * meant, and they did not agree. The reconnect replay in upload() threw the
+ * answer away altogether and left the object certain it was playing, which is
+ * the one thing a refusal proves it is not.
+ *
+ * The daemon either refused the slot or never heard the frame, and
+ * t150_client_call does not distinguish the two. Both mean the wheel is not
+ * rendering it, so playing goes back to zero and what upload() believes the
+ * daemon holds is no longer safe to skip against.
+ *
+ * The count comes off the object rather than from a parameter, because the one
+ * caller that has it from the game records it before anything can fail and the
+ * other two are saying a start again on the game's behalf.
+ */
+static int
+send_start(struct effect_obj *e)
+{
+	uint8_t start[2];
+
+	if (e->iterations == 0)
+		e->iterations = 1;
+	start[0] = (uint8_t)e->slot;
+	start[1] = e->iterations;
+
+	if (t150_client_call(T150_OP_EFFECT_START, start, 2) != 0) {
+		e->playing = 0;
+		e->sent_valid = 0;
+		return -1;
+	}
+
+	e->playing = 1;
+	/*
+	 * The clock goes with it. The wheel plays a resumed effect from its
+	 * beginning, which is what the daemon's own do_start does to the slot,
+	 * so a finite effect's window has to be measured from here. Measured
+	 * from the original start, GetEffectStatus declared a resumed effect
+	 * finished the moment it came back.
+	 */
+	e->started_ms = GetTickCount64();
+
+	return 0;
+}
+
 void
 t150_effect_all_continued(void)
 {
@@ -263,7 +310,6 @@ t150_effect_all_continued(void)
 
 	for (i = 0; i < n; i++) {
 		struct effect_obj *e = seen[i];
-		uint8_t start[2];
 
 		if (!e->paused) {
 			IDirectInputEffect_Release(&e->iface);
@@ -278,12 +324,7 @@ t150_effect_all_continued(void)
 		 * slot after all, and clearing sent_valid is what lets the
 		 * game's own Download go rather than being skipped.
 		 */
-		start[0] = (uint8_t)e->slot;
-		start[1] = e->iterations > 0 ? e->iterations : 1;
-		if (t150_client_call(T150_OP_EFFECT_START, start, 2) == 0)
-			e->playing = 1;
-		else
-			e->sent_valid = 0;
+		(void)send_start(e);
 
 		IDirectInputEffect_Release(&e->iface);
 	}
@@ -676,12 +717,18 @@ upload(struct effect_obj *e)
 		 */
 		t150_device_replay_props(e->dev);
 		if (e->playing) {
-			uint8_t start[2] = { (uint8_t)e->slot,
-			    e->iterations > 0 ? e->iterations : 1 };
-
 			t150_log("the daemon is a new one, starting slot %d "
 			    "again\n", e->slot);
-			(void)t150_client_call(T150_OP_EFFECT_START, start, 2);
+			/*
+			 * Through the one place that starts a slot, and the
+			 * one place that is right about what a refusal means.
+			 * This built its own payload and threw the answer
+			 * away, so a start a new daemon had refused was
+			 * reported to the game as a running effect, and every
+			 * later Download was skipped against a slot that held
+			 * nothing.
+			 */
+			(void)send_start(e);
 		}
 	}
 
@@ -910,15 +957,9 @@ eff_SetParameters(IDirectInputEffect *self, const DIEFFECT *p, DWORD flags)
 		return DIERR_NOTDOWNLOADED;
 
 	if (flags & DIEP_START) {
-		uint8_t start[2] = { (uint8_t)e->slot, 1 };
-
-		if (t150_client_call(T150_OP_EFFECT_START, start, 2) != 0) {
-			e->sent_valid = 0;
-			return DIERR_NOTDOWNLOADED;
-		}
-		e->playing = 1;
 		e->iterations = 1;	/* DIEP_START is one pass of it */
-		e->started_ms = GetTickCount64();
+		if (send_start(e) != 0)
+			return DIERR_NOTDOWNLOADED;
 	}
 
 	return DI_OK;
@@ -928,7 +969,6 @@ static HRESULT WINAPI
 eff_Start(IDirectInputEffect *self, DWORD iterations, DWORD flags)
 {
 	struct effect_obj *e = from_iface(self);
-	uint8_t start[2];
 
 	/*
 	 * Start downloads the effect first unless the caller says not to,
@@ -957,25 +997,18 @@ eff_Start(IDirectInputEffect *self, DWORD iterations, DWORD flags)
 		    (unsigned long)iterations);
 	}
 
-	start[0] = (uint8_t)e->slot;
-	start[1] = iterations >= 255 ? 255 : (uint8_t)iterations;
-	if (start[1] == 0)
-		start[1] = 1;
-	e->iterations = start[1];
+	e->iterations = iterations >= 255 ? 255 : (uint8_t)iterations;
 
 	/*
 	 * A refused start is the daemon saying it does not hold this slot, so
-	 * whatever upload() believes it has is wrong. Clearing that is what
-	 * makes the answer below mean anything: DIERR_NOTDOWNLOADED invites
-	 * the game to call Download, and Download is upload(), which would
-	 * otherwise skip and report DI_OK without having said a word.
+	 * whatever upload() believes it has is wrong. send_start clears that,
+	 * which is what makes the answer below mean anything:
+	 * DIERR_NOTDOWNLOADED invites the game to call Download, and Download
+	 * is upload(), which would otherwise skip and report DI_OK without
+	 * having said a word.
 	 */
-	if (t150_client_call(T150_OP_EFFECT_START, start, 2) != 0) {
-		e->sent_valid = 0;
+	if (send_start(e) != 0)
 		return DIERR_NOTDOWNLOADED;
-	}
-	e->playing = 1;
-	e->started_ms = GetTickCount64();
 
 	return DI_OK;
 }
