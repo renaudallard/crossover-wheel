@@ -1899,19 +1899,46 @@ for a constant on slot 2 with magnitudes to plus and minus 10000, and not one
 In the daemon that produced this log the started line was printed above the
 write, on the transition, and `sl->playing` was set one line below it, so the
 absence is real rather than a gap in the logging. Both of those moved after
-this report; the reasoning below is about the daemon that wrote the log. An effect that is uploaded and never played renders
-nothing: play is a separate control packet, and the vendor's own `spring0`
-capture commits nine effects into nine slots and sends exactly one play packet,
-which would be absurd if committing were enough. So the wheel rendered nothing
-but the damper on slot 1 for the whole session, including the sixty-five
-seconds of real driving, and the report's "stopped" is not the moment anything
-changed on slot 2.
+this report; the reasoning below is about the daemon that wrote the log.
+
+An effect that is uploaded and never played renders nothing: play is a separate
+control packet, and the vendor's own `spring0` capture commits nine effects
+into nine slots and sends exactly one play packet, which would be absurd if
+committing were enough. So no road force reached the wheel at any point, and
+the report's "stopped" is not the moment anything changed on slot 2.
+
+**What the wheel actually rendered is not known, and an earlier draft of this
+entry got that wrong.** It said the wheel rendered the damper on slot 1 for the
+whole session. That does not follow, and it contradicts the paragraph above it:
+in the daemon that wrote this log the `started` line was printed above the
+write that carries the play packet, so those seven lines record intent and not
+delivery. A play the writer's queue refused printed exactly the same line and
+nothing else, and this log ends mid-session, so the queue's own tally never
+ran. Absence of the line is evidence, presence of it is not, and the entry used
+the same lines to both standards. Nothing in a daemon log can say what the
+wheel did, because the daemon never reads anything back from it.
+
+**The damper's duty cycle was small in any case.** Its transitions bound it to
+between fourteen and twenty-three seconds of the sixty-five in which the game
+asked for any force, in one eleven second block and four blips under three
+seconds each. A damper resists velocity and not displacement, so it produces no
+torque at all on a wheel being held still.
 
 **The watchdog fired once, about seventy-two seconds in, and it is not the
 cause.** It cleared every slot with the connection still up, which silently
-unplayed the damper; the game started that again twenty-two seconds later,
+un-played the damper; the game started that again twenty-two seconds later,
 which is why the log has two "damper started" lines with nothing between them.
 Slot 2 had no start to lose.
+
+**The tester was asked what it felt like and answered "no force feedback at all
+on the wheel, it was free", 2026-08-29.** That is what this reading predicts
+rather than evidence against it: the daemon releases the wheel's own centring
+spring on every acquire (hid_darwin.c, "a wheel this daemon holds should be
+limp rather than fighting whoever turns it"), so with no road force the wheel
+has nothing centring it and nothing pushing it. It does not distinguish a wheel
+that rendered a damper in bursts from one that rendered nothing at all, and a
+prediction made here that he would report a heavy or damped wheel was made
+without reading that first log line.
 
 **Why no start arrived cannot be answered from a daemon log, and that is the
 finding.** Three explanations survive and they are byte for byte identical from
@@ -1926,7 +1953,12 @@ this side:
 
 `do_start` printed nothing on either refusal, `do_reset` printed nothing at
 all, and a dropped packet sets `io_err` in silence, so none of them could be
-told from the others. The third was a real defect and is fixed, which removes
+told from the others. `do_setting` printed on no path either, which matters
+more than it looks: a game that sets `DIPROP_FFGAIN` to zero silences every
+force the wheel renders and leaves a log character for character identical to a
+healthy one. A22 records that a gain of zero has never been tested against an
+effect that was actually rendering, so that it silences everything is expected
+rather than measured. The third was a real defect and is fixed, which removes
 it from any future report but not from this one, since the proxy in that bottle
 is not identified by anything on the wire.
 
