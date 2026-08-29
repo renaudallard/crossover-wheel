@@ -1168,11 +1168,28 @@ do_setting(struct t150_session *s, uint8_t op, const uint8_t *payload,
 			reply_err(rep, T150_ERR_DEVICE_IO);
 			return;
 		}
+		v = v > (uint32_t)T150_DI_MAX ? (uint32_t)T150_DI_MAX : v;
+		/*
+		 * Said, because this is the one thing a game can do that
+		 * silences every force on the wheel while leaving a log that
+		 * looks perfectly healthy. Gain scales everything the wheel
+		 * renders, so a game that sets it to zero leaves effects
+		 * uploaded, started and answered, and a wheel that does
+		 * nothing. A whole hardware report was read without knowing
+		 * whether that had happened.
+		 *
+		 * Only when it moves. A game is free to set the same gain on
+		 * every frame, and the value the session already holds is what
+		 * says whether this one is news.
+		 */
+		if (s->verbose && s->gain != v)
+			fprintf(stderr, "t150d: the game set the device gain "
+			    "to %u of %u\n", v, (unsigned int)T150_DI_MAX);
 		/*
 		 * Remembered, because the wheel forgets it and nothing else
 		 * can put it back. See session_apply_settings.
 		 */
-		s->gain = v > (uint32_t)T150_DI_MAX ? (uint32_t)T150_DI_MAX : v;
+		s->gain = v;
 		break;
 	case T150_OP_SET_RANGE:
 		n = t150_enc_range(pkt, sizeof(pkt), (unsigned int)v);
@@ -1188,6 +1205,10 @@ do_setting(struct t150_session *s, uint8_t op, const uint8_t *payload,
 		 * range, but the op exists and dropping what it carried made it
 		 * the one device setting a re-acquire did not put back.
 		 */
+		/* Said when it moves, for the reason the gain above gives. */
+		if (s->verbose && s->range_deg != (unsigned int)v)
+			fprintf(stderr, "t150d: the game set the rotation "
+			    "range to %u degrees\n", (unsigned int)v);
 		s->range_deg = (unsigned int)v;
 		break;
 	case T150_OP_SET_AUTOCENTER:
@@ -1207,9 +1228,25 @@ do_setting(struct t150_session *s, uint8_t op, const uint8_t *payload,
 			reply_err(rep, T150_ERR_DEVICE_IO);
 			return;
 		}
+		v = v > (uint32_t)T150_DI_MAX ? (uint32_t)T150_DI_MAX : v;
+		/*
+		 * Said when it moves, and said the first time whatever it is,
+		 * because a game taking the spring over is worth a line even
+		 * when it asks for the value the daemon had already left
+		 * there.
+		 */
+		if (s->verbose && (!s->client_set_autocenter ||
+		    s->client_autocenter != v)) {
+			if (v == 0)
+				fprintf(stderr, "t150d: the game released the "
+				    "wheel's centring spring\n");
+			else
+				fprintf(stderr, "t150d: the game set the "
+				    "wheel's centring spring to %u of %u\n", v,
+				    (unsigned int)T150_DI_MAX);
+		}
 		/* Remembered, so a re-acquired wheel gets it back. */
-		s->client_autocenter = v > (uint32_t)T150_DI_MAX ?
-		    (uint32_t)T150_DI_MAX : v;
+		s->client_autocenter = v;
 		s->client_set_autocenter = 1;
 		break;
 	default:

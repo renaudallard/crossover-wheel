@@ -326,7 +326,11 @@ those lines a slot silently lost its start in the middle of a session and the
 only trace was the same slot being started twice with nothing between. A reset
 says how many loaded effects it released and a stop-everything how many were
 playing; both are silent when there was nothing to take, which is what keeps a
-game that sends either of them often off the terminal.
+game that sends either of them often off the terminal. A game that changes the
+device gain, the rotation range or its own centring spring says so when the
+value moves. The gain is the one that matters most: it scales everything the
+wheel renders, so a game that sets it to zero leaves effects uploaded, started
+and answered, and a wheel that does nothing.
 .Pp
 The watchdog carries the silence it measured, in milliseconds, because nothing
 in this log is timestamped and that is the only duration in it. It is the

@@ -3508,6 +3508,41 @@ test_a_start_on_an_inherited_slot_is_not_a_failed_write(void)
 }
 
 /*
+ * A game setting its device gain to zero silences every force on the wheel and
+ * left a log that looked perfectly healthy: effects uploaded, started and
+ * answered, and a wheel doing nothing. do_setting printed on no path at all,
+ * and a whole hardware report was read without knowing whether that had
+ * happened.
+ */
+static void
+test_the_game_setting_its_gain_says_so_when_it_moves(void)
+{
+	uint8_t arg[4] = { 0, 0, 0, 0 };
+	char out[4096];
+
+	reset_session();
+	hello(0);
+
+	if (capture_start() != 0)
+		return;
+
+	/* Off, which is the case that matters, then the same again. */
+	frame(T150_OP_SET_GAIN, arg, 4, 10, T150_OP_OK, T150_ERR_NONE);
+	frame(T150_OP_SET_GAIN, arg, 4, 11, T150_OP_OK, T150_ERR_NONE);
+	/* And back up, which is news again. */
+	arg[0] = (uint8_t)(T150_DI_MAX & 0xff);
+	arg[1] = (uint8_t)((T150_DI_MAX >> 8) & 0xff);
+	frame(T150_OP_SET_GAIN, arg, 4, 12, T150_OP_OK, T150_ERR_NONE);
+
+	capture_end(out, sizeof(out));
+
+	if (count_substr(out, "the game set the device gain to 0 of") != 1)
+		fail("a game setting its gain to zero says so once");
+	if (count_substr(out, "the game set the device gain to 10000 of") != 1)
+		fail("and putting it back is news again");
+}
+
+/*
  * The replay announced the start and then discarded the wheel's answer, so a
  * replay the wheel refused was reported as a force that had come back, and it
  * said so again on every tick for as long as it kept failing. It was the one
@@ -3631,6 +3666,7 @@ main(void)
 	test_a_re_upload_does_not_repeat_the_start_line();
 	test_a_start_with_nothing_uploaded_says_so_once();
 	test_a_start_on_an_inherited_slot_is_not_a_failed_write();
+	test_the_game_setting_its_gain_says_so_when_it_moves();
 	test_the_replay_does_not_announce_a_start_the_wheel_refused();
 	test_hello_states_the_settings();
 	test_only_the_packet_that_moved_is_sent();

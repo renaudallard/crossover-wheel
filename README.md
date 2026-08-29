@@ -920,7 +920,9 @@ uploaded all session and never played, and the log could not say whether the
 game never asked or whether it asked and was refused for a slot the daemon no
 longer held. The two were byte for byte identical from here. A refusal now
 names the slot and the reason, once for each answer rather than once per call,
-so the next report of that shape carries the half the daemon can see. See
+so the next report of that shape carries the half the daemon can see. So does a
+game changing the device gain, which is the one call that silences every force
+on the wheel while leaving a log that looks perfectly healthy. See
 [`docs/RESEARCH.md`](docs/RESEARCH.md) A52. The watchdog
 carries the silence it measured with it, in milliseconds, which is the only
 duration anywhere in an untimestamped log. It separates a game that hitched
