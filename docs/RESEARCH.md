@@ -1967,6 +1967,113 @@ separates the first from the third is the proxy's own log, which needs
 `T150_LOG` in the bottle's environment with a `Z:` path (see A48) and which
 nothing shipped can turn on.
 
+**A53. The wheel latches the last force it was given, and in the Assetto Corsa
+Competizione report the force feedback does not come back. proto.h predicted the
+latch.** Reported on hardware 2026-08-30, after being asked what the failure felt
+like: playing Assetto Corsa Competizione for a long time, "at one point the wheel
+applies a lot of force to one side and then suddenly there is no FFB, even when I
+restart the Crossover Wheel app and the daemon". Separately, in an online session
+of the first Assetto Corsa through Content Manager, after qualifying and at the
+start of the race "the wheel turned to the maximum left or right (I don't know
+which) and forced to stay in that position", and only disconnecting and
+reconnecting to the server fixed it. The second recovered inside the process; only
+the first says the force feedback stays gone.
+
+**Whether A52's log is the aftermath of this cannot be decided from the port
+numbers, and an earlier draft of this entry said it could.** The daemon binds
+`sin_port = 0`, so both ports come from one ephemeral sequence and the client's is
+always the higher. That draft read the gap of one in A52's log, 63343 against
+63344, as a proxy that was already running and waiting. The repo refutes it. A gap
+of one does appear where the client was already up, at
+`tmp/mail13/test37-t150.txt:174-176`, 55170 against 55171, where the daemon was
+restarted under a running game. But it also appears on a freshly launched client,
+at `tmp/t28/test28-t150.txt:726-728`, 56434 against 56435, against gaps of 8 to 75
+for his other launches. The gap counts ephemeral ports allocated in between, not
+time, and nothing constrains that to be large. It discriminates nothing.
+
+**The alternative that reading has to beat is A52's own third explanation**, a
+proxy that answered `DIERR_NOTDOWNLOADED` and never looked at `DIEP_START`. That
+defect was real, is fixed, and produces the same log in a session that started
+fresh. Two facts bound it. Slot 2 is never started anywhere in that log, including
+before the safe state at its line 83, so the log's silence on slot 2 is not caused
+by anything the log shows happening. And its safe state says `no frame within the
+watchdog`, the pre-v0.3.3 wording, so the daemon that wrote it was v0.3.2 or
+older: the daemon's version is legible from a log even though the proxy's is not.
+
+**The latch.** The daemon is edge driven: `flush_slot` writes only when the
+freshly encoded bytes differ from what the slot last put on the wire.
+`slot_expired` returns 0 outright for a duration of `T150_DURATION_INFINITE` or of
+0, and the tick's end of duration stop is gated on it, so a slot uploaded either
+way is never stopped there. A road force is taken to be uploaded that way, and
+that is the one unmeasured link in the chain: the daemon logs no duration and
+nothing here records what either game sends. A game that stops feeding its force
+feedback loop while its process stays alive therefore leaves the wheel rendering
+the last level it was given, with no timeout anywhere. At full scale that is a
+wheel driven to the end of its range and held there against whoever is holding it,
+which is the shape he describes; A49 records that the end of the range is itself a
+force rather than a stop.
+
+The watchdog does not end it, because the proxy's keepalive thread runs on a timer
+of its own and every frame it sends stamps `last_frame_ms`. **This is written down
+in advance**, above `T150_WATCHDOG_MS` in `include/t150/proto.h`: "A game whose
+logic thread deadlocks therefore keeps the watchdog fed for as long as the process
+is scheduled, and whatever force it had commanded stays on the wheel", closing
+with "pulling the plug on a hung game is what a person still has to do". The
+comment calls it a trade rather than an oversight and names the regression on the
+other side of it, a game holding one steady force and calling nothing otherwise.
+What he reports has the shape that comment predicted, which is the new fact. That
+either game's logic thread actually deadlocked is not established: he never
+reports the game freezing, and in the Content Manager case reconnecting to the
+server fixed it, which is a game that was still running.
+
+**The silence that follows.** Either the stall exceeds `T150_WATCHDOG_MS` and the
+safe state stops every slot and memsets the ones whose stop the wheel took,
+keeping `stop_owed` on the rest, which needs the keepalive to have stopped as well
+since it otherwise feeds the watchdog for the life of the process; or the game
+sends an Unacquire or `DISFFC_RESET`, which the proxy turns into `T150_OP_RESET`,
+or a `DISFFC_STOPALL`, or a `DISFFC_PAUSE` or `DISFFC_SETACTUATORSOFF`, which it
+turns into `T150_OP_STOP_ALL`. The first branch is not hypothetical on his
+hardware: A52's log has a safe state at its line 83, mid session with the
+connection still up, so his keepalive has already gone quiet for half a second at
+least once.
+
+**Why it does not come back.** Nothing tells the proxy that any of that happened:
+the daemon only ever answers a frame, and the one opcode that could carry it,
+`T150_OP_STATE` with its "wheel present, firmware mode, slot map" at proto.h:79,
+is declared and implemented in no `.c` file in the tree. The game keeps calling
+SetParameters, the proxy keeps uploading, `do_upload` re-creates the slot with
+`was_playing` read from a slot the safe state had already memset, and the
+emitter's re-play of a moved level is gated on `sl->playing`. So parameters flow
+for the rest of the session and no play packet is ever sent for that effect again:
+147 rate limited parameter lines for slot 2 and not one start on it, while slot
+1's damper is started seven times in the same log.
+
+**Which branch he hits is an inference, not a measurement, and it is testable.**
+The path that would repair this without the game asking again is the proxy's
+reconnect replay, gated on `e->playing`; the game calling Start itself repairs it
+too, which is what slot 1's damper does seven times in A52's own log. A watchdog
+fire leaves the flag set, so a daemon restart would have repaired it. A reset or a
+stop-all clears it in `t150_effect_all_stopped`, so nothing can. A pause clears it
+in `t150_effect_all_paused` instead and `t150_effect_all_continued` puts it back,
+so a pause whose continue never arrives is a third branch and the same test
+separates it. He reports that restarting the application and the daemon does not
+help, which points away from the watchdog. **But A51 already explains that same
+observation with no part of this**: a wheel that went back to the boot identity is
+a new device to a game that has bound one, and A51 says in terms that restarting
+the application is not enough and the game has to go too.
+
+**What v0.3.3 does and does not do for this.** It makes a start the proxy tried
+and failed to deliver self healing. It does nothing here, because the proxy never
+learns the effect was un-played and therefore never believes a start is owed. A
+daemon log covering a whole failure would settle the branch outright. That a safe
+state fired at all has been in the log since v0.3.0 and is in A52's own; v0.3.3
+added how long the client was quiet, which slots the safe state took, and the
+refusal line for a start on a slot holding nothing; v0.3.4 adds the line for a
+game setting its own device gain. All three are new relative to the log he has
+already sent. **Not known**: which proxy was in his bottle during either incident,
+since nothing on the wire names it and the proxy updates separately from the
+application.
+
 ---
 
 ## B. How CrossOver handles HID and force feedback
