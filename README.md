@@ -873,7 +873,14 @@ value per parameter and the one it never rendered could not be felt. A play and
 a stop for one slot are different parameters that never merge, and only the
 newest packet waiting for a given target is merged into, so a repeat cannot
 overtake something queued behind it: a stop, a play and a stop for one slot
-stay three packets in that order. `-v` prints the merged and refused counts on
+stay three packets in that order. Two packets are barriers as well, because
+they address a slot without sharing its parameters' keys: no parameter packet
+merges past a stop that is still waiting, and no commit passes the first and
+update it belongs behind. Without the first a level re-uploaded after a stop
+reached the wheel ahead of the stop, a kick in the new direction; without the
+second a redefinition's commit arrived before the packets that define it,
+which is a sequence no wheel has been seen receiving. A play is not a barrier,
+so a modulated constant still coalesces. `-v` prints the merged and refused counts on
 the way out, and after coalescing a refusal means the wheel stopped taking
 writes altogether. The first refusal is said when it happens too, because a log
 copied off a machine that is still running never reaches the line on the way

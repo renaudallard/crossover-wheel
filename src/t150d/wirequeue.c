@@ -88,6 +88,21 @@ target_len(uint8_t op)
 }
 
 /*
+ * Whether a packet carries effect parameters, which is every packet of an
+ * upload: ff_first and ff_update under any of their class bytes, and the
+ * commit. A control packet, a setting, the gain and the input are not. The
+ * condition class byte is one value for both ff_first and ff_update, so it
+ * is named once.
+ */
+static int
+is_parameter(uint8_t op)
+{
+	return op == T150_FF_FIRST_CONSTANT || op == T150_FF_FIRST_CONDITION ||
+	    op == T150_FF_UPDATE_CONSTANT || op == T150_FF_UPDATE_PERIODIC ||
+	    op == T150_FF_COMMIT_F0;
+}
+
+/*
  * Whether two packets are two states of one thing, which is a wider question
  * than same_parameter's. A play and a stop for one slot are different
  * parameters and the same target, and so are an autocenter enable and its
@@ -150,6 +165,10 @@ t150_wq_depth(const struct t150_wirequeue *q)
  * had stopped. A play and a stop are different parameters, so neither ever
  * swallowed the other, which is what made it look safe.
  *
+ * The search also stops at two packets that are not the same target at all:
+ * a waiting stop, and for a commit the first or update it belongs behind. See
+ * the loop for what each of those reordered.
+ *
  * Returns 0 whether the packet was appended or merged, and -1 when it could
  * not be taken: either it cannot be represented, or the queue is full. A
  * caller that is told 0 may record the packet as written; that is the whole
@@ -165,6 +184,40 @@ t150_wq_push(struct t150_wirequeue *q, const uint8_t *buf, size_t len)
 
 	for (i = q->head; i != q->tail; ) {
 		struct t150_wire *w = &q->ring[--i % T150_WQ_MAX];
+
+		/*
+		 * Two things a merge must not pass, and same_target cannot
+		 * see either, because it keys on the parameter id and a stop
+		 * or a commit for the same slot carries a different one.
+		 *
+		 * A stop that is still waiting is a barrier for every
+		 * parameter packet behind it. A level uploaded after a stop
+		 * used to merge into the level before it, ahead of the stop,
+		 * so the wheel rendered the new level for as long as the queue
+		 * took to reach the stop: a full scale constant re-uploaded
+		 * the other way after a stop was a kick in that direction
+		 * first. Any slot's stop, not only this packet's, because the
+		 * slot of a parameter packet is only recoverable from its id
+		 * and this file does not know that arithmetic. Stops are
+		 * rare and levels are not, so the coalescing that matters is
+		 * untouched.
+		 *
+		 * And a commit never passes a first or an update. A game
+		 * redefining an effect while the writer still holds the
+		 * previous commit sends first, update and commit again, and
+		 * the commit merged into the old commit's place, ahead of the
+		 * two packets that define it: the wheel received the new
+		 * commit, then the play behind it, then a bare ff_first,
+		 * which flush_slot says is a sequence no wheel has been seen
+		 * receiving. Both rules are checked in tests/wirequeue_check.c
+		 * against the emitter's own sequences.
+		 */
+		if (is_parameter(buf[0]) && w->buf[0] == T150_FF_OP_CONTROL &&
+		    w->buf[2] == T150_FF_CTRL_STOP)
+			break;
+		if (buf[0] == T150_FF_COMMIT_F0 && is_parameter(w->buf[0]) &&
+		    w->buf[0] != T150_FF_COMMIT_F0)
+			break;
 
 		if (!same_target(w, buf, len))
 			continue;

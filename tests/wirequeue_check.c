@@ -209,6 +209,136 @@ test_a_merge_keeps_its_place_in_the_queue(void)
 	check_next("and the commit is still behind it", &q, "01 00 00");
 }
 
+/* The three packets of an upload for slot 0, as the encoders build them. */
+#define FIRST(q)	PUSH((q), 0x02, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, \
+			    0x00, 0x00)
+#define COMMIT(q, ms)	PUSH((q), 0x01, 0x00, 0x00, 0x40, (ms), 0x00, 0x00, \
+			    0x00, 0x00, 0x0e, 0x00, 0x1c, 0x00, 0x00, 0x00)
+
+/*
+ * A stop is a barrier for the parameters behind it. A level uploaded after a
+ * stop used to merge into the level before it, ahead of the stop, so the
+ * wheel rendered the new level for as long as the queue took to reach the
+ * stop: a constant re-uploaded the other way after a stop was a kick in that
+ * direction first. same_target could not see it, because a stop and a level
+ * for one slot carry different keys.
+ */
+static void
+test_a_level_after_a_stop_stays_behind_it(void)
+{
+	struct t150_wirequeue q;
+
+	t150_wq_init(&q);
+	UPDATE(&q, 0x40);
+	CONTROL_STOP(&q);
+	UPDATE(&q, 0xc0);			/* full scale the other way */
+
+	check_int("a level after a stop is its own packet",
+	    (long)t150_wq_depth(&q), 3);
+	check_next("the level before the stop goes first", &q, "03 0e 00 40");
+	check_next("then the stop", &q, "41 00 00 01");
+	check_next("and the new level only once the wheel has stopped", &q,
+	    "03 0e 00 c0");
+}
+
+/* And the barrier is a stop, not a play: a modulated constant still coalesces. */
+static void
+test_a_play_is_not_a_barrier(void)
+{
+	struct t150_wirequeue q;
+
+	t150_wq_init(&q);
+	UPDATE(&q, 0x10);
+	CONTROL_PLAY(&q);
+	UPDATE(&q, 0x20);
+	CONTROL_PLAY(&q);
+	UPDATE(&q, 0x30);
+	CONTROL_PLAY(&q);
+
+	check_int("three levels and their plays wait as two packets",
+	    (long)t150_wq_depth(&q), 2);
+	check_next("the newest level", &q, "03 0e 00 30");
+	check_next("and one play behind it", &q, "41 00 41 01");
+}
+
+/* Levels behind a stop still coalesce among themselves. */
+static void
+test_levels_behind_a_stop_still_coalesce(void)
+{
+	struct t150_wirequeue q;
+
+	t150_wq_init(&q);
+	CONTROL_STOP(&q);
+	UPDATE(&q, 0x10);
+	UPDATE(&q, 0x20);
+	UPDATE(&q, 0x30);
+
+	check_int("a stop and three levels wait as two packets",
+	    (long)t150_wq_depth(&q), 2);
+	check_next("the stop first", &q, "41 00 00 01");
+	check_next("then the newest level", &q, "03 0e 00 30");
+}
+
+/*
+ * A commit never overtakes the first and update it belongs behind. A game
+ * redefining an effect while the writer still holds the previous commit sends
+ * all three again, and the new commit merged into the old commit's place,
+ * ahead of the two packets that define it. The wheel got the new commit, the
+ * play behind it, and then a bare ff_first, which is a sequence no wheel has
+ * been seen receiving.
+ */
+static void
+test_a_commit_does_not_overtake_its_own_first_and_update(void)
+{
+	struct t150_wirequeue q;
+
+	t150_wq_init(&q);
+	COMMIT(&q, 0xe8);			/* one second */
+	CONTROL_PLAY(&q);
+	FIRST(&q);				/* the redefinition */
+	UPDATE(&q, 0x20);
+	COMMIT(&q, 0xb8);			/* three seconds */
+
+	check_int("the redefinition stays a whole set behind the play",
+	    (long)t150_wq_depth(&q), 5);
+	check_next("the old commit", &q,
+	    "01 00 00 40 e8 00 00 00 00 0e 00 1c 00 00 00");
+	check_next("the play that followed it", &q, "41 00 41 01");
+	check_next("then the new first", &q,
+	    "02 1c 00 00 00 00 00 00 00");
+	check_next("its update", &q, "03 0e 00 20");
+	check_next("and its commit last, where it belongs", &q,
+	    "01 00 00 40 b8 00 00 00 00 0e 00 1c 00 00 00");
+}
+
+/*
+ * When the old commit is the newest thing waiting, the new set still replaces
+ * it in place: the barrier is only for a commit that would pass a first or an
+ * update, not for one that merges into the position ahead of them.
+ */
+static void
+test_a_whole_set_uploaded_twice_replaces_itself_in_place(void)
+{
+	struct t150_wirequeue q;
+
+	t150_wq_init(&q);
+	FIRST(&q);
+	UPDATE(&q, 0x10);
+	COMMIT(&q, 0xe8);
+	CONTROL_PLAY(&q);
+	FIRST(&q);
+	UPDATE(&q, 0x20);
+	COMMIT(&q, 0xb8);
+
+	check_int("two sets and a play wait as one set and a play",
+	    (long)t150_wq_depth(&q), 4);
+	check_next("first", &q, "02 1c 00 00 00 00 00 00 00");
+	check_next("the newest update", &q, "03 0e 00 20");
+	check_next("the newest commit", &q,
+	    "01 00 00 40 b8 00 00 00 00 0e 00 1c 00 00 00");
+	check_next("and the play", &q, "41 00 41 01");
+}
+
 /*
  * Two effects modulating at once, which is what a game actually does: the
  * depth is set by how many effects there are, not by how fast they change.
@@ -408,6 +538,11 @@ main(void)
 	test_a_repeated_stop_does_not_overtake_a_play();
 	test_a_repeated_setting_does_not_overtake_its_opposite();
 	test_a_merge_keeps_its_place_in_the_queue();
+	test_a_level_after_a_stop_stays_behind_it();
+	test_a_play_is_not_a_barrier();
+	test_levels_behind_a_stop_still_coalesce();
+	test_a_commit_does_not_overtake_its_own_first_and_update();
+	test_a_whole_set_uploaded_twice_replaces_itself_in_place();
 	test_depth_is_bounded_by_the_effects_not_by_the_rate();
 	test_a_full_queue_keeps_what_it_accepted();
 	test_a_full_queue_refuses_rather_than_lying();

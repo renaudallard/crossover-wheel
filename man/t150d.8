@@ -262,7 +262,14 @@ one it never rendered was not going to be felt. A play and a stop for the same
 slot are different parameters and never merge, and only the newest packet
 waiting for a given target is merged into, so a repeat cannot overtake
 something queued behind it: a stop, a play and a stop for one slot stay three
-packets in that order.
+packets in that order. Two packets are barriers besides, because they address
+a slot without sharing its parameters' keys: no parameter packet merges past a
+stop that is still waiting, and no commit passes the first and update it
+belongs behind. Without the first, a level re-uploaded after a stop reached
+the wheel ahead of the stop, a kick in the new direction for as long as the
+queue took to reach it; without the second, a redefinition's commit arrived
+before the packets that define it. A play is not a barrier, so a modulated
+constant still coalesces to one level and one play.
 .Pp
 Under
 .Fl v
