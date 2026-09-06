@@ -430,6 +430,17 @@ session_safe_state(struct t150_session *s, const char *why, int keep_intent)
 		memset(stopped, 0, sizeof(stopped));
 
 	/*
+	 * Which is also where the watchdog's recovery stops. A slot is parked
+	 * below only when its stop landed, so once the drain has taken every
+	 * answer back nothing is parked: every slot goes to stop_owed instead
+	 * and a client that comes back gets nothing put back. That is the
+	 * safe direction, since a stop the wheel would not take has to win
+	 * over a restart of the same effect, and it is the older machinery
+	 * doing what it always did. It is not covered by the recovery, and
+	 * t150d(8) says so.
+	 */
+
+	/*
 	 * The memset is load-bearing beyond forgetting the effect: it clears
 	 * the slot's dirty flag and its record of what the wheel holds, so a
 	 * safe state also cancels every pending emission. Moving either of

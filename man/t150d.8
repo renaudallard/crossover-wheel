@@ -567,6 +567,15 @@ run, because nothing on the wire tells a proxy that the slots were released
 and a game that starts an effect once and then only modulates it never asks
 for a start again.
 .Pp
+It applies to a stop the wheel took. With
+.Fl w
+the safe state waits for the writer to deliver its stops, and if that wait
+fails, or a packet was refused meanwhile, it can no longer say which stops
+landed: every slot then owes its stop, none is kept for the recovery, and a
+client that comes back gets nothing put back. That is the older behaviour and
+the safe direction, since a stop the wheel would not take has to win over a
+restart of the same effect.
+.Pp
 A stop the wheel will not take is owed rather than forgotten. The slot keeps
 its record, the daemon stays armed, and the stop is tried again on the
 emitter's cadence and on every watchdog wake until the wheel accepts it. What
