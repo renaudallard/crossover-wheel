@@ -184,6 +184,8 @@ typedef struct {
 @interface NSURL : NSObject
 + (instancetype)fileURLWithPath:(NSString *)p;
 + (instancetype)URLWithString:(NSString *)s;
+/* Foundation NSURL.h: @property (nullable, readonly, copy) NSString *. */
+@property (readonly, copy) NSString *lastPathComponent;
 @end
 
 @interface NSBundle : NSObject

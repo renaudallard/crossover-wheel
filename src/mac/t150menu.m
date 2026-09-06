@@ -2161,11 +2161,23 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		return;
 	}
 
+	/*
+	 * Counted by the line ends there are rather than by the pieces between
+	 * them. A log that does not end in a newline, which is every log the
+	 * daemon is part way through a line of, has one more piece than it has
+	 * lines, and subtracting one for the empty tail that is not there
+	 * reported one line short.
+	 */
+	NSUInteger lines = [[log componentsSeparatedByString:@"\n"] count];
+
+	/* The piece after the last newline is a line only when there is one. */
+	if ([log hasSuffix:@"\n"])
+		lines--;
+
 	[pb clearContents];
 	[pb setString:log forType:NSPasteboardTypeString];
 	[self note:[NSString stringWithFormat:@"%lu lines copied. Paste them "
-	    "into a mail.", (unsigned long)[[log
-	    componentsSeparatedByString:@"\n"] count] - 1]];
+	    "into a mail.", (unsigned long)lines]];
 }
 
 #pragma mark - updates
@@ -2350,6 +2362,15 @@ sha256_of(NSData *d)
     version:(NSString *)version
 {
 	NSURL *u = [NSURL URLWithString:dmgURL];
+	/*
+	 * Which line of SHA256SUMS belongs to this download. The name the
+	 * releases API gave the asset is the name the file was checksummed
+	 * under, so matching on it is what makes the checksum this image's own.
+	 * Any line holding ".dmg" would do while a release publishes one, and
+	 * the day one publishes two the first line wins and the check fails for
+	 * a download that is perfectly good.
+	 */
+	NSString *name = u.lastPathComponent;
 
 	[self note:[NSString stringWithFormat:@"Downloading %@. This window "
 	    "will close and the application will start again by itself.",
@@ -2377,12 +2398,25 @@ sha256_of(NSData *d)
 
 			for (NSString *line in [txt
 			    componentsSeparatedByString:@"\n"]) {
-				if ([line containsString:@".dmg"]) {
-					NSArray *f = [line
-					    componentsSeparatedByString:@" "];
-					want = f.firstObject;
-					break;
-				}
+				/*
+				 * Contains rather than ends with, because the
+				 * line ending is not this application's to
+				 * assume: a checksum file written on any other
+				 * machine may carry a carriage return, and
+				 * failing to match there would refuse an
+				 * update that is perfectly good and say the
+				 * release publishes no checksum.
+				 */
+				if (name.length > 0 &&
+				    ![line containsString:name])
+					continue;
+				if (![line containsString:@".dmg"])
+					continue;
+				NSArray *f = [line
+				    componentsSeparatedByString:@" "];
+
+				want = f.firstObject;
+				break;
 			}
 		}
 
