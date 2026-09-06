@@ -3594,6 +3594,241 @@ test_the_replay_does_not_announce_a_start_the_wheel_refused(void)
 		fail("and the refusal comes before the recovery");
 }
 
+/*
+ * The watchdog cannot tell a game that has gone from a game that went quiet,
+ * so it assumes the first. A frame arriving afterwards proves it wrong, and
+ * until now nothing acted on that: the safe state had emptied every slot, the
+ * game had no idea any of it had happened, and a game that starts an effect
+ * once and then only modulates it - which is every road force - never asked
+ * for a start again. Parameters flowed for the rest of the session and no play
+ * packet was ever sent. RESEARCH.md A53.
+ */
+static void
+test_the_watchdog_gives_the_force_back_when_the_game_returns(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+	uint8_t start[2];
+
+	reset_session();
+	hello(0);
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_CONSTANT;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.constant.magnitude = 10000;
+
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 100, T150_OP_OK, T150_ERR_NONE);
+	drain_log();
+
+	(void)tick(100 + T150_WATCHDOG_MS);
+	expect_log("the watchdog stops the force and releases the wheel",
+	    "write 4: 41 00 00 01\n"
+	    "write 4: 40 03 00 00\n"
+	    "write 4: 40 04 00 00\n");
+
+	/*
+	 * A bare keepalive, which is all a game that is merely slow sends. The
+	 * frame itself writes nothing: the play waits for the tick, so that
+	 * parameters always reach the wheel before it is told to play them.
+	 */
+	frame(T150_OP_KEEPALIVE, NULL, 0, 700, T150_OP_OK, T150_ERR_NONE);
+	expect_log("the frame that proves the game is there writes nothing",
+	    "");
+
+	/*
+	 * And nothing but the play, because the slot kept its record of what
+	 * the wheel holds: the safe state sent a stop, and there is no erase
+	 * packet, so the effect really is still loaded.
+	 */
+	(void)tick(700);
+	expect_log("the force the watchdog took is put back",
+	    "write 4: 41 00 41 01\n");
+}
+
+/*
+ * And a client that does not come back gets nothing at all. This is the half
+ * that matters: the watchdog exists because a wheel left holding a force pulls
+ * at whoever is holding it, and no amount of recovery may put one back on a
+ * wheel nobody is driving.
+ *
+ * A ramp, because it is the case that decides where the intent is kept. The
+ * daemon walks a ramp itself, so a parked one whose playing flag had been left
+ * standing would go on sliding, dirty itself and be re-played by the emitter
+ * with no client anywhere.
+ */
+static void
+test_a_client_that_never_returns_leaves_the_wheel_stopped(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+	uint8_t start[2];
+
+	reset_session();
+	hello(0);
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_RAMP;
+	ef.duration = 4000000;	/* four seconds of slide */
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.ramp.start = 0;
+	ef.u.ramp.end = 10000;
+
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 100, T150_OP_OK, T150_ERR_NONE);
+	drain_log();
+
+	(void)tick(100 + T150_WATCHDOG_MS);
+	expect_log("the watchdog stops the ramp and releases the wheel",
+	    "write 4: 41 00 00 01\n"
+	    "write 4: 40 03 00 00\n"
+	    "write 4: 40 04 00 00\n");
+
+	/* Seconds of ticks, well inside the ramp's own duration. */
+	(void)tick(1000);
+	(void)tick(1500);
+	(void)tick(2000);
+	(void)tick(3000);
+	expect_log("a parked ramp does not slide back onto the wheel", "");
+}
+
+/*
+ * An effect whose own window passed while the client was quiet is not put
+ * back. The game asked for a force of a stated length, that length is over,
+ * and starting it again would be playing something nobody asked to hear
+ * twice. It stays loaded, like every other stop.
+ */
+static void
+test_an_effect_that_ended_is_not_put_back(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+	uint8_t start[2];
+
+	reset_session();
+	hello(0);
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_CONSTANT;
+	ef.duration = 200000;	/* a fifth of a second, one pass */
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.constant.magnitude = 10000;
+
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 100, T150_OP_OK, T150_ERR_NONE);
+
+	/* Its own end comes first, then the watchdog. */
+	(void)tick(400);
+	(void)tick(100 + T150_WATCHDOG_MS);
+	drain_log();
+
+	frame(T150_OP_KEEPALIVE, NULL, 0, 700, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(700);
+	expect_log("an effect that had already ended is not started again", "");
+}
+
+/*
+ * What the game asks for in the frame that brings it back wins. The intent is
+ * restored before the operation is looked at, so a stop arriving now is the
+ * game's own and goes down over it.
+ */
+static void
+test_the_games_own_stop_wins_over_the_recovery(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+	uint8_t start[2], slot = 0;
+
+	reset_session();
+	hello(0);
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_CONSTANT;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.constant.magnitude = 10000;
+
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 100, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(100 + T150_WATCHDOG_MS);
+	drain_log();
+
+	/*
+	 * The stop is sent even though the wheel is already stopped, which is
+	 * the conservative answer and costs one packet: the daemon has just
+	 * told itself the game may want this running again.
+	 */
+	frame(T150_OP_EFFECT_STOP, &slot, 1, 700, T150_OP_OK, T150_ERR_NONE);
+	expect_log("the game's own stop goes down", "write 4: 41 00 00 01\n");
+
+	(void)tick(700);
+	(void)tick(800);
+	expect_log("and nothing puts the force back after it", "");
+}
+
+/*
+ * Three different things ask for a replay and the line said "the wheel had
+ * been away" for all of them, which is true of exactly one. A dropped packet
+ * leaves the wheel where it was, and a client coming back after the watchdog
+ * has not lost a wheel at all: a reader chasing a report would be sent looking
+ * for a replug that never happened.
+ */
+static void
+test_the_replay_says_why_it_is_replaying(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+	uint8_t start[2];
+	char out[2048];
+
+	reset_session();
+	hello(0);
+	if (capture_start() != 0)
+		return;
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_CONSTANT;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.constant.magnitude = 10000;
+
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 100, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(100 + T150_WATCHDOG_MS);
+	frame(T150_OP_KEEPALIVE, NULL, 0, 700, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(700);
+	capture_end(out, sizeof(out));
+
+	if (count_substr(out, "putting back 1 effect(s)") != 1)
+		fail("the recovery says how much it put back, once");
+	if (count_substr(out, "the game was still there") != 1)
+		fail("and the start it replays says why it was replayed");
+	if (strstr(out, "the wheel had been away") != NULL)
+		fail("a client coming back is not a wheel that went away");
+}
+
 
 int
 main(void)
@@ -3684,6 +3919,11 @@ main(void)
 	test_an_inherited_stop_is_released_across_a_re_acquire();
 	test_an_unencodable_effect_is_refused_at_the_door();
 	test_a_displacing_clients_settings_wait_for_the_handover();
+	test_the_watchdog_gives_the_force_back_when_the_game_returns();
+	test_a_client_that_never_returns_leaves_the_wheel_stopped();
+	test_an_effect_that_ended_is_not_put_back();
+	test_the_games_own_stop_wins_over_the_recovery();
+	test_the_replay_says_why_it_is_replaying();
 
 	(void)fclose(logfp);
 	free(logbuf);

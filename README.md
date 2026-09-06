@@ -964,6 +964,20 @@ rendering its last effect and goes quiet at startup rather than at shutdown.
 The autocenter release is part of that, because closing the input re-arms the
 wheel's own centring spring and would otherwise leave it stiff (A42).
 
+**A game that comes back after the watchdog has fired gets its forces back.**
+The watchdog cannot tell a game that has gone from a game that went quiet, so
+it assumes the first and makes the wheel limp; a frame arriving afterwards
+proves the guess wrong, and the effects it stopped are started again on the
+next pass. Nothing did that until now, and nothing else could: the daemon only
+ever answers a frame, so no proxy is ever told its slots were released, and a
+game that starts an effect once and then only modulates it — which is every
+road force — never asks for a start again. Half a second of silence therefore
+cost force feedback for the rest of the session, with the daemon still
+accepting and writing effect parameters and every layer reporting success. The
+recovery is deliberately narrow: only an effect the game had running, only for
+a client that speaks again, and never one whose own duration ran out while it
+was quiet. See [`docs/RESEARCH.md`](docs/RESEARCH.md) A53.
+
 See [`t150d(8)`](man/t150d.8) for the endpoint file, the watchdog and the
 effect downgrades.
 

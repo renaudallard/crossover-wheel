@@ -337,7 +337,10 @@ in this log is timestamped and that is the only duration in it. It is the
 silence at the tick that noticed rather than at the deadline, so it always
 reads a little over the watchdog, and what it separates is a game that hitched
 just past it from one that stopped for seconds. Those two read the same without
-it.
+it. A client that comes back afterwards says how many effects were put back,
+and each start that follows says why it was replayed: a client returning, a
+wheel that had been away and a packet that went missing are three different
+faults and the line named the second for all three.
 .El
 .Sh LOSING THE WHEEL
 A wheel unplugged while a game is running takes the mach port behind its
@@ -532,6 +535,17 @@ oversight: the keepalive exists because a game holding one steady force and
 calling nothing otherwise lost it after half a second, and at this layer a
 game holding a force deliberately and a game hung while holding one are the
 same silence. Killing a hung game is still something a person has to do.
+.Pp
+.Sy "A client that comes back gets its forces back" .
+A frame arriving after the watchdog has fired proves the guess wrong, so the
+effects it stopped are started again on the next emission pass. This is not
+the same as forgetting them: the wheel is made limp at once and stays limp
+until the client speaks, and only an effect the game had running and whose own
+duration has not run out in the meantime is put back. Without it a game that
+merely went quiet for half a second lost force feedback for the rest of its
+run, because nothing on the wire tells a proxy that the slots were released
+and a game that starts an effect once and then only modulates it never asks
+for a start again.
 .Pp
 A stop the wheel will not take is owed rather than forgotten. The slot keeps
 its record, the daemon stays armed, and the stop is tried again on the

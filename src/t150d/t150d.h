@@ -218,6 +218,22 @@ struct t150_slot {
 	 * rather than being forgotten by a memset while the wheel pulls.
 	 */
 	uint8_t			stop_owed;
+	/*
+	 * And the other direction: the watchdog stopped this while the game
+	 * still wanted it playing.
+	 *
+	 * A stop the game asked for clears playing, because that is the game's
+	 * own intent going down. The watchdog's stop is not the game's. It is
+	 * the daemon guessing that the game has gone, and a frame arriving
+	 * afterwards proves the guess wrong, so the intent is kept here rather
+	 * than erased and the next frame from that client puts it back.
+	 *
+	 * Kept here rather than in playing, which the ramp slicer and the
+	 * emitter's re-play both read. Left there, a parked ramp would go on
+	 * sliding, dirty itself, and be re-played with no client anywhere,
+	 * which is the force the watchdog had just taken off the wheel.
+	 */
+	uint8_t			restart_owed;
 	uint8_t			source_kind;	/* what the game asked for */
 	uint8_t			iterations;
 	uint8_t			dirty;		/* desired state is not on the wheel */
@@ -297,7 +313,15 @@ struct t150_session {
 	int			 early_pass;	/* -E: may emit ahead of the floor */
 	uint8_t			 next_slot;	/* where the next pass resumes */
 	uint8_t			 io_err;	/* a write failed, owed to the next upload */
-	uint8_t			 replay_starts;	/* the wheel came back, re-start what was playing */
+	uint8_t			 replay_starts;	/* re-start what the game had playing */
+	/*
+	 * Why that replay is owed, as the tail of the line it prints. Three
+	 * different things ask for one and the log said "the wheel had been
+	 * away" for all of them, which is true of exactly one: a dropped
+	 * packet leaves the wheel where it was, and a client coming back after
+	 * the watchdog has not lost a wheel at all.
+	 */
+	const char		*replay_why;
 	uint8_t			 emit_failed;	/* last pass failed, do not spin on it */
 	/*
 	 * A start frame that named a slot this daemon does not have, said once

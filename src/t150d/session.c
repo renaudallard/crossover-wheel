@@ -177,6 +177,9 @@ static int control(struct t150_session *s, uint8_t slot, int play,
 /* Where a ramp has slid to. Defined with the slicer, needed by do_upload. */
 static int32_t ramp_level(const struct t150_slot *sl, uint64_t now_ms);
 
+/* Whether a slot's own window has passed. Defined with the emitter. */
+static int slot_expired(const struct t150_slot *sl, uint64_t now_ms);
+
 /*
  * Returns 0 when the wheel already holds the effect and nothing was sent,
  * 1 when only the update went, 2 when the whole set went, -1 when a write
@@ -374,8 +377,17 @@ emit_autocenter(struct t150_session *s, uint32_t force)
 	(void)s->be->write(s->be->priv, pkt, n);
 }
 
+/*
+ * Stop everything and leave the wheel as the person asked.
+ *
+ * keep_intent is the watchdog's, and nobody else's. It says that the stops
+ * below are the daemon's guess that the game has gone rather than anything the
+ * game asked for, so a slot the game had running keeps its intent in
+ * restart_owed instead of being forgotten. See session_unpark for the other
+ * half. Every other caller passes 0 and gets exactly what this always did.
+ */
 static void
-session_safe_state(struct t150_session *s, const char *why)
+session_safe_state(struct t150_session *s, const char *why, int keep_intent)
 {
 	uint8_t stopped[T150_SLOT_MAX];
 	uint8_t held[T150_SLOT_MAX];
@@ -457,6 +469,18 @@ session_safe_state(struct t150_session *s, const char *why)
 				    (unsigned int)i,
 				    kind_name(s->slots[i].ef.kind));
 		}
+		/*
+		 * A slot the watchdog took from a game that turns out to still
+		 * be there is parked rather than forgotten: the effect stays
+		 * loaded, the record of what the wheel holds stays true, and
+		 * only the game's intent moves aside. Nothing here puts a force
+		 * back; session_unpark does, and only a frame from that client
+		 * reaches it.
+		 */
+		if (stopped[i] && keep_intent && held[i]) {
+			s->slots[i].restart_owed = 1;
+			continue;
+		}
 		if (stopped[i])
 			memset(&s->slots[i], 0, sizeof(s->slots[i]));
 		else if (s->slots[i].used)
@@ -509,7 +533,7 @@ session_release(struct t150_session *s, const char *why, int force)
 	uint8_t pkt[PKT_MAX];
 	size_t n;
 
-	session_safe_state(s, why);
+	session_safe_state(s, why, 0);
 
 	if (force) {
 		n = t150_enc_input_close(pkt, sizeof(pkt));
@@ -547,7 +571,68 @@ t150_session_panic(struct t150_session *s, const char *why)
 	if (!session_touched_wheel(s))
 		return;
 
-	session_safe_state(s, why);
+	session_safe_state(s, why, 0);
+}
+
+/*
+ * The watchdog's own way into the safe state, which is the only one that keeps
+ * what the game had running. See restart_owed and session_unpark.
+ */
+static void
+session_watchdog(struct t150_session *s, const char *why)
+{
+	session_safe_state(s, why, 1);
+}
+
+/*
+ * The client is still there, so the watchdog was wrong: put back what it took.
+ *
+ * The watchdog cannot tell a game that has gone from a game that went quiet,
+ * and it has to assume the first, because the cost of being wrong the other
+ * way is a wheel pulling at somebody with nothing left to stop it. But a frame
+ * arriving afterwards settles it, and until now nothing acted on that. The
+ * daemon had emptied its slots, the game had no idea any of it had happened,
+ * and a game that starts an effect once and then only modulates it - which is
+ * every road force - never asked for a start again. So parameters flowed for
+ * the rest of the session and no play packet was ever sent: force feedback
+ * simply stopped, with every layer reporting success. RESEARCH.md A53.
+ *
+ * The starts do not go from here. This restores the intent and asks for the
+ * replay the tick already owns, so the parameters reach the wheel before it is
+ * told to play them, exactly as they do after a re-acquire.
+ */
+static void
+session_unpark(struct t150_session *s, uint64_t now_ms)
+{
+	unsigned int n = 0;
+	size_t i;
+
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		struct t150_slot *sl = &s->slots[i];
+
+		if (!sl->used || !sl->restart_owed)
+			continue;
+		sl->restart_owed = 0;
+		/*
+		 * Except one whose own window has passed while the client was
+		 * quiet. The game asked for a force of a stated length and
+		 * that length is over, so putting it back would be starting
+		 * something nobody asked to hear again. The effect stays
+		 * loaded, like every other stop.
+		 */
+		if (slot_expired(sl, now_ms))
+			continue;
+		sl->playing = 1;
+		n++;
+	}
+	if (n == 0)
+		return;
+
+	s->replay_starts = 1;
+	s->replay_why = ", the game was still there";
+	if (s->verbose)
+		fprintf(stderr, "t150d: the game is still here, putting back "
+		    "%u effect(s) the watchdog stopped\n", n);
 }
 
 /*
@@ -1388,6 +1473,16 @@ t150_session_frame(struct t150_session *s, uint8_t op, const uint8_t *payload,
 
 	s->last_frame_ms = now_ms;
 
+	/*
+	 * Before the frame is looked at, so that whatever the game asks for
+	 * here wins: a stop, a reset or a stop-everything arriving now is the
+	 * game's own intent and goes down over the intent restored below.
+	 * Only for a client that has proved its token, because a process that
+	 * merely opened the port has no forces to be given back.
+	 */
+	if (s->hello)
+		session_unpark(s, now_ms);
+
 	if (op == T150_OP_HELLO) {
 		if (!token_ok(s, payload, len)) {
 			if (s->verbose)
@@ -1633,7 +1728,8 @@ session_replay_starts(struct t150_session *s)
 			failed = 1;
 			continue;
 		}
-		start_taken(s, (uint8_t)i, ", the wheel had been away");
+		start_taken(s, (uint8_t)i,
+		    s->replay_why != NULL ? s->replay_why : "");
 	}
 
 	return failed;
@@ -1848,6 +1944,7 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 		s->epoch = s->be->epoch;
 		session_forget_wheel(s);
 		s->replay_starts = 1;
+		s->replay_why = ", the wheel had been away";
 		/*
 		 * A wheel that has been away has forgotten its gain and its
 		 * rotation range as well as its effects, and only a session
@@ -1875,6 +1972,7 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 		 * and the emitter's own re-play both already spend.
 		 */
 		s->replay_starts = 1;
+		s->replay_why = ", a packet went missing";
 		s->io_err = 1;
 	}
 
@@ -1911,7 +2009,7 @@ t150_session_tick(struct t150_session *s, uint64_t now_ms)
 			(void)snprintf(why, sizeof(why),
 			    "no frame for %llu ms",
 			    (unsigned long long)quiet);
-			t150_session_panic(s, why);
+			session_watchdog(s, why);
 			return T150_WATCHDOG_MS;
 		}
 		if (next > T150_WATCHDOG_MS - (unsigned int)quiet)

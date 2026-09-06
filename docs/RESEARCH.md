@@ -2074,6 +2074,25 @@ already sent. **Not known**: which proxy was in his bottle during either inciden
 since nothing on the wire names it and the proxy updates separately from the
 application.
 
+**The watchdog branch is now closed, on the daemon's side alone.** The reasoning
+above says the proxy cannot learn that the slots were released, and that is still
+true: `T150_OP_STATE` is still implemented nowhere. So the repair was put where
+the knowledge already is. The watchdog's stop no longer erases what the game had
+asked for: a slot it takes keeps that intent in `restart_owed`, and the next frame
+from the same client, a bare keepalive included, restores it and asks for the
+replay the tick already owns. A client that never comes back gets nothing, and an
+effect whose own window passed while it was quiet is not put back either. This
+needs no protocol change and no version gate, so it repairs a bottle whose proxy
+was copied in months ago, which the other shape would not have. Measured against
+`session.c`: before it, five frames after a safe state produced five parameter
+writes and no play packet; after it, each carries one. `daemon_check` holds the
+four rules as tests.
+
+**What it does not settle.** Whether either incident was the watchdog branch at
+all is still the inference this entry opens with, and the Content Manager case
+recovered inside the process, which the watchdog branch would not have needed. A
+daemon log covering a whole failure is still the measurement that would decide it.
+
 ---
 
 ## B. How CrossOver handles HID and force feedback
