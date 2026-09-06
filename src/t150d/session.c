@@ -477,7 +477,22 @@ session_safe_state(struct t150_session *s, const char *why, int keep_intent)
 		 * back; session_unpark does, and only a frame from that client
 		 * reaches it.
 		 */
-		if (stopped[i] && keep_intent && held[i]) {
+		if (stopped[i] && keep_intent &&
+		    (held[i] || s->slots[i].restart_owed)) {
+			/*
+			 * Or one already parked, which is not the same test.
+			 * A parked slot is not playing, so a second watchdog
+			 * fire found nothing held and forgot it, and the
+			 * watchdog does fire again: a wheel re-acquired while
+			 * the client is quiet re-states the device settings,
+			 * which re-arms it. The client that finally came back
+			 * then got nothing.
+			 *
+			 * held is left as what was really playing, because it
+			 * is what the log names, and saying a slot was stopped
+			 * when it had already been stopped is the lie the line
+			 * beside it was written to stop telling.
+			 */
 			s->slots[i].restart_owed = 1;
 			continue;
 		}
@@ -623,6 +638,16 @@ session_unpark(struct t150_session *s, uint64_t now_ms)
 		if (slot_expired(sl, now_ms))
 			continue;
 		sl->playing = 1;
+		/*
+		 * Owed to the wheel again, whether or not the wheel still holds
+		 * it. The comparison in flush_slot is what decides: with the
+		 * same wheel the bytes match and the pass writes nothing, and
+		 * with one re-acquired while the client was quiet the record
+		 * was cleared and the whole set goes. Without this the replay
+		 * below would send a play for parameters a scrubbed wheel does
+		 * not have.
+		 */
+		sl->dirty = 1;
 		n++;
 	}
 	if (n == 0)
@@ -1673,8 +1698,16 @@ session_forget_wheel(struct t150_session *s)
 		 * cannot encode a kind that was never set, and the write error
 		 * that follows is answered to the next EFFECT_UPLOAD, which had
 		 * succeeded.
+		 *
+		 * And not one the watchdog parked either. That slot is stopped
+		 * as far as the wheel is concerned, and slot_stop says why a
+		 * pass must not write parameters to a stopped slot: no wheel
+		 * has ever been given one, and a wheel re-acquired while nobody
+		 * is driving is exactly where that question would be asked with
+		 * somebody holding it. session_unpark dirties it instead, so
+		 * the teaching happens when the game is there to want it.
 		 */
-		if (s->slots[i].used &&
+		if (s->slots[i].used && !s->slots[i].restart_owed &&
 		    s->slots[i].ef.kind != T150_EFFECT_NONE)
 			s->slots[i].dirty = 1;
 	}

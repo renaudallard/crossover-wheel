@@ -3906,6 +3906,66 @@ test_a_range_outside_the_bounds_is_refused(void)
 }
 
 
+/*
+ * A wheel re-acquired while the client is quiet is not taught a parked slot.
+ *
+ * slot_stop says why a pass must not write parameters to a stopped slot: no
+ * wheel has ever been given one, and a wheel picked up while nobody is driving
+ * is exactly where that question would be asked with somebody holding it. The
+ * teaching waits for the game, and then has to happen, because a play packet
+ * for parameters a scrubbed wheel does not hold renders nothing.
+ */
+static void
+test_a_parked_slot_is_taught_only_when_the_game_returns(void)
+{
+	uint8_t buf[T150_PROTO_EFFECT_LEN];
+	struct t150_effect ef;
+	uint8_t start[2];
+
+	reset_session();
+	hello(0);
+
+	memset(&ef, 0, sizeof(ef));
+	ef.kind = T150_EFFECT_CONSTANT;
+	ef.duration = T150_DURATION_INFINITE;
+	ef.direction = 9000;
+	ef.gain = T150_DI_MAX;
+	ef.u.constant.magnitude = 10000;
+
+	frame(T150_OP_EFFECT_UPLOAD, buf, pack(buf, &ef), 100, T150_OP_OK,
+	    T150_ERR_NONE);
+	start[0] = 0;
+	start[1] = 1;
+	frame(T150_OP_EFFECT_START, start, 2, 100, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(100 + T150_WATCHDOG_MS);
+	drain_log();
+
+	/*
+	 * The wheel is unplugged and comes back, with nobody driving. The
+	 * re-acquire restates the device gain, which re-arms the daemon, so
+	 * the watchdog fires again on the continued silence. Neither says
+	 * anything about the parked slot, and the second fire must not forget
+	 * it either.
+	 */
+	be.epoch++;
+	(void)tick(700);
+	(void)tick(800);
+	expect_log("a re-acquired wheel is told nothing about a parked slot",
+	    "write 2: 43 80\n"
+	    "write 4: 40 03 00 00\n"
+	    "write 4: 40 04 00 00\n");
+
+	/* Then the game speaks, and the whole effect goes before the play. */
+	frame(T150_OP_KEEPALIVE, NULL, 0, 900, T150_OP_OK, T150_ERR_NONE);
+	(void)tick(900);
+	expect_log("and the game coming back gets the effect and the play",
+	    "write 9: 02 1c 00 00 00 00 00 00 00\n"
+	    "write 4: 03 0e 00 40\n"
+	    "write 15: 01 00 00 40 ff ff 00 00 00 0e 00 1c 00 00 00\n"
+	    "write 4: 41 00 41 01\n");
+}
+
+
 int
 main(void)
 {
@@ -4002,6 +4062,7 @@ main(void)
 	test_the_replay_says_why_it_is_replaying();
 	test_the_logging_backend_fills_in_every_hook();
 	test_a_range_outside_the_bounds_is_refused();
+	test_a_parked_slot_is_taught_only_when_the_game_returns();
 
 	(void)fclose(logfp);
 	free(logbuf);
