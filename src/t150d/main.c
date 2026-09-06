@@ -620,6 +620,14 @@ main(int argc, char *argv[])
 	int always_triple = 0, writer = 0, early_pass = 0;
 	int ch, lfd, cfd = -1, pfd_pend = -1, verbose = 0, fake = 0;
 	int rc = 0, lock_held = 0;
+	/*
+	 * Held for as long as the wheel is, which is the whole of the single
+	 * instance rule. Named and closed at the bottom rather than discarded:
+	 * the kernel drops it when the process ends however it ends, so the
+	 * close is only there to say who owns it, and a call whose descriptor
+	 * went nowhere reads as a leak.
+	 */
+	int lockfd;
 
 	while ((ch = getopt(argc, argv, "Ea:e:g:nr:tvw")) != -1) {
 		switch (ch) {
@@ -680,7 +688,7 @@ main(int argc, char *argv[])
 	 * not wanted. The first daemon has no way to learn its slots were
 	 * emptied, so the game was left with none for the rest of its run.
 	 */
-	if (lock_endpoint(endpoint, &lock_held) == -1) {
+	if ((lockfd = lock_endpoint(endpoint, &lock_held)) == -1) {
 		if (lock_held)
 			errx(1, "another t150d already has %s. Stop it first, "
 			    "or give this one its own with -e", endpoint);
@@ -872,6 +880,15 @@ main(int argc, char *argv[])
 					    "proved the token, displacing the "
 					    "old one\n");
 				/*
+				 * Only if there is still somebody to displace.
+				 * The client read above runs first in the same
+				 * poll round, so an incumbent that hung up at
+				 * the same moment has already been released
+				 * and its descriptor closed: this made the
+				 * wheel safe a second time, which is two
+				 * autocentre writes on its account, and closed
+				 * a descriptor of -1.
+				 *
 				 * Panic, not end. The newcomer has already
 				 * opened the wheel's input as part of
 				 * proving its token, so closing it here
@@ -880,9 +897,11 @@ main(int argc, char *argv[])
 				 * handover: the input stays open, only the
 				 * effects go.
 				 */
-				t150_session_panic(&sess,
-				    "displaced by a new client");
-				(void)close(cfd);
+				if (cfd != -1) {
+					t150_session_panic(&sess,
+					    "displaced by a new client");
+					(void)close(cfd);
+				}
 				/*
 				 * Anything the outgoing session could not get
 				 * the wheel to stop is still owed, and once it
@@ -1044,6 +1063,13 @@ main(int argc, char *argv[])
 	unlink_endpoint(endpoint, &epstat);
 	if (be.close != NULL)
 		be.close(be.priv);
+	/*
+	 * Last, and after the backend has let the wheel go. The lock is what
+	 * stops a second daemon starting, and a second daemon starting while
+	 * this one still holds the wheel is exactly what it exists to prevent,
+	 * so it outlives everything else here.
+	 */
+	(void)close(lockfd);
 
 	return rc;
 }
