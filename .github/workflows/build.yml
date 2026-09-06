@@ -609,8 +609,11 @@ jobs:
         # here means a release cannot forget and thereby strand every copy
         # already installed.
         #
-        # The format is shasum's own, "<hash>  <name>", and the updater takes
-        # the first field of the first line naming a .dmg.
+        # The format is shasum's own, "<hash>  <name>". The updater from 0.3.6
+        # on reads the line naming the image it downloaded; every updater
+        # before it takes the first line naming a .dmg, and those are the
+        # copies that will be installing the next release. So the image's
+        # line has to stay first, which one line with one image keeps true.
         run: |
           cd build/bin
           shasum -a 256 crossover-wheel-*.dmg > SHA256SUMS
