@@ -223,7 +223,8 @@ fill_info(const struct effect_desc *d, void *out, int wide)
 		w->dwEffType = d->type;
 		w->dwStaticParams = EFFECT_PARAMS;
 		w->dwDynamicParams = EFFECT_PARAMS;
-		for (i = 0; d->name[i] != '\0' && i < MAX_PATH - 1; i++)
+		/* The bound first, so the last name that fits is not read past. */
+		for (i = 0; i < MAX_PATH - 1 && d->name[i] != '\0'; i++)
 			w->tszName[i] = (WCHAR)d->name[i];
 		w->tszName[i] = L'\0';
 	} else {
@@ -371,6 +372,15 @@ enum_objects_thunk(LPCDIDEVICEOBJECTINSTANCEW o, LPVOID ref)
 	if (o->dwSize > sizeof(tmp))
 		return c->cb(o, c->ref);
 
+	/*
+	 * Cleared first, because the copy is only as long as the caller's own
+	 * form. A caller passing the DX3 structure, or the ANSI one, fills 552
+	 * or 316 of these 576 bytes and the rest went to the game as whatever
+	 * was on this stack. Nothing reads it, since the size is in the struct,
+	 * but handing a caller memory it did not ask for is not this function's
+	 * to do and its opposite number in main.c has always cleared first.
+	 */
+	memset(&tmp, 0, sizeof(tmp));
 	memcpy(&tmp, o, o->dwSize);
 	mark_actuator(&tmp);
 
