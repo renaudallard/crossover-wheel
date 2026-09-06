@@ -898,10 +898,52 @@ dev_GetEffectInfo(IDirectInputDevice8W *self, LPDIEFFECTINFOW info, REFGUID guid
 	return DIERR_DEVICENOTREG;
 }
 
+/*
+ * The device level status, out of what this proxy actually knows.
+ *
+ * It used to be two constants. DIGFFS_EMPTY says the device holds no effects
+ * and was set on every answer, including with sixteen slots downloaded, which
+ * is the one flag a game is most likely to act on; DIGFFS_STOPPED and
+ * DIGFFS_PAUSED were never set at all, so a game that paused and asked was
+ * told its forces were running.
+ *
+ * The power and actuator halves are the honest limit of this. Whether a wheel
+ * is on the bus is the daemon's knowledge and no opcode carries it back:
+ * T150_OP_STATE is declared in proto.h and implemented nowhere, and the daemon
+ * only ever answers a frame. So the connection is what these describe, and
+ * that is not nothing - with no daemon there is certainly no force feedback -
+ * but a wheel unplugged under a live daemon still reads as powered. A game
+ * that wants the truth gets it from Download, which does fail while the wheel
+ * is away.
+ *
+ * A pause is reported as actuators off rather than on, because that is what
+ * the proxy did to the wheel: DISFFC_PAUSE has no opcode of its own and is
+ * sent as a stop-everything.
+ */
+DWORD
+t150_ff_state(int online, int downloaded, int playing, int paused)
+{
+	DWORD st;
+
+	if (!online)
+		return DIGFFS_POWEROFF | DIGFFS_ACTUATORSOFF | DIGFFS_EMPTY |
+		    DIGFFS_STOPPED;
+
+	st = DIGFFS_POWERON;
+	if (paused)
+		st |= DIGFFS_ACTUATORSOFF | DIGFFS_PAUSED;
+	else
+		st |= DIGFFS_ACTUATORSON | (playing ? 0 : DIGFFS_STOPPED);
+	if (!downloaded)
+		st |= DIGFFS_EMPTY;
+
+	return st;
+}
+
 static HRESULT WINAPI
 dev_GetForceFeedbackState(IDirectInputDevice8W *self, LPDWORD out)
 {
-	int up;
+	int up, downloaded, playing, paused;
 
 	(void)self;
 
@@ -909,8 +951,8 @@ dev_GetForceFeedbackState(IDirectInputDevice8W *self, LPDWORD out)
 		return E_POINTER;
 
 	(void)t150_client_state(&up);
-	*out = up ? (DIGFFS_POWERON | DIGFFS_ACTUATORSON | DIGFFS_EMPTY) :
-	    (DIGFFS_POWEROFF | DIGFFS_ACTUATORSOFF);
+	t150_effect_survey(&downloaded, &playing, &paused);
+	*out = t150_ff_state(up, downloaded, playing, paused);
 
 	return DI_OK;
 }

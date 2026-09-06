@@ -123,6 +123,22 @@ from_iface(IDirectInputEffect *p)
 static struct effect_obj *live[T150_SLOT_MAX];
 static CRITICAL_SECTION registry;
 
+/*
+ * Whether a pause or an actuators-off is standing over the whole process.
+ *
+ * Not readable off the effects, which is why it is here. t150_effect_all_paused
+ * records what was playing so a continue can restore it, and a pause sent while
+ * nothing plays records nothing at all, so the effects cannot say whether the
+ * game has asked for quiet. The device level status can, and a game asking for
+ * it deserves the answer rather than a constant.
+ *
+ * Process wide like the slot map above and for the same reason: the daemon
+ * keeps one table per connection and the proxy opens one connection per
+ * process, so the stop-everything a pause sends reaches every slot whichever
+ * wrapped device asked for it.
+ */
+static volatile LONG ff_paused;
+
 void	t150_effect_init_lock(void);
 void	t150_effect_free_lock(void);
 
@@ -265,6 +281,9 @@ t150_effect_all_stopped(void)
 		(void)InterlockedExchange(&e->start_owed, 0);
 	}
 	LeaveCriticalSection(&registry);
+
+	/* A reset or a stop-all ends a pause as well as the forces. */
+	(void)InterlockedExchange(&ff_paused, 0);
 }
 
 /*
@@ -314,6 +333,13 @@ t150_effect_all_paused(void)
 		e->playing = 0;
 	}
 	LeaveCriticalSection(&registry);
+
+	/*
+	 * Whether or not anything was playing. A game that pauses on an empty
+	 * menu has still asked for quiet, and the loop above records nothing
+	 * for it.
+	 */
+	(void)InterlockedExchange(&ff_paused, 1);
 }
 
 /*
@@ -382,6 +408,12 @@ t150_effect_all_continued(void)
 	struct effect_obj *seen[T150_SLOT_MAX];
 	size_t n, i;
 	LONG quiet;
+
+	/*
+	 * Cleared whether or not anything was paused, for the reason the pause
+	 * sets it whether or not anything was playing.
+	 */
+	(void)InterlockedExchange(&ff_paused, 0);
 
 	n = registry_snapshot(seen, NULL);
 
@@ -475,6 +507,48 @@ void
 t150_effect_all_unloaded(void)
 {
 	(void)InterlockedIncrement(&unload_gen);
+}
+
+/*
+ * What this process holds, for the device level status a game can ask for.
+ *
+ * One walk under one lock rather than three, because the three answers have to
+ * describe the same moment: a status that says nothing is downloaded and
+ * something is playing describes no state this proxy can be in.
+ *
+ * Downloaded is what the daemon last acknowledged rather than what an effect
+ * object exists for, which is the same question upload() asks before it skips
+ * a round trip: an object whose upload never landed is one the wheel does not
+ * have.
+ *
+ * Or one it is playing, which is the other half and is not redundant. A start
+ * the daemon took proves it holds the slot, and sent_valid is a cache flag
+ * rather than that proof: a later upload that failed clears it and leaves the
+ * effect running, which reported no effects downloaded and nothing stopped in
+ * the same word. A game reading that is being told two things that cannot both
+ * be so.
+ */
+void
+t150_effect_survey(int *downloaded, int *playing, int *paused)
+{
+	size_t i;
+
+	*downloaded = 0;
+	*playing = 0;
+	*paused = InterlockedCompareExchange(&ff_paused, 0, 0) != 0;
+
+	EnterCriticalSection(&registry);
+	for (i = 0; i < T150_SLOT_MAX; i++) {
+		struct effect_obj *e = live[i];
+
+		if (e == NULL)
+			continue;
+		if (e->sent_valid || e->playing)
+			*downloaded = 1;
+		if (e->playing)
+			*playing = 1;
+	}
+	LeaveCriticalSection(&registry);
 }
 
 uint8_t

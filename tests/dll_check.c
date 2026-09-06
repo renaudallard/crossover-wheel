@@ -560,6 +560,55 @@ test_load(const char *path)
 	(void)FreeLibrary(m);
 }
 
+/*
+ * The device level status is a table of rules rather than two constants.
+ *
+ * DIGFFS_EMPTY says the device holds no effects and was set on every answer,
+ * including with sixteen slots downloaded, which is the one flag a game is most
+ * likely to act on. DIGFFS_STOPPED and DIGFFS_PAUSED were never set, so a game
+ * that paused and asked was told its forces were running.
+ */
+static void
+test_force_feedback_state(void)
+{
+	DWORD st;
+
+	st = t150_ff_state(0, 0, 0, 0);
+	if (!(st & DIGFFS_POWEROFF) || !(st & DIGFFS_ACTUATORSOFF))
+		fail("no daemon is no power and no actuators");
+	if (!(st & DIGFFS_EMPTY) || !(st & DIGFFS_STOPPED))
+		fail("and nothing downloaded and nothing playing");
+	if (st & (DIGFFS_POWERON | DIGFFS_ACTUATORSON))
+		fail("and never both halves of one question");
+
+	st = t150_ff_state(1, 0, 0, 0);
+	if (!(st & DIGFFS_POWERON) || !(st & DIGFFS_ACTUATORSON))
+		fail("a daemon with nothing loaded is powered");
+	if (!(st & DIGFFS_EMPTY) || !(st & DIGFFS_STOPPED))
+		fail("and empty and stopped");
+
+	st = t150_ff_state(1, 1, 0, 0);
+	if (st & DIGFFS_EMPTY)
+		fail("an effect the daemon acknowledged is not empty");
+	if (!(st & DIGFFS_STOPPED))
+		fail("but a downloaded effect nobody started is stopped");
+
+	st = t150_ff_state(1, 1, 1, 0);
+	if (st & (DIGFFS_EMPTY | DIGFFS_STOPPED))
+		fail("an effect that is playing is neither empty nor stopped");
+	if (!(st & DIGFFS_ACTUATORSON))
+		fail("and its actuators are on");
+
+	st = t150_ff_state(1, 1, 0, 1);
+	if (!(st & DIGFFS_PAUSED))
+		fail("a pause says so");
+	if (!(st & DIGFFS_ACTUATORSOFF) || (st & DIGFFS_ACTUATORSON))
+		fail("and a pause is a stop-everything on the wheel");
+	if (st & DIGFFS_EMPTY)
+		fail("and a pause leaves the effects downloaded");
+}
+
+
 int
 main(int argc, char *argv[])
 {
@@ -571,6 +620,7 @@ main(int argc, char *argv[])
 	test_guids();
 	test_wheel_match();
 	test_stable_instance();
+	test_force_feedback_state();
 
 	if (argc > 1)
 		test_load(argv[1]);

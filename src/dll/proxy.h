@@ -143,6 +143,21 @@ void	t150_effect_all_continued(void);
  */
 void	t150_effect_all_unloaded(void);
 
+/*
+ * What this process holds, for the device level status a game can ask for.
+ * One walk, because a status that says nothing is downloaded and something is
+ * playing describes no state this proxy can be in.
+ */
+void	t150_effect_survey(int *downloaded, int *playing, int *paused);
+
+/*
+ * And that survey as a DIGFFS_ word. Exposed rather than kept static for the
+ * reason t150_effect_convert is: it is a table of rules that can be checked
+ * without a wheel, and it was a constant for a long time without anyone
+ * noticing.
+ */
+DWORD	t150_ff_state(int online, int downloaded, int playing, int paused);
+
 /* Say the device properties again if the daemon on the other end is new. */
 void	t150_device_replay_props(struct t150_device *dev);
 
