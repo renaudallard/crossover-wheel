@@ -1277,6 +1277,31 @@ do_setting(struct t150_session *s, uint8_t op, const uint8_t *payload,
 		s->gain = v;
 		break;
 	case T150_OP_SET_RANGE:
+		/*
+		 * Refused rather than approximated, which is what -r,
+		 * t150ctl and probe_intr all do and what t150.h says every way
+		 * into this setting does: "every tool here refuses a number
+		 * outside these bounds rather than sending one and relying on
+		 * that, so the range they advertise is the range they keep".
+		 * This door did not. t150_range_arg clamps the top and not the
+		 * bottom, so a zero encoded as 40 11 00 00 and went to the
+		 * wheel, and the value is remembered and re-sent on every
+		 * re-acquire, so one frame could also silently cancel the -r
+		 * the daemon was started with.
+		 *
+		 * Nothing sends this op today, which is why it went unnoticed
+		 * rather than why it is harmless: the port is open to any local
+		 * process and the token is not a security boundary.
+		 */
+		if (v < T150_RANGE_MIN || v > T150_RANGE_MAX) {
+			if (s->verbose)
+				fprintf(stderr, "t150d: a rotation range of %u "
+				    "degrees is outside %u to %u and was "
+				    "refused\n", v, T150_RANGE_MIN,
+				    T150_RANGE_MAX);
+			reply_err(rep, T150_ERR_BAD_FRAME);
+			return;
+		}
 		n = t150_enc_range(pkt, sizeof(pkt), (unsigned int)v);
 		if (emit(s, pkt, n) != 0) {
 			reply_err(rep, T150_ERR_DEVICE_IO);

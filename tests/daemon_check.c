@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "t150/proto.h"
+#include "t150/t150.h"	/* the rotation bounds the daemon advertises */
 #include "t150d.h"
 
 #define TOKEN	"0123456789abcdef0123456789abcdef"
@@ -3860,6 +3861,51 @@ test_the_logging_backend_fills_in_every_hook(void)
 }
 
 
+/*
+ * A rotation range the wheel will not take is refused rather than sent.
+ *
+ * t150.h says every way into this setting refuses a number outside the bounds
+ * "rather than sending one and relying on that, so the range they advertise is
+ * the range they keep". -r, t150ctl and probe_intr all do. This door did not:
+ * t150_range_arg clamps the top and not the bottom, so a zero encoded as
+ * 40 11 00 00 and went to the wheel, and the value is remembered and re-sent on
+ * every re-acquire, so one frame could cancel the -r the daemon was started
+ * with.
+ */
+static void
+test_a_range_outside_the_bounds_is_refused(void)
+{
+	uint8_t arg[4];
+
+	reset_session();
+	hello(0);
+	/* What -r would have left, which a refusal below must not replace. */
+	sess.range_deg = 900;
+	drain_log();
+
+	put_u32(arg, 0);
+	frame(T150_OP_SET_RANGE, arg, 4, 0, T150_OP_ERROR, T150_ERR_BAD_FRAME);
+	put_u32(arg, T150_RANGE_MIN - 1);
+	frame(T150_OP_SET_RANGE, arg, 4, 0, T150_OP_ERROR, T150_ERR_BAD_FRAME);
+	put_u32(arg, T150_RANGE_MAX + 1);
+	frame(T150_OP_SET_RANGE, arg, 4, 0, T150_OP_ERROR, T150_ERR_BAD_FRAME);
+	expect_log("a range outside the bounds reaches no wheel", "");
+	if (sess.range_deg != 900)
+		fail("a refused range must not replace the one -r asked for");
+
+	/* Both ends of the range the daemon advertises are taken. */
+	put_u32(arg, T150_RANGE_MIN);
+	frame(T150_OP_SET_RANGE, arg, 4, 0, T150_OP_OK, T150_ERR_NONE);
+	put_u32(arg, T150_RANGE_MAX);
+	frame(T150_OP_SET_RANGE, arg, 4, 0, T150_OP_OK, T150_ERR_NONE);
+	expect_log("and one inside them goes",
+	    "write 4: 40 11 ff 3f\n"
+	    "write 4: 40 11 ff ff\n");
+	if (sess.range_deg != T150_RANGE_MAX)
+		fail("a range that was taken is the one remembered");
+}
+
+
 int
 main(void)
 {
@@ -3955,6 +4001,7 @@ main(void)
 	test_the_games_own_stop_wins_over_the_recovery();
 	test_the_replay_says_why_it_is_replaying();
 	test_the_logging_backend_fills_in_every_hook();
+	test_a_range_outside_the_bounds_is_refused();
 
 	(void)fclose(logfp);
 	free(logbuf);
