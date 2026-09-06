@@ -45,14 +45,29 @@ t150_backend_fake(struct t150_backend *be, FILE *fp)
 	if (fp == NULL)
 		return -1;
 
+	/*
+	 * Every field, including the ones this backend does not use.
+	 *
+	 * The optional hooks are pointers the session calls on a plain non-NULL
+	 * test, so one left holding whatever was on a caller's stack is a jump
+	 * into nothing, and drain is called from the safe state, which is the
+	 * one path whose failure leaves a force on somebody's hands. It was the
+	 * only field here that was never assigned: close, tick and idle were
+	 * each nulled deliberately and drain was added to the struct after this
+	 * was written. Nothing ever reached it, because every caller today
+	 * zeroes the struct first, which is a convention rather than this
+	 * function's contract.
+	 */
 	be->name = "fake";
 	be->write = fake_write;
 	be->close = NULL;
 	be->tick = NULL;	/* nothing to go looking for */
 	be->idle = NULL;	/* no queue of its own to be empty */
+	be->drain = NULL;	/* a write here is written, so nothing to wait for */
 	be->priv = fp;
-	/* Nothing here ever re-acquires anything, so this never moves. */
+	/* Nothing here ever re-acquires anything, so neither of these moves. */
 	be->epoch = 0;
+	be->lost = 0;
 
 	return 0;
 }

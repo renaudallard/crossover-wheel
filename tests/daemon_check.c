@@ -3830,6 +3830,36 @@ test_the_replay_says_why_it_is_replaying(void)
 }
 
 
+/*
+ * Every hook the logging backend does not use is still assigned.
+ *
+ * The session calls the optional ones on a plain non-NULL test, so one left
+ * holding whatever was on a caller's stack is a jump into nothing, and drain is
+ * called from the safe state, which is the one path whose failure leaves a
+ * force on somebody's hands. Poisoned on the way in, because a zeroed struct
+ * would pass this whether or not the backend assigned anything.
+ */
+static void
+test_the_logging_backend_fills_in_every_hook(void)
+{
+	struct t150_backend spare;
+
+	memset(&spare, 0xa5, sizeof(spare));
+	if (t150_backend_fake(&spare, logfp) != 0) {
+		fail("the logging backend refused a second instance");
+		return;
+	}
+
+	if (spare.write == NULL)
+		fail("the logging backend has no write");
+	if (spare.close != NULL || spare.tick != NULL || spare.idle != NULL ||
+	    spare.drain != NULL)
+		fail("a hook the logging backend does not use is not NULL");
+	if (atomic_load(&spare.epoch) != 0 || atomic_load(&spare.lost) != 0)
+		fail("the logging backend left a counter unassigned");
+}
+
+
 int
 main(void)
 {
@@ -3924,6 +3954,7 @@ main(void)
 	test_an_effect_that_ended_is_not_put_back();
 	test_the_games_own_stop_wins_over_the_recovery();
 	test_the_replay_says_why_it_is_replaying();
+	test_the_logging_backend_fills_in_every_hook();
 
 	(void)fclose(logfp);
 	free(logbuf);
