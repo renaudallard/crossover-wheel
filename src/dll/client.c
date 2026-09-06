@@ -584,18 +584,21 @@ t150_client_state(int *up)
 	return g;
 }
 
-/* Called from DllMain, so it does nothing that can block or load anything. */
+/*
+ * Called from DllMain, so it does nothing that can block or load anything.
+ *
+ * There is no matching teardown, and the one that used to be here was never
+ * called: DllMain's detach deliberately does nothing, because the loader lock
+ * is held there and the keepalive thread cannot be waited on under it. The
+ * thread pins the module for the same reason, so the only way out is the
+ * process ending, and a critical section deleted on the way out of a process
+ * buys nobody anything. A function nothing calls reads as though teardown
+ * happens.
+ */
 void	t150_client_init_lock(void);
-void	t150_client_free_lock(void);
 
 void
 t150_client_init_lock(void)
 {
 	InitializeCriticalSection(&lock);
-}
-
-void
-t150_client_free_lock(void)
-{
-	DeleteCriticalSection(&lock);
 }

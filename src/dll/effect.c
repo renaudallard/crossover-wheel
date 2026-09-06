@@ -139,19 +139,13 @@ static CRITICAL_SECTION registry;
  */
 static volatile LONG ff_paused;
 
+/* From DllMain, and with no teardown: see t150_client_init_lock. */
 void	t150_effect_init_lock(void);
-void	t150_effect_free_lock(void);
 
 void
 t150_effect_init_lock(void)
 {
 	InitializeCriticalSection(&registry);
-}
-
-void
-t150_effect_free_lock(void)
-{
-	DeleteCriticalSection(&registry);
 }
 
 static void

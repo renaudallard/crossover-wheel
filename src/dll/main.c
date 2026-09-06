@@ -17,9 +17,7 @@
 #include "proxy.h"
 
 void	t150_client_init_lock(void);
-void	t150_client_free_lock(void);
 void	t150_effect_init_lock(void);
-void	t150_effect_free_lock(void);
 
 /*
  * What this DLL exports. Declared here because the compiler is right to
