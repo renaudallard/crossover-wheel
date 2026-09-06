@@ -54,8 +54,18 @@
  *   SET_RANGE        4   uint32 degrees
  *   RESET            0
  *   KEEPALIVE        0
+ *   STOP_ALL         0
  *   OK               0
  *   ERROR            2   uint16 t150_proto_err
+ *
+ * STATE is reserved and is sent by nothing. It is written down because the
+ * question it would answer keeps coming up: the daemon only ever replies to a
+ * frame, so nothing on this wire ever tells a proxy that the wheel went away
+ * or that the slots were released, and the proxy's own device status has to
+ * answer from the connection instead. Where that mattered most, a game losing
+ * its forces to the watchdog, the daemon repairs it on its own side rather
+ * than by growing this. See RESEARCH.md A53.
+ *
  *   STATE            4   present, firmware mode, uint16 slot bitmap
  */
 enum t150_proto_op {
@@ -108,14 +118,20 @@ enum t150_proto_op {
 
 enum t150_proto_err {
 	T150_ERR_NONE = 0,
-	T150_ERR_BAD_FRAME,
+	T150_ERR_BAD_FRAME,	/* also a value outside what the wheel takes */
 	T150_ERR_BAD_VERSION,
 	T150_ERR_BAD_TOKEN,
-	T150_ERR_NO_DEVICE,	/* wheel absent, or still at the boot PID */
+	/*
+	 * Reserved and sent by nothing, and they keep their numbers because
+	 * this is a wire enum: the backend answers a write with one failure,
+	 * so a wheel that has gone and a wheel that refused arrive as
+	 * T150_ERR_DEVICE_IO and cannot be told apart from here.
+	 */
+	T150_ERR_NO_DEVICE,	/* reserved: wheel absent, or at the boot PID */
 	T150_ERR_BAD_SLOT,
 	T150_ERR_UNSUPPORTED,	/* effect kind the wheel cannot render */
 	T150_ERR_DEVICE_IO,	/* IOHIDDeviceSetReport failed */
-	T150_ERR_DEVICE_SEIZED	/* another process holds the wheel */
+	T150_ERR_DEVICE_SEIZED	/* reserved: another process holds the wheel */
 };
 
 /*
