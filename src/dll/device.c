@@ -239,17 +239,47 @@ fill_info(const struct effect_desc *d, void *out, int wide)
 	}
 }
 
+/*
+ * The other character flavour is a second wrapper around the builtin's own
+ * other flavour, for the reason di_QueryInterface in main.c gives: the one
+ * object answering both names handed an ANSI device out under a wide name,
+ * with the device below it still speaking ANSI. The new wrapper starts with
+ * the caches every wrapper starts with, so a gain set through one flavour is
+ * not the value the other reports back, and a data format set through one is
+ * not known to the other; the slots, the effects and everything the daemon
+ * holds are per process and shared.
+ */
 static HRESULT WINAPI
 dev_QueryInterface(IDirectInputDevice8W *self, REFIID iid, void **out)
 {
+	struct t150_device *d = from_iface(self);
+	IDirectInputDevice8W *inner;
+	void *wrapped;
+	int want_wide;
+	HRESULT hr;
+
 	if (out == NULL)
 		return E_POINTER;
 
 	if (IsEqualGUID(iid, &IID_IUnknown) ||
-	    IsEqualGUID(iid, &IID_IDirectInputDevice8W) ||
-	    IsEqualGUID(iid, &IID_IDirectInputDevice8A)) {
+	    (d->wide && IsEqualGUID(iid, &IID_IDirectInputDevice8W)) ||
+	    (!d->wide && IsEqualGUID(iid, &IID_IDirectInputDevice8A))) {
 		IDirectInputDevice8_AddRef(self);
 		*out = self;
+		return S_OK;
+	}
+
+	want_wide = IsEqualGUID(iid, &IID_IDirectInputDevice8W);
+	if (want_wide || IsEqualGUID(iid, &IID_IDirectInputDevice8A)) {
+		hr = IDirectInputDevice8_QueryInterface(d->inner, iid,
+		    (void **)&inner);
+		if (FAILED(hr))
+			return hr;
+		if (FAILED(hr = t150_device_wrap(inner, want_wide, &wrapped))) {
+			IDirectInputDevice8_Release(inner);
+			return hr;
+		}
+		*out = wrapped;
 		return S_OK;
 	}
 
@@ -259,7 +289,7 @@ dev_QueryInterface(IDirectInputDevice8W *self, REFIID iid, void **out)
 	 * is better than getting a wrapper whose vtable does not match what
 	 * it asked for.
 	 */
-	return IDirectInputDevice8_QueryInterface(INNER(self), iid, out);
+	return IDirectInputDevice8_QueryInterface(d->inner, iid, out);
 }
 
 static ULONG WINAPI

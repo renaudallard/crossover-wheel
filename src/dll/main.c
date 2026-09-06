@@ -117,6 +117,8 @@ di_from(IDirectInput8W *p)
 
 #define DI_INNER(self) (di_from(self)->inner)
 
+static HRESULT wrap_dinput(void *inner, REFIID iid, void **out);
+
 /*
  * Enumeration is where the wheel has to be smuggled in. Wine only lists a
  * device under DIEDFL_FORCEFEEDBACK when its descriptor carries a PID
@@ -256,20 +258,49 @@ di_real_guid(IDirectInput8W *inner, REFGUID guid, GUID *scratch)
 	return scratch;
 }
 
+/*
+ * The other character flavour is a wrapper of its own around the builtin's
+ * own other flavour.
+ *
+ * This answered both IIDs with the same object, whose flavour is fixed when
+ * it is made, so a game that created an ANSI interface and then asked for the
+ * wide one was handed the ANSI object under a wide name: its enumeration
+ * callback received ANSI structures it read as wide. The builtin does what
+ * COM asks and answers with a second vtable over the same object, and that is
+ * what is wrapped here, so the new wrapper's flavour and its inner's agree.
+ * The two wrappers count references separately, which a strict reading of
+ * COM identity would not allow; every IID this proxy forwards to the builtin
+ * has always had that shape, and no game or SDL is known to ask across the
+ * flavours at all.
+ */
 static HRESULT WINAPI
 di_QueryInterface(IDirectInput8W *self, REFIID iid, void **out)
 {
+	struct dinput_wrap *d = di_from(self);
+	int want_wide;
+	void *inner;
+	HRESULT hr;
+
 	if (out == NULL)
 		return E_POINTER;
 	if (IsEqualGUID(iid, &IID_IUnknown) ||
-	    IsEqualGUID(iid, &IID_IDirectInput8W) ||
-	    IsEqualGUID(iid, &IID_IDirectInput8A)) {
+	    (d->wide && IsEqualGUID(iid, &IID_IDirectInput8W)) ||
+	    (!d->wide && IsEqualGUID(iid, &IID_IDirectInput8A))) {
 		IDirectInput8_AddRef(self);
 		*out = self;
 		return S_OK;
 	}
 
-	return IDirectInput8_QueryInterface(DI_INNER(self), iid, out);
+	want_wide = IsEqualGUID(iid, &IID_IDirectInput8W);
+	if (!want_wide && !IsEqualGUID(iid, &IID_IDirectInput8A))
+		return IDirectInput8_QueryInterface(d->inner, iid, out);
+
+	hr = IDirectInput8_QueryInterface(d->inner, iid, &inner);
+	if (FAILED(hr))
+		return hr;
+
+	/* wrap_dinput releases inner for itself if it cannot wrap it. */
+	return wrap_dinput(inner, iid, out);
 }
 
 static ULONG WINAPI

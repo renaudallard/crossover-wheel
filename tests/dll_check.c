@@ -541,6 +541,40 @@ test_load(const char *path)
 		/* A null callback is rejected, which is the correct answer. */
 		(void)0;
 
+	/*
+	 * The other character flavour is a wrapper of its own, not this one
+	 * under another name: this object was made wide, and a game asking it
+	 * for the ANSI interface used to get it back unchanged and then read
+	 * wide structures as ANSI. IUnknown is still this object, because that
+	 * is the one identity COM does insist on.
+	 */
+	{
+		IDirectInput8A *dia = NULL;
+		IUnknown *unk = NULL;
+
+		if (FAILED(IDirectInput8_QueryInterface(di, &IID_IDirectInput8A,
+		    (void **)&dia)) || dia == NULL) {
+			fail("the ANSI interface was refused");
+		} else {
+			if ((void *)dia == (void *)di)
+				fail("the ANSI interface is the wide object "
+				    "under another name");
+			if (FAILED(IDirectInput8_EnumDevices(dia,
+			    DI8DEVCLASS_GAMECTRL, NULL, NULL,
+			    DIEDFL_ATTACHEDONLY)))
+				(void)0;	/* null callback, as above */
+			IDirectInput8_Release(dia);
+		}
+		if (FAILED(IDirectInput8_QueryInterface(di, &IID_IUnknown,
+		    (void **)&unk)) || unk == NULL)
+			fail("IUnknown was refused");
+		else {
+			if ((void *)unk != (void *)di)
+				fail("IUnknown is not this object");
+			IUnknown_Release(unk);
+		}
+	}
+
 	IDirectInput8_Release(di);
 
 	/* The door SDL uses. */
