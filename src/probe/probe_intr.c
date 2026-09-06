@@ -44,6 +44,8 @@
 #include "t150/encode.h"
 #include "t150/t150.h"
 
+#include "mac/bootswitch.h"
+
 #define MAX_PAYLOAD	64
 #define MAX_PACKETS	8
 
@@ -123,36 +125,14 @@ enum action {
 	ACT_INPUT_CLOSE
 };
 
-static io_service_t
-find_device(long vid, long pid)
-{
-	CFMutableDictionaryRef match;
-	io_iterator_t iter = IO_OBJECT_NULL;
-	io_service_t svc;
-	SInt32 v = (SInt32)vid, p = (SInt32)pid;
-	CFNumberRef n;
-
-	if ((match = IOServiceMatching(kIOUSBDeviceClassName)) == NULL)
-		return IO_OBJECT_NULL;
-
-	if ((n = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &v))) {
-		CFDictionarySetValue(match, CFSTR(kUSBVendorID), n);
-		CFRelease(n);
-	}
-	if ((n = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &p))) {
-		CFDictionarySetValue(match, CFSTR(kUSBProductID), n);
-		CFRelease(n);
-	}
-
-	if (IOServiceGetMatchingServices(kIOMainPortDefault, match, &iter) !=
-	    KERN_SUCCESS)
-		return IO_OBJECT_NULL;
-
-	svc = IOIteratorNext(iter);
-	IOObjectRelease(iter);
-
-	return svc;
-}
+/*
+ * The lookup, the device interface and both endpoint 0 transfers are
+ * src/mac/bootswitch.c's, which is where t150boot, probe_ep0 and the daemon
+ * get them. This tool kept its own copies and they drifted, exactly as
+ * probe_ep0's did before it was converted: the switch below counted a wheel
+ * that answered kIOReturnNoDevice or kIOReturnAborted as a failure where the
+ * shared test, measured on a T150, counts both as the wheel leaving the bus.
+ */
 
 /* Wait for the wheel to come back after a re-enumeration. */
 static io_service_t
@@ -163,31 +143,12 @@ wait_for_device(long vid, long pid)
 
 	nap(SETTLE_MS);
 	for (i = 0; i < WAIT_TRIES; i++) {
-		if ((svc = find_device(vid, pid)) != IO_OBJECT_NULL)
+		if ((svc = t150_usb_find(vid, pid)) != IO_OBJECT_NULL)
 			return svc;
 		nap(WAIT_STEP_MS);
 	}
 
 	return IO_OBJECT_NULL;
-}
-
-static IOUSBDeviceInterface500 **
-open_device(io_service_t svc)
-{
-	IOUSBDeviceInterface500 **dev = NULL;
-	IOCFPlugInInterface **plug = NULL;
-	SInt32 score = 0;
-
-	if (IOCreatePlugInInterfaceForService(svc, kIOUSBDeviceUserClientTypeID,
-	    kIOCFPlugInInterfaceID, &plug, &score) != KERN_SUCCESS || plug == NULL)
-		return NULL;
-
-	if ((*plug)->QueryInterface(plug,
-	    CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID500), (LPVOID *)&dev) != S_OK)
-		dev = NULL;
-	IODestroyPlugInInterface(plug);
-
-	return dev;
 }
 
 /*
@@ -201,11 +162,11 @@ capture_device(long vid, long pid)
 	io_service_t svc;
 	IOReturn r;
 
-	if ((svc = find_device(vid, pid)) == IO_OBJECT_NULL) {
+	if ((svc = t150_usb_find(vid, pid)) == IO_OBJECT_NULL) {
 		warnx("no USB device matches %04lx:%04lx", vid, pid);
 		return -1;
 	}
-	dev = open_device(svc);
+	dev = t150_usb_open(svc);
 	IOObjectRelease(svc);
 	if (dev == NULL) {
 		warnx("cannot get a device interface");
@@ -244,7 +205,7 @@ wheel_came_back(long vid, long pid)
 	int i;
 
 	for (i = 0; i < SETTLE_TRIES; i++) {
-		if ((svc = find_device(vid, pid)) != IO_OBJECT_NULL) {
+		if ((svc = t150_usb_find(vid, pid)) != IO_OBJECT_NULL) {
 			IOObjectRelease(svc);
 			return 1;
 		}
@@ -261,11 +222,11 @@ release_device(long vid, long pid)
 	io_service_t svc;
 	IOReturn r;
 
-	if ((svc = find_device(vid, pid)) == IO_OBJECT_NULL) {
+	if ((svc = t150_usb_find(vid, pid)) == IO_OBJECT_NULL) {
 		warnx("cannot find the wheel to hand it back, replug it");
 		return;
 	}
-	if ((dev = open_device(svc)) == NULL) {
+	if ((dev = t150_usb_open(svc)) == NULL) {
 		IOObjectRelease(svc);
 		warnx("cannot hand the wheel back, replug it");
 		return;
@@ -586,23 +547,19 @@ read_reports(IOUSBInterfaceInterface500 **iface, struct pipe *in,
 static int
 mode_switch(IOUSBDeviceInterface500 **dev)
 {
-	IOUSBDevRequestTO req;
 	uint8_t buf[T150_RQ_MODEL_LEN];
+	UInt32 done = 0;
 	IOReturn r;
 
-	memset(&req, 0, sizeof(req));
-	memset(buf, 0, sizeof(buf));
-	req.bmRequestType = T150_RQ_MODEL_TYPE;
-	req.bRequest = T150_RQ_MODEL;
-	req.wLength = T150_RQ_MODEL_LEN;
-	req.pData = buf;
-	req.noDataTimeout = 1000;
-	req.completionTimeout = 1000;
-
-	r = (*dev)->DeviceRequestTO(dev, &req);
+	r = t150_usb_model(dev, buf, sizeof(buf), &done);
 	printf("  model query                  %s\n", probe_ioreturn_str(r));
 	if (r != kIOReturnSuccess)
 		return -1;
+	if (done <= T150_RQ_MODEL_OFF_MODEL) {
+		printf("  the model query returned only %u byte(s)\n",
+		    (unsigned int)done);
+		return -1;
+	}
 	printf("  attachment 0x%02x, model 0x%02x\n",
 	    buf[T150_RQ_MODEL_OFF_ATTACH], buf[T150_RQ_MODEL_OFF_MODEL]);
 
@@ -621,25 +578,17 @@ mode_switch(IOUSBDeviceInterface500 **dev)
 		return -1;
 	}
 
-	memset(&req, 0, sizeof(req));
-	req.bmRequestType = T150_RQ_SWITCH_TYPE;
-	req.bRequest = T150_RQ_SWITCH;
-	req.wValue = T150_SWITCH_VALUE;
-	req.noDataTimeout = 1000;
-	req.completionTimeout = 1000;
-
-	r = (*dev)->DeviceRequestTO(dev, &req);
+	r = t150_usb_switch(dev, T150_SWITCH_VALUE);
 	printf("  mode switch                  %s\n", probe_ioreturn_str(r));
 
 	/*
 	 * The wheel leaves before it can answer, which is the normal case, and
-	 * the host sees that departure as any of three things depending on how
-	 * far the transfer had got. Measured on a T150: kIOUSBPipeStalled, on a
-	 * switch that worked and re-enumerated at the firmware id. Treating it
-	 * as a failure printed a replug warning for a wheel that was fine.
+	 * which failure the host sees depends on how far the transfer had got.
+	 * t150_usb_left_the_bus holds the set, measured on a T150, and it is
+	 * the one t150boot and probe_ep0 use: this had a shorter list of its
+	 * own and reported a replug warning for a wheel that was fine.
 	 */
-	return (r == kIOReturnSuccess || r == kIOReturnNotResponding ||
-	    r == kIOUSBPipeStalled) ? 0 : -1;
+	return (r == kIOReturnSuccess || t150_usb_left_the_bus(r)) ? 0 : -1;
 }
 
 static void
@@ -884,7 +833,7 @@ main(int argc, char *argv[])
 		warnx("the wheel did not come back after the capture");
 		goto out;
 	}
-	dev = open_device(svc);
+	dev = t150_usb_open(svc);
 	IOObjectRelease(svc);
 	if (dev == NULL) {
 		warnx("cannot reopen the captured wheel");
