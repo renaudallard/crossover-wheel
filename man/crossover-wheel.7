@@ -18,6 +18,14 @@ Thrustmaster wheels, and the bottle needs
 in its environment before the wheel appears at all. With it set, games see
 the wheel again. RESEARCH.md A35, B10 and B11.
 .Pp
+On macOS 27 the wheel went missing from the bottle again with that set. The
+suspect, not yet confirmed on hardware, is SDL leaving any device Apple's
+GameController framework claims to a backend that has no racing wheels, so
+the install also sets
+.Ev SDL_JOYSTICK_MFI Ns =0 .
+That turns the GameController backend off for every pad in the bottle.
+RESEARCH.md E9.
+.Pp
 The install also turns hidraw off in that bottle, a
 .Li DisableHidraw
 value under

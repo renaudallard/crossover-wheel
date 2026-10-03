@@ -261,6 +261,56 @@ test_the_hidapi_setting_is_matched_by_value()
 	installed_in alpha && fail "it was written to anyway"
 }
 
+# The second variable, held to the same rules as the first. The case that
+# matters most is a bottle installed before it existed: that one already has
+# the HIDAPI line, and the MFI line has to be added beside it rather than the
+# whole bottle being reported as already done.
+test_the_mfi_setting_is_matched_by_value()
+{
+	conf=$work/bottles/alpha/cxbottle.conf
+
+	build_tree alpha
+	run_install "" --no-binaries --no-app || :
+	grep -q '"SDL_JOYSTICK_MFI" = "0"' "$conf" ||
+	    fail "the MFI variable was not added to a bottle without it"
+
+	# An earlier install: HIDAPI there, MFI not.
+	build_tree alpha
+	printf '[EnvironmentVariables]\n"SDL_JOYSTICK_HIDAPI" = "0"\n' \
+	    >> "$conf"
+	run_install "" --no-binaries --no-app || :
+	grep -q '"SDL_JOYSTICK_MFI" = "0"' "$conf" ||
+	    fail "an earlier install did not get the MFI variable"
+	[ "$(grep -c '"SDL_JOYSTICK_HIDAPI" = "0"' "$conf")" -eq 1 ] ||
+	    fail "the HIDAPI variable was written twice"
+	[ "$(grep -c '^\[EnvironmentVariables\]' "$conf")" -eq 1 ] ||
+	    fail "a second EnvironmentVariables section was made"
+
+	# Both there: nothing to write, so no rewrite and no backup.
+	build_tree alpha
+	printf '[EnvironmentVariables]\n"SDL_JOYSTICK_HIDAPI" = "0"\n"SDL_JOYSTICK_MFI" = "0"\n' \
+	    >> "$conf"
+	run_install "" --no-binaries --no-app || :
+	[ -f "$conf.crossover-wheel.bak" ] &&
+	    fail "a bottle needing nothing was rewritten"
+
+	build_tree alpha
+	printf '[EnvironmentVariables]\n"SDL_JOYSTICK_MFI_X" = "0"\n' \
+	    >> "$conf"
+	run_install "" --no-binaries --no-app || :
+	grep -q '"SDL_JOYSTICK_MFI" = "0"' "$conf" ||
+	    fail "a longer name was mistaken for the MFI variable"
+
+	build_tree alpha
+	printf '[EnvironmentVariables]\n"SDL_JOYSTICK_MFI" = "1"\n' \
+	    >> "$conf"
+	run_install "" --no-binaries --no-app &&
+	    fail "a bottle with MFI on was reported installed"
+	grep -q 'SDL_JOYSTICK_MFI is set to something other than 0' \
+	    "$work/out" || fail "a wrong MFI value was not reported"
+	installed_in alpha && fail "it was written to anyway"
+}
+
 # The bottle is told not to use hidraw: with it on the wheel has been measured
 # missing from the bottle entirely (RESEARCH.md A25). It is one registry value,
 # and what proves it is what wine was asked to write.
@@ -384,6 +434,7 @@ test_one_bottle_needs_no_question
 test_bad_answers_are_refused
 test_the_builtin_is_what_lands_beside_the_proxy
 test_the_hidapi_setting_is_matched_by_value
+test_the_mfi_setting_is_matched_by_value
 test_hidraw_is_turned_off_in_the_bottle
 test_a_third_party_wrapper_is_never_lost
 test_a_32_bit_bottle_is_refused

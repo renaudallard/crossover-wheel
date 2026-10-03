@@ -2945,6 +2945,42 @@ turned on.
    move the builtin directory with `DllPath` in `cxbottle.conf`, so the
    installer reads that first and falls back to searching. The check that
    tells the two apart is the `Wine builtin DLL` signature at byte 64.
+9. **Open.** Does macOS 27's GameController framework claim the T150, and is
+   that why the wheel is gone from the bottle? Reported on 2026-10-03: on
+   macOS 27, with CrossOver 26.3 unchanged, `"SDL_JOYSTICK_HIDAPI" = "0"`
+   still in the bottle and everything reinstalled, the wheel is missing from
+   CrossOver's controller list while the application still sets its
+   rotation. That goes through `t150ctl`, which opens only `044f:b677`, so
+   macOS has the wheel in firmware mode and it is lost between macOS and the
+   bottle. macOS 26 to 27 is the only change.
+
+   One mechanism read from source does exactly this. SDL 2.30.12's IOKit
+   backend asks `[GCController supportsHIDDevice:]` in
+   `JoystickAlreadyKnown()` and skips any device the framework says yes to,
+   leaving it to the MFI backend, which knows only `GCController` pads and
+   has no racing wheel support at all. If the framework says yes for
+   `044f:b677`, the wheel reaches no SDL path, the same end as B11 by a
+   different road. `SDL_JOYSTICK_MFI=0` makes `IOS_SupportedHIDDevice()`
+   answer no and `IOS_JoystickInit()` start nothing, so the IOKit backend
+   keeps the wheel. Neither copy of winebus on disk sets that hint, so the
+   bottle's environment decides it. Nothing found says Apple added
+   Thrustmaster wheels on 27: this is a mechanism, not a measurement.
+
+   `install.sh` writes `"SDL_JOYSTICK_MFI" = "0"` beside the HIDAPI line on
+   that basis, since on macOS 26 it changes nothing for the T150. It costs
+   the whole bottle SDL's GameController backend: pads Apple supports arrive
+   through plain IOKit instead, and by the source lose what only that
+   backend gives them, such as rumble, HIDAPI being off already. Neither the
+   fix nor the cost is measured. Open until the tester reports whether the
+   line brings the wheel back.
+
+   > SDL `release-2.30.12`: `src/joystick/darwin/SDL_iokitjoystick.c`
+   > `JoystickAlreadyKnown()`; `src/joystick/iphoneos/SDL_mfijoystick.m`
+   > `IOS_SupportedHIDDevice()` and `IOS_JoystickInit()`;
+   > `include/SDL_config_macosx.h`, `SDL_JOYSTICK_MFI 1`; `src/SDL_hints.c`,
+   > the environment read in `SDL_GetHint()`. CrossOver's
+   > `dlls/winebus.sys/bus_sdl.c` `sdl_bus_init()`, which sets only the PS4
+   > and PS5 rumble hints, and in the 26.3.0 copy under `tmp/research/` none.
 
 Probes 1 to 6 are what `src/probe/` exists to answer. See
 [PROBES.md](PROBES.md).

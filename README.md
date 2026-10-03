@@ -330,22 +330,26 @@ which half.
 ordinary joystick once it is in firmware mode, and early sessions had
 CrossOver passing it into the bottle, steering and pedals working in games.
 
-**Broke, was diagnosed, and works again: the wheel in the bottle.** Tests
-13 and 15 measured the wheel absent from the bottle entirely, axes
-included. The cause was read out of the shipped software: the SDL that
-CrossOver 26 bundles, 2.30.12, is the last release whose HIDAPI layer
-still claims every Thrustmaster device as a possible PlayStation pad and
-drops it. `SDL_JOYSTICK_HIDAPI=0` in the bottle's environment fixes it,
-confirmed on hardware in test 16, and belongs in `cxbottle.conf` so every
-launch gets it. The install also turns hidraw off in that bottle, because
-with hidraw on the wheel has been measured missing from it altogether
-(A25), and that pins the wheel to the SDL route: the thirteen buttons
-A37 named whole were named on the other route, so anyone who wants that
-one back unticks the box, or passes `--keep-hidraw`. The one remaining
-input fault was measured to its cause: the T150's own descriptor labels
-the pedals backwards, which `T150_PEDALS` can correct for a game that
-needs it. [`docs/RESEARCH.md`](docs/RESEARCH.md) B10, B11, A25, A35 and
-A37.
+**Broke, was diagnosed, and works again: the wheel in the bottle.**
+Tests 13 and 15 measured the wheel absent from the bottle entirely,
+axes included. The cause was read out of the shipped software: the
+SDL that CrossOver 26 bundles, 2.30.12, is the last release whose
+HIDAPI layer still claims every Thrustmaster device as a possible
+PlayStation pad and drops it. `SDL_JOYSTICK_HIDAPI=0` in the bottle's
+environment fixes it, confirmed on hardware in test 16, and belongs in
+`cxbottle.conf` so every launch gets it. On macOS 27 the wheel went
+missing from the bottle again with that line in place and nothing else
+changed; the suspect is SDL leaving any device Apple's GameController
+framework claims to a backend with no racing wheels, so the install also
+writes `SDL_JOYSTICK_MFI=0`. That one is not yet confirmed on hardware
+(E9). The install also turns hidraw off in that bottle, because with
+hidraw on the wheel has been measured missing from it altogether (A25),
+and that pins the wheel to the SDL route: the thirteen buttons A37 named
+whole were named on the other route, so anyone who wants that one back
+unticks the box, or passes `--keep-hidraw`. The one remaining input
+fault was measured to its cause: the T150's own descriptor labels the
+pedals backwards, which `T150_PEDALS` can correct for a game that needs
+it. [`docs/RESEARCH.md`](docs/RESEARCH.md) B10, B11, A25, A35, A37 and E9.
 
 **Does not work: force feedback, because the T150 brings no PID
 descriptor.** Wine's DirectInput sets `DIDC_FORCEFEEDBACK` only from a
@@ -1006,7 +1010,7 @@ process has its `system32` redirected to `syswow64`, where this is not, and
 Wine skips a file whose machine does not match in any case. `file "<game>.exe"`
 says which one you have. There is no i386 build.
 
-Two files, two registry values and one line in the bottle's own configuration:
+Two files, two registry values and two lines in the bottle's own configuration:
 
 ```sh
 CX_ROOT="/Applications/CrossOver.app/Contents/SharedSupport/CrossOver"
@@ -1094,6 +1098,7 @@ leaves a trace:
 ```ini
 [EnvironmentVariables]
 "SDL_JOYSTICK_HIDAPI" = "0"
+"SDL_JOYSTICK_MFI" = "0"
 "T150_DEBUG" = "1"
 "T150_LOG" = "Z:\\Users\\<you>\\Library\\Application Support\\t150ffb\\proxy.log"
 ```
@@ -1101,9 +1106,12 @@ leaves a trace:
 That is the bottle's `cxbottle.conf`, which every launch reads, including
 from the CrossOver window; from a terminal, `--env` sets the same things for
 one run. The `SDL_JOYSTICK_HIDAPI` line is what puts the wheel in the bottle
-at all, and `install.sh` writes that one for you, keeping a
-`.crossover-wheel.bak` beside it; the SDL that CrossOver 26 bundles drops
-Thrustmaster wheels without it (RESEARCH.md B11).
+at all, and `install.sh` writes it and the `SDL_JOYSTICK_MFI` line for you,
+keeping a `.crossover-wheel.bak` beside the file; the SDL that CrossOver 26
+bundles drops Thrustmaster wheels without the first (RESEARCH.md B11). The
+second is for the wheel missing on macOS 27, suspected and not yet confirmed
+(E9). It also turns off SDL's GameController backend for every pad in that
+bottle, which by the source costs a pad Apple supports its rumble there.
 
 **Leave `T150_DEBUG` and `T150_LOG` off unless you are diagnosing
 something.** With logging on the proxy writes a line for every

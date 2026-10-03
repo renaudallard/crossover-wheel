@@ -305,17 +305,25 @@ find_builtin()
 	printf '%s\n' "$found"
 }
 
+# The bottle's environment has to hold both of these at 0, each for a
+# different way SDL can lose the wheel. SDL_JOYSTICK_HIDAPI, RESEARCH.md
+# B11: SDL's HIDAPI layer claims a Thrustmaster wheel and then drops it.
+# SDL_JOYSTICK_MFI, E9: SDL hands any device Apple's GameController framework
+# says it supports to a backend that has no racing wheels, which is the
+# suspected reason the wheel is gone on macOS 27.
+BOTTLE_ENV="SDL_JOYSTICK_HIDAPI SDL_JOYSTICK_MFI"
+
 # Whether the bottle's own setting rules the install out, asked without
 # writing anything so that it can be asked before anything has been.
 #
 # The value is the whole point, so match the value. Grepping for the name alone
 # said "already set, left alone" for a line that says the opposite, and for
-# SDL_JOYSTICK_HIDAPI_PS3, and for a commented out one. RESEARCH.md B11: at
-# anything but 0 the wheel does not appear inside the bottle at all, so
-# reporting success there is reporting success for an install that cannot work.
+# SDL_JOYSTICK_HIDAPI_PS3, and for a commented out one. At anything but 0 the
+# variable does what it is listed for above, so reporting success there is
+# reporting success for an install that cannot work.
 env_already_zero()
 {
-	grep -Eq '^[[:space:]]*"?SDL_JOYSTICK_HIDAPI"?[[:space:]]*=[[:space:]]*"?0"?[[:space:]]*$' \
+	grep -Eq "^[[:space:]]*\"?$2\"?[[:space:]]*=[[:space:]]*\"?0\"?[[:space:]]*\$" \
 	    "$1" 2>/dev/null
 }
 
@@ -323,31 +331,40 @@ check_bottle_env()
 {
 	conf=$1
 
-	env_already_zero "$conf" && return 0
-	grep -Eq '^[[:space:]]*"?SDL_JOYSTICK_HIDAPI"?[[:space:]]*=' \
-	    "$conf" 2>/dev/null || return 0
+	for v in $BOTTLE_ENV; do
+		env_already_zero "$conf" "$v" && continue
+		grep -Eq "^[[:space:]]*\"?$v\"?[[:space:]]*=" \
+		    "$conf" 2>/dev/null || continue
 
-	warn "SDL_JOYSTICK_HIDAPI is set to something other than 0 in"
-	warn "  $conf"
-	die "the wheel does not appear inside a bottle without it at 0. Change that line, or delete it and run this again"
+		warn "$v is set to something other than 0 in"
+		warn "  $conf"
+		die "the wheel can be missing from the bottle without it at 0. Change that line, or delete it and run this again"
+	done
 }
 
-# "SDL_JOYSTICK_HIDAPI" = "0" in [EnvironmentVariables], or the wheel never
-# appears inside the bottle at all. Runs last, with check_bottle_env having
-# already ruled out the one value this cannot put right: the writing has to
-# stay after the copies, or a run that stops at one of them would leave the
-# bottle's own configuration edited while saying nothing was changed in it.
+# Every variable of BOTTLE_ENV that is not already 0 goes in
+# [EnvironmentVariables], in one rewrite. Runs last, with check_bottle_env
+# having already ruled out the one value this cannot put right: the writing
+# has to stay after the copies, or a run that stops at one of them would leave
+# the bottle's own configuration edited while saying nothing was changed in it.
 set_bottle_env()
 {
 	conf=$1
+	missing=
 
-	if env_already_zero "$conf"; then
-		say "  SDL_JOYSTICK_HIDAPI is already 0, left alone"
-		return
-	fi
+	for v in $BOTTLE_ENV; do
+		if env_already_zero "$conf" "$v"; then
+			say "  $v is already 0, left alone"
+		else
+			missing="$missing $v"
+		fi
+	done
+	[ -n "$missing" ] || return 0
 
 	if [ "$DRYRUN" -eq 1 ]; then
-		say "  would add SDL_JOYSTICK_HIDAPI=0 to $conf"
+		for v in $missing; do
+			say "  would add $v=0 to $conf"
+		done
 		return
 	fi
 
@@ -358,9 +375,14 @@ set_bottle_env()
 	# line leaves a nine byte cxbottle.conf and set -e ends the script
 	# without a word about it. rename is what makes it all or nothing.
 	cp "$conf" "$conf.crossover-wheel.bak"
-	awk '
+	awk -v vars="$missing" '
+		function add(	n, i, v) {
+			n = split(vars, v, " ")
+			for (i = 1; i <= n; i++)
+				print "\"" v[i] "\" = \"0\""
+		}
 		/^\[EnvironmentVariables\]/ {
-			print; print "\"SDL_JOYSTICK_HIDAPI\" = \"0\""
+			print; add()
 			done = 1; next
 		}
 		{ print }
@@ -368,7 +390,7 @@ set_bottle_env()
 			if (!done) {
 				print ""
 				print "[EnvironmentVariables]"
-				print "\"SDL_JOYSTICK_HIDAPI\" = \"0\""
+				add()
 			}
 		}
 	' "$conf.crossover-wheel.bak" > "$conf.crossover-wheel.new" || {
@@ -376,7 +398,10 @@ set_bottle_env()
 		die "could not rewrite $conf, which is unchanged"
 	}
 	mv "$conf.crossover-wheel.new" "$conf"
-	say "  SDL_JOYSTICK_HIDAPI=0 added (old file kept as .crossover-wheel.bak)"
+	for v in $missing; do
+		say "  $v=0 added"
+	done
+	say "  (old file kept as .crossover-wheel.bak)"
 }
 
 install_proxy()
