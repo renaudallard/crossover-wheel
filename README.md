@@ -211,20 +211,23 @@ rather than nothing at all.
 
 **An update replaces the application and not the bottle.** The proxy lives
 inside CrossOver and only the install puts it there, so the menu checks: when a
-bottle holds a proxy that is not the one in the application, it offers *Update
-the proxy in* those bottles, by name. That is the install you already know, in
+bottle holds a proxy that is not the one in the application, or is missing a
+line the install writes in its `cxbottle.conf`, it offers *Update the install
+in* those bottles, by name. That is the install you already know, in
 a window that says it is an update and names them rather than asking which
 bottle the game is in, and one press does every one of them, one after
 another. It stops at the first that fails and says which were not tried.
 
-**The row only appears when the proxy really changed.** It used to appear
+**The row only appears when the bottle really needs it.** It used to appear
 after every application update, because the proxy carries a build string and
 that string was the release: 0.3.0 and 0.3.1 have not one commit between them
 under `src/dll`, and the menu still offered to replace the one in the bottle,
 the install still replaced it, and nothing about the game changed. The string
 now names the last commit that touched what the proxy is built from, so two
 releases that leave the proxy alone build the same bytes and the row stays
-away. When it does appear, the update is one.
+away. The other reason it appears is the bottle's environment: a bottle
+installed before `SDL_JOYSTICK_MFI` was added holds the current proxy and
+still needs that line. When the row does appear, the update is one.
 
 **Two settings the wheel keeps for itself** are in that menu too, because no
 game can ask for either as you want it. DirectInput has no property for a

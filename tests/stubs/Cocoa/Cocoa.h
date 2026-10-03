@@ -50,8 +50,8 @@ typedef NSUInteger NSStringEncoding;
 typedef NSUInteger NSDataSearchOptions;
 typedef NSUInteger NSJSONReadingOptions;
 
-@class NSString, NSArray, NSDictionary, NSMutableDictionary, NSData,
-    NSError, NSURL;
+@class NSString, NSCharacterSet, NSArray, NSDictionary, NSMutableDictionary,
+    NSData, NSError, NSURL;
 @class NSMenu, NSMenuItem, NSView, NSFont, NSColor, NSImage, NSTimer;
 @class NSNotificationCenter, NSStatusBarButton;
 
@@ -99,6 +99,7 @@ typedef NSInteger NSComparisonResult;
 - (NSData *)dataUsingEncoding:(NSStringEncoding)e;
 - (NSComparisonResult)localizedCaseInsensitiveCompare:(NSString *)s;
 - (NSArray *)componentsSeparatedByString:(NSString *)s;
+- (NSArray *)componentsSeparatedByCharactersInSet:(NSCharacterSet *)s;
 - (NSString *)lowercaseString;
 @end
 
@@ -120,6 +121,10 @@ typedef struct {
 @protocol NSFastEnumeration
 - (NSUInteger)countByEnumeratingWithState:(NSFastEnumerationState *)st
     objects:(__unsafe_unretained id *)buf count:(NSUInteger)n;
+@end
+
+@interface NSCharacterSet : NSObject
++ (NSCharacterSet *)characterSetWithCharactersInString:(NSString *)s;
 @end
 
 @interface NSArray<__covariant T> : NSObject <NSFastEnumeration>

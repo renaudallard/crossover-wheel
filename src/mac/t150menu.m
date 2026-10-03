@@ -122,7 +122,7 @@ typedef enum {
 @property (strong) NSTimer *healthy;
 /* How far into the login agent's log file we have read. See readAgentLog. */
 @property (assign) unsigned long long agentLogAt;
-/* Bottles whose proxy is not the one in this bundle. See checkBottleProxies. */
+/* Bottles the install has to run in again. See checkBottles. */
 @property (strong) NSArray<NSString *> *staleBottles;
 @property (strong) NSMenuItem *proxyItem;
 /*
@@ -235,7 +235,8 @@ typedef enum {
 }
 
 /*
- * Which bottles hold a proxy that is not the one in this bundle.
+ * Which bottles hold a proxy that is not the one in this bundle, or this
+ * bundle's proxy without every line install.sh writes in their cxbottle.conf.
  *
  * The two halves of this stack ship together and only one of them is ever
  * updated. "Check for updates" replaces the application, and update.sh moves a
@@ -250,8 +251,13 @@ typedef enum {
  * is one this application installed into and has since outgrown. A dinput8
  * that is not ours is somebody else's business and is left alone, tested the
  * way install.sh tests it.
+ *
+ * The proxy alone is not the whole install. SDL_JOYSTICK_MFI joined the
+ * bottle's environment with no change to the proxy, so a bottle installed
+ * before it holds this bundle's proxy byte for byte and would never have been
+ * offered the line. See bottleEnvCurrent.
  */
-- (NSArray<NSString *> *)bottlesWithOldProxy
+- (NSArray<NSString *> *)bottlesToUpdate
 {
 	NSData *mine = [NSData dataWithContentsOfFile:
 	    [self resource:@"t150-dinput8.dll"]];
@@ -283,7 +289,8 @@ typedef enum {
 		if ([there rangeOfData:marker options:0
 		    range:NSMakeRange(0, there.length)].location == NSNotFound)
 			continue;
-		if (![there isEqualToData:mine])
+		if (![there isEqualToData:mine] || ![self bottleEnvCurrent:
+		    [root stringByAppendingPathComponent:name]])
 			[old addObject:name];
 	}
 
@@ -291,13 +298,48 @@ typedef enum {
 }
 
 /*
- * Asked when the menu opens rather than on the timer, because it reads both
- * files whole and the answer only has to be right at the moment somebody is
- * looking at it.
+ * Whether a bottle's cxbottle.conf already holds every variable install.sh
+ * writes there. The names are install.sh's BOTTLE_ENV and have to be kept in
+ * step with it.
+ *
+ * Each line is compared with its blanks and quotes taken out. That accepts
+ * every line install.sh's env_already_zero accepts, and a few odd ones it does
+ * not, which is the safe way round: a bottle passed here by mistake is not
+ * offered an update, while one failed by mistake would be offered it for ever,
+ * because install.sh would find nothing to add. A file that cannot be read as
+ * text is left alone for the same reason.
  */
-- (void)checkBottleProxies
+- (BOOL)bottleEnvCurrent:(NSString *)bottle
 {
-	self.staleBottles = [self bottlesWithOldProxy];
+	NSData *d = [NSData dataWithContentsOfFile:
+	    [bottle stringByAppendingPathComponent:@"cxbottle.conf"]];
+	NSCharacterSet *blank = [NSCharacterSet
+	    characterSetWithCharactersInString:@" \t\r\f\v\""];
+	NSMutableArray<NSString *> *lines = [NSMutableArray array];
+	NSString *conf;
+
+	if (d == nil)
+		return YES;
+	conf = [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding];
+	if (conf == nil)
+		return YES;
+
+	for (NSString *l in [conf componentsSeparatedByString:@"\n"])
+		[lines addObject:[[l componentsSeparatedByCharactersInSet:blank]
+		    componentsJoinedByString:@""]];
+
+	return [lines containsObject:@"SDL_JOYSTICK_HIDAPI=0"] &&
+	    [lines containsObject:@"SDL_JOYSTICK_MFI=0"];
+}
+
+/*
+ * Asked when the menu opens rather than on the timer, because it reads every
+ * file it compares whole and the answer only has to be right at the moment
+ * somebody is looking at it.
+ */
+- (void)checkBottles
+{
+	self.staleBottles = [self bottlesToUpdate];
 }
 
 /*
@@ -578,12 +620,12 @@ typedef enum {
 	/*
 	 * Only when there is one, because a row that is always there is a row
 	 * nobody reads. The bottles are named: somebody with several needs to
-	 * know which of them a game will still find the old proxy in.
+	 * know which of them a game will still find the old install in.
 	 */
 	self.proxyItem.hidden = self.staleBottles.count == 0;
 	if (self.staleBottles.count > 0)
 		self.proxyItem.title = [NSString stringWithFormat:
-		    @"Update the proxy in %@…",
+		    @"Update the install in %@…",
 		    [self.staleBottles componentsJoinedByString:@", "]];
 
 	self.loginItem.state = [self loginEnabled] ? NSControlStateValueOn
@@ -600,7 +642,7 @@ typedef enum {
 {
 	(void)menu;
 	self.wheel = [self wheelState];
-	[self checkBottleProxies];
+	[self checkBottles];
 	[self refresh];
 }
 
@@ -1715,12 +1757,12 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		return;
 
 	self.headline.stringValue = update ?
-	    [NSString stringWithFormat:@"Update the proxy in %@",
+	    [NSString stringWithFormat:@"Update the install in %@",
 	    [self.pendingBottles componentsJoinedByString:@", "]] :
 	    @"Which CrossOver bottle is the game in?";
 	self.subhead.stringValue = update ?
-	    @"The proxy in each of them is replaced with the one this "
-	    "application carries. Nothing else in them is touched." :
+	    @"Each of them gets the proxy and the settings this application "
+	    "carries. Nothing outside them is touched." :
 	    @"The proxy and the settings the wheel needs go into that bottle. "
 	    "Nothing outside it is touched.";
 	self.install.title = update ? @"Update" : @"Install";
@@ -1898,7 +1940,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 		    "install the game into it first.\n", [self bottleRoot]]];
 	} else if (self.pendingBottles.count > 0) {
 		[self say:[NSString stringWithFormat:
-		    @"Ready. Press Update to replace the proxy in %@.\n\n",
+		    @"Ready. Press Update to bring %@ up to date.\n\n",
 		    [self.pendingBottles componentsJoinedByString:@", "]]];
 	} else {
 		[self say:@"Ready. Pick the bottle your game is in and press "
