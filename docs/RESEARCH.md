@@ -2125,7 +2125,7 @@ opposite: `lnxev_device_vtbl` is a `hid_device_vtbl` and synthesises a PID
 descriptor from evdev capabilities. This is true of the file and irrelevant
 to the outcome, because of B8 and B9.
 
-> `bus_iohid.c` versus `bus_udev.c:1096` and `bus_udev.c:626`.
+> `bus_iohid.c` versus `bus_udev.c:1093` and `bus_udev.c:624`.
 
 **B4. DirectInput derives force feedback capability purely from a PID
 descriptor.** `guidFFDriver` is set only when
@@ -2852,7 +2852,7 @@ design. Reconsider only if a target game turns out not to use DirectInput 8.
   atomic set. `Hidraw`=0 alone removes only the IOHID copy and guarantees an
   SDL-sourced duplicate survives, and `Enable SDL`=0 without `DisableInput`=1
   drops every Generic Desktop joystick from the bottle.
-  > CrossOver 26.3.0 `dlls/winebus.sys/main.c:960`, `:537`, `:1305`.
+  > CrossOver 26.3.0 `dlls/winebus.sys/main.c:964`, `:541`, `:1305`.
 
 **D6. Reusing the predecessor project's PID descriptor.** Not applicable to
 the current design, but recorded so it is not repeated: `macoswheels`'
@@ -2974,9 +2974,10 @@ turned on.
    `044f:b677`, the wheel reaches no SDL path, the same end as B11 by a
    different road. `SDL_JOYSTICK_MFI=0` makes `IOS_SupportedHIDDevice()`
    answer no and `IOS_JoystickInit()` start nothing, so the IOKit backend
-   keeps the wheel. Neither copy of winebus on disk sets that hint, so the
-   bottle's environment decides it. Nothing found says Apple added
-   Thrustmaster wheels on 27: this is a mechanism, not a measurement.
+   keeps the wheel. CrossOver's winebus sets no such hint, only the PS4 and
+   PS5 rumble ones, so the bottle's environment decides it. Nothing found
+   says Apple added Thrustmaster wheels on 27: this is a mechanism, not a
+   measurement.
 
    `install.sh` writes `"SDL_JOYSTICK_MFI" = "0"` beside the HIDAPI line on
    that basis, since on macOS 26 it changes nothing for the T150. It costs
@@ -2990,9 +2991,10 @@ turned on.
    > `JoystickAlreadyKnown()`; `src/joystick/iphoneos/SDL_mfijoystick.m`
    > `IOS_SupportedHIDDevice()` and `IOS_JoystickInit()`;
    > `include/SDL_config_macosx.h`, `SDL_JOYSTICK_MFI 1`; `src/SDL_hints.c`,
-   > the environment read in `SDL_GetHint()`. CrossOver's
-   > `dlls/winebus.sys/bus_sdl.c` `sdl_bus_init()`, which sets only the PS4
-   > and PS5 rumble hints, and in the 26.3.0 copy under `tmp/research/` none.
+   > the environment read in `SDL_GetHint()`.
+   > `sources/wine/dlls/winebus.sys/bus_sdl.c` in
+   > `crossover-sources-26.3.0.tar.gz`, `sdl_bus_init()`, where the two
+   > rumble hints are the only `SDL_SetHint()` calls.
 
 Probes 1 to 6 are what `src/probe/` exists to answer. See
 [PROBES.md](PROBES.md).
