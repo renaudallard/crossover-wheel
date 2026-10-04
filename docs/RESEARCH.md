@@ -2172,17 +2172,18 @@ write into `kIOReturnNotPermitted`.
 > path cannot be tested from a headless or SSH session, and macOS CI cannot
 > cover it.
 
-**B8. On macOS the wheel does not reach the bottle through `bus_iohid.c`.**
+**B8. By default the wheel does not reach the bottle through `bus_iohid.c`.**
 winebus creates one device per backend and then arbitrates between them.
 `bus_iohid.c` marks everything it creates `is_hidraw = TRUE`, and on
 `BUS_EVENT_TYPE_DEVICE_CREATED` the main loop removes any device whose
 `is_hidraw` flag disagrees with `is_hidraw_enabled()`. For a Generic Desktop
 joystick or gamepad that function returns a `prefer_hidraw` default of FALSE
 unless the VID:PID is on a hardcoded list or in the `EnableHidraw` registry
-value. The T150's `044f:b677` is on neither: the Thrustmaster entries are the
-T-Rudder `b679`, the TWCS Throttle `b687` and the T.16000M `b10a`. `Enable
-SDL` defaults to 1. So the IOHID instance is discarded and the SDL one is
-what the bottle sees.
+value, and `DisableHidraw` (A25) and a per-device `Hidraw` value (B10) are
+read before that default. The T150's `044f:b677` is on neither list: the
+Thrustmaster entries are the T-Rudder `b679`, the TWCS Throttle `b687` and the
+T.16000M `b10a`. `Enable SDL` defaults to 1. So the IOHID instance is
+discarded and the SDL one is what the bottle sees.
 
 > `dlls/winebus.sys/main.c`, `bus_options_init()`, `is_hidraw_enabled()` and
 > the `BUS_EVENT_TYPE_DEVICE_CREATED` case; `bus_iohid.c`, the
@@ -2209,11 +2210,12 @@ capability query underneath it that returns nothing.
 
 B4 still decides the outcome and the design is unaffected, because the proxy
 sits above DirectInput and never reads a descriptor. One practical
-consequence though: putting `044f:b677` in `EnableHidraw` routes the wheel
-back through `bus_iohid.c`, and the bottle then sees the wheel's own
-descriptor instead of SDL's synthesised one. That is an input fidelity knob,
-not a force feedback fix. Since A34, that knob has become the leading
-candidate fix for the whole input problem: see B10.
+consequence though: unless `DisableHidraw` is set (A25) or the wheel's
+per-device `Hidraw` value (B10) is 0, putting `044f:b677` in `EnableHidraw`
+routes the wheel back through `bus_iohid.c`, and the bottle then sees the
+wheel's own descriptor instead of SDL's synthesised one. That is an input
+fidelity knob, not a force feedback fix. Since A34, that knob has become the
+leading candidate fix for the whole input problem: see B10.
 
 **B10. CrossOver 26.3.0's own winebus, read from CodeWeavers' published
 source, and why a missing wheel means the SDL chain.** A34 measured the
@@ -2235,12 +2237,12 @@ Wine tree, and 26.3.0's `dlls/winebus.sys/` says the following.
   depend on the SDL bus, which held only for wired Xbox 360 pads, and only
   before macOS 15.
 - **The arbitration matches upstream.** `is_hidraw_enabled()` has the same
-  Thrustmaster allowlist as upstream, `b679`, `b687`, `b10a`, not `b677`,
-  so the wheel's iohid copy is discarded and the SDL copy is the only one
-  the bottle can receive. No CrossOver-specific filter drops it:
-  `sdl_add_device()` treats wheels as plain joysticks, and deliberately so,
-  with an explicit `joystick_type != SDL_JOYSTICK_TYPE_WHEEL` guard keeping
-  wheels out of the game-controller mapping.
+  Thrustmaster allowlist as upstream, `b679`, `b687`, `b10a`, not `b677`, so
+  with nothing else set the wheel's iohid copy is discarded and the SDL copy
+  is the only one the bottle can receive. No CrossOver-specific filter drops
+  it: `sdl_add_device()` treats wheels as plain joysticks, and deliberately
+  so, with an explicit `joystick_type != SDL_JOYSTICK_TYPE_WHEEL` guard
+  keeping wheels out of the game-controller mapping.
 - **So the fault is in the SDL chain**: winebus's `dlopen` of CrossOver's
   own `lib64/libSDL2-2.0.0.dylib`, `SDL_Init`, or SDL's macOS HID
   enumeration inside the bottle's processes, which carry CrossOver.app's
@@ -2270,7 +2272,9 @@ Two experiments decide it, both cheap:
    appears, the input problem is solved better than SDL ever solved it,
    force feedback unaffected since the proxy sits above DirectInput. If it
    does not appear through IOHID either, the fault is process-level, TCC
-   or the device, not SDL.
+   or the device, not SDL. `DisableHidraw`, which the installer writes by
+   default (A25), overrides this value and keeps that bus from starting,
+   so the knob needs it unset.
 
 > `sources/wine/dlls/winebus.sys/` in
 > `crossover-sources-26.3.0.tar.gz` from media.codeweavers.com:
@@ -2342,7 +2346,8 @@ So the experiment order for the bottle, cheapest and most likely first:
    narrower `SDL_JOYSTICK_HIDAPI_PS3=0` would spare those and is the
    refinement to try once the broad form is proven.
 2. The `Hidraw` knob from B10, which bypasses SDL entirely and carries the
-   wheel's own descriptor, buttons included, so it may fix A21 too.
+   wheel's own descriptor, buttons included, so it may fix A21 too. It
+   needs `DisableHidraw` unset (A25).
 3. The `+hid` trace from B10, if neither works, to see what the bus
    actually said.
 
@@ -2505,7 +2510,10 @@ Three consequences:
 - **The B10 `Hidraw` knob is not a hack but CodeWeavers' own wheel path**,
   missing only the allowlist entry for `044f:b677`. Which also suggests
   the durable fix to offer upstream: CodeWeavers adding the T150 to the
-  same list its T-Rudder and T.16000M siblings are already on.
+  same list its T-Rudder and T.16000M siblings are already on. Both need
+  hidraw on: in a bottle where `DisableHidraw` is set, as this project's
+  installer sets it by default, neither the knob nor a list entry routes
+  the wheel (A25).
 - **If Thrustmaster firmware ever exposed a PID mode, this project would
   be obsolete for it.** It does not; that is D6 and C5's territory and
   nothing new.
