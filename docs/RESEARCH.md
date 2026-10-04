@@ -2214,14 +2214,19 @@ wheel absent from the bottle entirely, which B8 and B9, researched against
 upstream Wine, did not predict. CodeWeavers publishes CrossOver's modified
 Wine tree, and 26.3.0's `dlls/winebus.sys/` says the following.
 
-- **CrossOver runs four buses, not three.** SDL, udev, iohid, and a
-  CodeWeavers-only `bus_xbox360.c` (2019, Aric Stewart), an IOKit USB
-  backend for Xbox pads. Xbox pads therefore never depend on the SDL bus,
-  and DualShock and DualSense ride the iohid bus through a hidraw
-  allowlist. **A dead SDL chain blanks exactly one class of device: the
-  generic HID joystick, which is what a T150 is.** Every controller a
-  typical user owns keeps working, which is how a broken SDL bus stays
-  unnoticed.
+- **CrossOver runs four buses, not three, but on a current Mac at most two
+  carry a pad.** SDL, udev, iohid, and a CodeWeavers-only `bus_xbox360.c`
+  (2019, Aric Stewart), an IOKit USB backend for wired Xbox 360 pads. udev
+  is not compiled into the Mac build, and the Xbox bus turns itself off on
+  macOS 15 and later, where CodeWeavers leave those pads to
+  GameController.framework; the tester's macOS 27 trace shows its loop
+  exiting as soon as it starts. DualShock and DualSense ride the iohid bus
+  through a hidraw allowlist while hidraw is on (A25). **So a dead SDL
+  chain blanks the generic HID joystick, which is what a T150 is, every
+  Xbox pad except, before macOS 15, a wired Xbox 360 one, and with hidraw
+  off DualShock and DualSense too.** This bullet first said Xbox pads never
+  depend on the SDL bus, which held only for wired Xbox 360 pads, and only
+  before macOS 15.
 - **The arbitration matches upstream.** `is_hidraw_enabled()` has the same
   Thrustmaster allowlist as upstream, `b679`, `b687`, `b10a`, not `b677`,
   so the wheel's iohid copy is discarded and the SDL copy is the only one
@@ -2265,7 +2270,9 @@ Two experiments decide it, both cheap:
 > `main.c` `bus_options_init()`, `load_device_options()`,
 > `is_hidraw_enabled()`, the `IRP_MN_START_DEVICE` case starting all four
 > buses; `bus_sdl.c` `sdl_bus_init()`, `sdl_add_device()`;
-> `bus_xbox360.c`. The shipped Mac package carries
+> `bus_xbox360.c` `sequoia_or_later()`, `xbox_bus_init()`,
+> `xbox_device_start()`; `bus_udev.c` `udev_bus_init()`,
+> which the Mac build replaces with a stub. The shipped Mac package carries
 > `lib64/libSDL2-2.0.0.dylib` and the winebus allowlists verbatim.
 > Channels: `WINE_DEFAULT_DEBUG_CHANNEL(hid)` in `main.c`, `hid.c` and the
 > SDL, udev and iohid buses, `plugplay` in `bus_xbox360.c`, none in
@@ -2871,11 +2878,24 @@ design. Reconsider only if a target game turns out not to use DirectInput 8.
 - Nothing tells a minidriver that a game exited: `hidclass` consumes
   `IRP_MJ_CLOSE` at the PDO and never forwards it.
   > `dlls/hidclass.sys/device.c:783-813`, `pdo_close()`.
-- Hiding the native copy of the wheel needs three registry values as an
-  atomic set. `Hidraw`=0 alone removes only the IOHID copy and guarantees an
-  SDL-sourced duplicate survives, and `Enable SDL`=0 without `DisableInput`=1
-  drops every Generic Desktop joystick from the bottle.
-  > CrossOver 26.3.0 `dlls/winebus.sys/main.c:964`, `:541`, `:1305`.
+- Hiding the native copy of the wheel through the registry needs three values
+  as an atomic set, with `DisableHidraw` unset (A25). SDL's own
+  `SDL_GAMECONTROLLER_IGNORE_DEVICES=0x044f/0xb677` hides it from winebus's
+  SDL bus without them, but every SDL in the bottle reads it, a game's own
+  included. `Hidraw`=0 alone removes only the IOHID copy and leaves SDL's
+  copy, whenever SDL has one, in place. `Enable SDL`=0 without
+  `DisableInput`=1, which is all joy.cpl's Enable SDL checkbox writes, drops
+  from the bottle every Generic Desktop joystick or gamepad except those
+  `is_hidraw_enabled()` prefers for hidraw: its built-in vendor cases,
+  DualShock 4 and DualSense, `EnableHidraw`, or a nonzero per-device `Hidraw`.
+  Xbox pads go with the rest, since CodeWeavers' Xbox bus enumerates nothing
+  on macOS 15 and later, where with `DisableHidraw` set as well no joystick is
+  left at all.
+  > CrossOver 26.3.0 `dlls/winebus.sys/main.c:518-598`, `:964`, `:1246`,
+  > `:1271`, `:1305`; `bus_iohid.c:274`; `bus_xbox360.c:603-631`;
+  > `dlls/joy.cpl/main.c:388-391`, `joy.rc:51-52`;
+  > `dlls/ntdll/unix/env.c:351-359`. SDL 2.30.12 `SDL_ShouldIgnoreJoystick()`,
+  > which the IOKit backend checks on every arrival, and `SDL_getenv()`.
 
 **D6. Reusing the predecessor project's PID descriptor.** Not applicable to
 the current design, but recorded so it is not repeated: `macoswheels`'

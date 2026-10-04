@@ -98,9 +98,9 @@ seams are real and were confirmed against CrossOver's published sources:
   device change in that winedevice.
 - Nothing tells the driver when a game exits, because `hidclass` consumes
   `IRP_MJ_CLOSE` at the PDO.
-- Hiding the native copy of the wheel needs three registry values working
-  together, and one of them costs every other controller in that bottle its
-  rumble.
+- Hiding the native copy of the wheel through the registry needs three
+  values working together and hidraw left on, and one of them turns SDL off
+  for every other controller in that bottle.
 
 The proxy removes all five. Should a target game turn out not to use
 DirectInput 8, the bus driver is the escalation, not the starting point.
