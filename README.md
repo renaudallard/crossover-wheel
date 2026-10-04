@@ -365,10 +365,12 @@ carry a PID collection, a Simucube, gets native untranslated force feedback
 in CrossOver on macOS today through the hidraw path, which is why four of
 them are on CodeWeavers' allowlist (RESEARCH.md B12). The Fanatec entry on
 that list is a set of ClubSport pedals, which render nothing. The T150
-cannot ride that path. On the SDL path it arrives without a PID collection
-too: the SDL backend synthesises one only for a device SDL calls haptic,
-and SDL's macOS haptic backend is `ForceFeedback.framework`, which reaches
-only devices whose driver published a plug-in. No wheel vendor ships one.
+gets no force feedback from that path, because the descriptor the path
+carries is the wheel's own, which has no PID collection (RESEARCH.md B1 and
+A40). On the SDL path it arrives without one as well: the SDL backend
+synthesises one only for a device SDL calls haptic, and SDL's macOS haptic
+backend is `ForceFeedback.framework`, which reaches only devices whose
+driver published a plug-in. No wheel vendor ships one.
 
 **Cannot be fixed at the macOS layer.** Presenting the wheel to macOS as a
 force feedback device is closed off for reasons unrelated to code signing.

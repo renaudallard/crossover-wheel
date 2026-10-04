@@ -2503,10 +2503,10 @@ Three consequences:
 - **"Whatever FF Wine supports" on macOS means: full pass-through for PID
   hardware, nothing for descriptor-less wheels.** The T150 declares no PID
   collection, which is this project's founding measurement, so it can
-  never ride that path, and neither can the T300RS. The proxy and daemon
-  remain the only route for them, and the niche is real but narrower than
-  "no force feedback in CrossOver on macOS": it is force feedback for
-  wheels PID left behind.
+  never get force feedback that way, and neither can the T300RS. The
+  proxy and daemon remain the only route for them, and the niche is real
+  but narrower than "no force feedback in CrossOver on macOS": it is force
+  feedback for wheels PID left behind.
 - **The B10 `Hidraw` knob is not a hack but CodeWeavers' own wheel path**,
   missing only the allowlist entry for `044f:b677`. Which also suggests
   the durable fix to offer upstream: CodeWeavers adding the T150 to the
