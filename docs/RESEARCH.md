@@ -2851,13 +2851,23 @@ design. Reconsider only if a target game turns out not to use DirectInput 8.
 - `hidclass.sys` unconditionally marks the write IRP pending, and
   DirectInput's `WriteFile` waits `INFINITE` on winedevice's single request
   thread, so any blocking send freezes the game rather than degrading.
-  > `dlls/hidclass.sys/device.c:517-520`; `dlls/kernelbase/file.c:4053-4059`.
+  > `dlls/hidclass.sys/device.c:517-520`; `dlls/kernelbase/file.c:4030-4034`.
 - `hidclass.sys` silently drops input reports shorter than the declared
   `InputLength`, with only an ERR line to show for it.
   > `dlls/hidclass.sys/device.c:349-352`.
 - `hid_device_thread` abandons a pending `IOCTL_HID_READ_REPORT` IRP without
-  cancelling it, and the FDO buffer is then freed. That is a use after free.
-  > `dlls/hidclass.sys/device.c:337-341`, `pnp.c:393-400`.
+  cancelling it when the device halts, and `IRP_MN_REMOVE_DEVICE` then waits
+  for that IRP to complete before it frees the buffer. So a minidriver has to
+  complete its pending read on removal, or the removal waits for it with no
+  timeout, and since a removal its bus reports runs on ntoskrnl's one
+  enumeration thread, every later device change in that winedevice waits
+  behind it. winebus completes it, with `STATUS_DELETE_PENDING`. This bullet
+  first called it a use after free, which CrossOver 26.3.0's remove path
+  does not bear out.
+  > `dlls/hidclass.sys/device.c:336-342`, `pnp.c:402-411`;
+  > `dlls/winebus.sys/main.c` `remove_pending_irps()`;
+  > `dlls/ntoskrnl.exe/pnp.c` `handle_bus_relations()`,
+  > `device_enum_thread_proc()`.
 - Nothing tells a minidriver that a game exited: `hidclass` consumes
   `IRP_MJ_CLOSE` at the PDO and never forwards it.
   > `dlls/hidclass.sys/device.c:783-813`, `pdo_close()`.

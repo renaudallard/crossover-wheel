@@ -93,7 +93,9 @@ seams are real and were confirmed against CrossOver's published sources:
 - `hidclass.sys` silently drops input reports shorter than the length its
   descriptor parse declared.
 - `hid_device_thread` abandons pending `IOCTL_HID_READ_REPORT` IRPs without
-  cancelling them, so the FDO buffer is freed while a driver still holds it.
+  cancelling them, and removal waits for them with no timeout, so the driver
+  has to complete them when it is removed, or an unplug stalls every later
+  device change in that winedevice.
 - Nothing tells the driver when a game exits, because `hidclass` consumes
   `IRP_MJ_CLOSE` at the PDO.
 - Hiding the native copy of the wheel needs three registry values working
