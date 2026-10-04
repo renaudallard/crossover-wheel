@@ -2239,11 +2239,18 @@ Wine tree, and 26.3.0's `dlls/winebus.sys/` says the following.
 Two experiments decide it, both cheap:
 
 1. **Make winebus talk.** Quit CrossOver fully, then start the bottle from
-   a terminal with `--debugmsg +winebus` and the wheel plugged in, and run
+   a terminal with `--debugmsg +hid` and the wheel plugged in, and run
    `control.exe joy.cpl` for DirectInput's view. The trace prints the SDL
    bus starting or failing to load libSDL2, and either
    `creating non-hidraw device 044f:b677` or nothing at all. One log names
-   the broken link.
+   the broken link. **The channel is `hid`.** Every winebus source file
+   that logs uses it, except the Xbox bus, which logs on `plugplay`, and no
+   file in the tree declares a `winebus` channel. This step first named
+   `+winebus`, and test 16's instructions used it in two steps. Those runs
+   could print winebus's errors and fixmes, which Wine leaves on for every
+   channel not named, but none of the trace and warn lines this step reads,
+   so there is no winebus trace from macOS 26. The first is the tester's of
+   2026-10-04, on macOS 27.
 2. **Reroute around SDL.** `HKLM\System\CurrentControlSet\Services\WineBus\
    Devices\044f/b677` with DWORD `Hidraw` = 1, read at bottle boot, sends
    the wheel through `bus_iohid.c` instead, which passes the wheel's own
@@ -2260,6 +2267,12 @@ Two experiments decide it, both cheap:
 > buses; `bus_sdl.c` `sdl_bus_init()`, `sdl_add_device()`;
 > `bus_xbox360.c`. The shipped Mac package carries
 > `lib64/libSDL2-2.0.0.dylib` and the winebus allowlists verbatim.
+> Channels: `WINE_DEFAULT_DEBUG_CHANNEL(hid)` in `main.c`, `hid.c` and the
+> SDL, udev and iohid buses, `plugplay` in `bus_xbox360.c`, none in
+> `unixlib.c`, which logs nothing, and no `winebus` channel declared
+> anywhere in the tarball's `sources/wine/`. `dlls/ntdll/unix/debug.c`
+> `parse_options()` stores any channel name without checking it, and
+> `default_flags` leaves `err` and `fixme` on for channels not named.
 
 **B11. The suspect, verified in the shipped bits and then by experiment:
 SDL 2.30.12's HIDAPI layer claims Thrustmaster devices and the IOKit
@@ -2316,8 +2329,8 @@ So the experiment order for the bottle, cheapest and most likely first:
    refinement to try once the broad form is proven.
 2. The `Hidraw` knob from B10, which bypasses SDL entirely and carries the
    wheel's own descriptor, buttons included, so it may fix A21 too.
-3. The `+winebus` trace, if neither works, to see what the bus actually
-   said.
+3. The `+hid` trace from B10, if neither works, to see what the bus
+   actually said.
 
 > The dylib: `lib64/libSDL2-2.0.0.dylib` in `crossover-26.3.0.zip`, string
 > `SDL-release-2.30.12-0-g8236e01a9`. SDL 2.30.12:
