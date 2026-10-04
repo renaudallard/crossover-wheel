@@ -34,14 +34,17 @@ both:
 - CrossOver carries it into the bottle without any driver, and it opens the
   device without seizing it, so a second process can still write to it.
 
-Only the force feedback output channel is missing. On macOS the wheel reaches
-the bottle through winebus's SDL backend, not its IOHID one (RESEARCH.md B8),
-and that backend synthesises a PID descriptor only for a device SDL considers
-haptic. SDL's macOS haptic backend is `ForceFeedback.framework`, which only
-reaches devices whose driver published a plug-in, so it considers no
-driverless wheel haptic (B9). DirectInput therefore reports no force feedback,
-because `dlls/dinput/joystick_hid.c` sets `DIDC_FORCEFEEDBACK` and
-`guidFFDriver` only from PID collections it finds in the descriptor.
+Only the force feedback output channel is missing. As installed, the wheel
+reaches the bottle through winebus's SDL backend, not its IOHID one
+(RESEARCH.md B8, A25), and that backend synthesises a PID descriptor only for
+a device SDL considers haptic. SDL's macOS haptic backend is
+`ForceFeedback.framework`, which only reaches devices whose driver published a
+plug-in, so it considers no driverless wheel haptic (B9). DirectInput
+therefore reports no force feedback, because `dlls/dinput/joystick_hid.c` sets
+`DIDC_FORCEFEEDBACK` and `guidFFDriver` only from PID collections it finds in
+the descriptor. The IOHID route, which B10's per-device `Hidraw` value opens
+in a bottle with hidraw left on, carries the wheel's own descriptor instead,
+and that has no PID collection either (A40).
 
 ## The shape
 

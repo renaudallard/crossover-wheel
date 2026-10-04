@@ -334,25 +334,28 @@ ordinary joystick once it is in firmware mode, and early sessions had
 CrossOver passing it into the bottle, steering and pedals working in games.
 
 **Broke, was diagnosed, and works again: the wheel in the bottle.**
-Tests 13 and 15 measured the wheel absent from the bottle entirely,
-axes included. The cause was read out of the shipped software: the
-SDL that CrossOver 26 bundles, 2.30.12, is the last release whose
-HIDAPI layer still claims every Thrustmaster device as a possible
-PlayStation pad and drops it. `SDL_JOYSTICK_HIDAPI=0` in the bottle's
-environment fixes it, confirmed on hardware in test 16, and belongs in
-`cxbottle.conf` so every launch gets it. On macOS 27 the wheel went
-missing from the bottle again with that line in place and nothing else
-changed; the suspect is SDL leaving any device Apple's GameController
-framework claims to a backend with no racing wheels, so the install also
-writes `SDL_JOYSTICK_MFI=0`. That one is not yet confirmed on hardware
-(E9). The install also turns hidraw off in that bottle, because with
-hidraw on the wheel has been measured missing from it altogether (A25),
-and that pins the wheel to the SDL route: the thirteen buttons A37 named
-whole were named on the other route, so anyone who wants that one back
-unticks the box, or passes `--keep-hidraw`. The one remaining input
-fault was measured to its cause: the T150's own descriptor labels the
-pedals backwards, which `T150_PEDALS` can correct for a game that needs
-it. [`docs/RESEARCH.md`](docs/RESEARCH.md) B10, B11, A25, A35, A37 and E9.
+Tests 13 and 15 measured the wheel absent from the bottle entirely, axes
+included. The cause was read out of the shipped software: the SDL that
+CrossOver 26 bundles, 2.30.12, is the last release whose HIDAPI layer
+still claims every Thrustmaster device as a possible PlayStation pad
+and drops it. `SDL_JOYSTICK_HIDAPI=0` in the bottle's environment fixes
+it, confirmed on hardware in test 16, and belongs in `cxbottle.conf`
+so every launch gets it. On macOS 27 the wheel went missing from the
+bottle again with that line in place and nothing else changed; the
+suspect is SDL leaving any device Apple's GameController framework
+claims to a backend with no racing wheels, so the install also writes
+`SDL_JOYSTICK_MFI=0`. That one is not yet confirmed on hardware (E9). The
+install also turns hidraw off in that bottle, because with hidraw on
+the wheel has been measured missing from it altogether (A25), and that
+pins the wheel to the SDL route. The thirteen buttons A37 named whole
+were named on the other route, which needs B10's per-device `Hidraw`
+value for `044f/b677` as well as hidraw left on: the box unticked or
+`--keep-hidraw` on a new install, `DisableHidraw` deleted on one already
+done, as "Installing the proxy into a bottle" shows. The one remaining
+input fault was measured to its cause: the T150's own descriptor labels
+the pedals backwards, which `T150_PEDALS` can correct for a game that
+needs it. [`docs/RESEARCH.md`](docs/RESEARCH.md) B10, B11, A25, A35,
+A37 and E9.
 
 **Does not work: force feedback, because the T150 brings no PID
 descriptor.** Wine's DirectInput sets `DIDC_FORCEFEEDBACK` only from a
@@ -1068,8 +1071,10 @@ winebus then discards every device whose only copy came from the IOHID bus. A
 pad SDL enumerates as well is unaffected. A wheelbase that carries its own PID
 collection is not: hidraw is the route that gives it native force feedback
 (RESEARCH.md B12), and the T150's own report descriptor, which A37 measured
-all thirteen buttons through, arrives by that route too. `--keep-hidraw`, or
-unticking the box, is how a bottle keeps it. To undo it afterwards:
+all thirteen buttons through, arrives by that route too once the per-device
+value above is set; without it the T150 takes SDL either way. `--keep-hidraw`,
+or unticking the box, is how a bottle keeps the route open. To undo it
+afterwards:
 
 ```sh
 "$CX_ROOT/bin/wine" --bottle "<name>" --cx-app reg.exe delete \

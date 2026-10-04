@@ -2545,10 +2545,20 @@ untested here, and it does not need to be true: the guaranteed term is the
 route cannot be the difference. winebus creates one device per backend and
 discards the copy whose `is_hidraw` disagrees, and the discard in the
 `BUS_EVENT_TYPE_DEVICE_CREATED` case happens before `bus_create_hid_device()`,
-so a rejected copy takes no handle; and `is_hidraw_enabled()` leaves
-`prefer_hidraw` false for `044f:b677`, which is on none of its lists, so the
-wheel comes through SDL whether or not `DisableHidraw` is written. B8 and B10
-already said the second half.
+so a rejected copy takes no handle, whichever copy wins. Two settings decide
+which. `is_hidraw_enabled()` leaves `prefer_hidraw` false for `044f:b677`,
+which is on none of its lists, so in a bottle with nothing else set the
+wheel comes through SDL either way, as B8 and B10 said. But B10's per-device
+`Hidraw` value is read before that default, and only `DisableHidraw`
+overrides it (A25), by never starting the IOHID bus at all. The tester's
+Steam bottle has carried that value since the test 17 A/B (A36), and the
+2026-10-04 trace prints both settings: `load_device_options - 044f/b677:
+enabling hidraw`, and `UDEV hidraw devices disabled in registry`, which is
+`DisableHidraw` whatever the message says, with no IOHID main loop line
+after it. Without `DisableHidraw` that bottle would keep the IOHID copy and
+drop the SDL one, the route tests 17 and 19 ran on macOS 26 (A36, A37),
+still one copy and one handle, because the wheel's own descriptor has one
+top-level collection.
 
 **This is generic Wine behaviour that every wheel in every bottle has.** What
 this project adds is extra arrivals, by switching the wheel out of boot mode
@@ -2585,9 +2595,11 @@ half.
 > `sources/wine/dlls/dinput/joystick_hid.c`,
 > `hid_joystick_device_try_open()`; `dlls/hidclass.sys/pnp.c`,
 > `alloc_rawinput_handle()` and the `IRP_MN_START_DEVICE` case;
-> `dlls/winebus.sys/main.c`, `is_hidraw_enabled()` and the
-> `BUS_EVENT_TYPE_DEVICE_CREATED` case. Read in CrossOver's published
-> sources, not only upstream Wine.
+> `dlls/winebus.sys/main.c`, `is_hidraw_enabled()`, `load_device_options()`,
+> `iohid_driver_init()` and the `BUS_EVENT_TYPE_DEVICE_CREATED` case. Read in
+> CrossOver's published sources, not only upstream Wine. The tester's `+hid`
+> trace of 2026-10-04 for the two settings, and the wheel's 130-byte report
+> descriptor (PROTOCOL.md) for its single top-level collection.
 
 ---
 
