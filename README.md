@@ -1066,15 +1066,16 @@ resolves correctly.
 **Turning hidraw off is the whole bottle, not the wheel.**
 `is_hidraw_enabled()` reads `DisableHidraw` before anything else, so it
 overrides both the per-device `Hidraw` value under
-`...\Services\WineBus\Devices\044f/b677` and the `EnableHidraw` list, and
-winebus then discards every device whose only copy came from the IOHID bus. A
-pad SDL enumerates as well is unaffected. A wheelbase that carries its own PID
-collection is not: hidraw is the route that gives it native force feedback
-(RESEARCH.md B12), and the T150's own report descriptor, which A37 measured
-all thirteen buttons through, arrives by that route too once the per-device
-value above is set; without it the T150 takes SDL either way. `--keep-hidraw`,
-or unticking the box, is how a bottle keeps the route open. To undo it
-afterwards:
+`...\Services\WineBus\Devices\044f/b677` and the `EnableHidraw` list. With it
+set, winebus also never starts its IOHID bus, so every device whose only copy
+would have come from that bus is missing from the bottle. A pad SDL enumerates
+as well stays, through SDL's copy instead, but loses what only the hidraw route
+gives it: for a wheelbase that carries its own PID collection that is native
+force feedback (RESEARCH.md B12), and the T150's own report descriptor, which
+A37 measured all thirteen buttons through, arrives by that route too once the
+per-device value above is set or the `EnableHidraw` list names it; without
+either, the T150 takes SDL whatever hidraw is set to. `--keep-hidraw`, or
+unticking the box, is how a bottle keeps the route open. To undo it afterwards:
 
 ```sh
 "$CX_ROOT/bin/wine" --bottle "<name>" --cx-app reg.exe delete \

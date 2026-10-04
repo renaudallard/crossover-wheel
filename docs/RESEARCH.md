@@ -625,7 +625,12 @@ axis movement.
 That is a real datum for B8 rather than a workaround: the hidraw path is the
 one that would carry the wheel's own report descriptor into the bottle, and it
 drops the device instead of describing it. Whatever is losing the buttons is
-in that neighbourhood.
+in that neighbourhood. (By the source the arbitration drops the IOHID copy
+of a wheel on none of winebus's hidraw lists, but then `Enable SDL`=0 alone
+would drop the wheel as well (D5), so the SDL-off cell does not fit, and
+what else that bottle had set, or whether it was restarted between cells,
+is not recorded. With B10's per-device value set, A37 had that path
+describe the wheel whole.)
 
 **What the installer does with it.** `install.sh` writes `DisableHidraw`=1
 under `HKLM\System\CurrentControlSet\Services\WineBus` in the bottle it
@@ -636,17 +641,19 @@ thing that writes there.
 
 Three consequences, from the source rather than from this measurement.
 `is_hidraw_enabled()` tests `options.disable_hidraw` before the per-device
-list and before `EnableHidraw`, so this defeats B10's knob and anything
-CrossOver's controller settings put there; it is therefore the one setting
-that decides the route, and A37's thirteen buttons are on the other side of
-it. `bus_options_init()` runs when winebus starts, so a bottle already
-running keeps the route it started with. And the arbitration discards rather
-than moves: a device whose only copy came from the IOHID bus leaves the
-bottle entirely, which for a wheelbase carrying its own PID collection is the
-force feedback B12 credits to that path.
+list and before `EnableHidraw`, so this defeats B10's knob and any
+`EnableHidraw` entry; whenever it is set it is the one
+setting that decides the route, and A37's thirteen buttons are on the other
+side of it. `bus_options_init()` runs when winebus starts, so a bottle
+already running keeps the route it started with. And what only the IOHID
+copy carried has no other route: with it set, `iohid_driver_init()` never
+starts the IOHID bus and the arbitration keeps SDL's copy of every device
+SDL sees, so a device SDL cannot see is lost entirely, and a wheelbase
+carrying its own PID collection loses the force feedback B12 credits to
+that path.
 
 > CrossOver 26.3.0 `dlls/winebus.sys/main.c`, `is_hidraw_enabled()`,
-> `load_device_options()` and `bus_options_init()`.
+> `load_device_options()`, `bus_options_init()` and `iohid_driver_init()`.
 
 **A26. The packet that opens the wheel's input is recoverable after all, and
 this project has never sent it.** A20 and earlier entries said its bytes were
@@ -2565,20 +2572,22 @@ untested here, and it does not need to be true: the guaranteed term is the
 route cannot be the difference. winebus creates one device per backend and
 discards the copy whose `is_hidraw` disagrees, and the discard in the
 `BUS_EVENT_TYPE_DEVICE_CREATED` case happens before `bus_create_hid_device()`,
-so a rejected copy takes no handle, whichever copy wins. Two settings decide
-which. `is_hidraw_enabled()` leaves `prefer_hidraw` false for `044f:b677`,
-which is on none of its lists, so in a bottle with nothing else set the
-wheel comes through SDL either way, as B8 and B10 said. But B10's per-device
-`Hidraw` value is read before that default, and only `DisableHidraw`
-overrides it (A25), by never starting the IOHID bus at all. The tester's
-Steam bottle has carried that value since the test 17 A/B (A36), and the
-2026-10-04 trace prints both settings: `load_device_options - 044f/b677:
-enabling hidraw`, and `UDEV hidraw devices disabled in registry`, which is
-`DisableHidraw` whatever the message says, with no IOHID main loop line
-after it. Without `DisableHidraw` that bottle would keep the IOHID copy and
-drop the SDL one, the route tests 17 and 19 ran on macOS 26 (A36, A37),
-still one copy and one handle, because the wheel's own descriptor has one
-top-level collection.
+so a rejected copy takes no handle, whichever copy wins. Several registry
+values can decide which, and in the tester's bottle two do.
+`is_hidraw_enabled()` leaves `prefer_hidraw` false for `044f:b677`, which is
+on none of its lists, so in a bottle with nothing else set the wheel comes
+through SDL either way, as B8 and B10 said. But B10's per-device `Hidraw`
+value is read before that default, and only `DisableHidraw` overrides it
+(A25): `is_hidraw_enabled()` tests it first, and with it set the IOHID bus
+never starts at all. The tester's Steam bottle has carried that value since
+the test 17 A/B (A36), and the 2026-10-04 trace prints both settings:
+`load_device_options - 044f/b677: enabling hidraw`, and `UDEV hidraw devices
+disabled in registry`, which is `DisableHidraw` whatever the message says. It
+has no IOHID main loop line, and SDL's copy is created despite the per-device
+value, which is that first test at work. Without `DisableHidraw` that bottle
+would keep the IOHID copy and drop the SDL one, the route tests 17 and 19 ran
+on macOS 26 (A36, A37), still one copy and one handle, because the wheel's own
+descriptor has one top-level collection.
 
 **This is generic Wine behaviour that every wheel in every bottle has.** What
 this project adds is extra arrivals, by switching the wheel out of boot mode

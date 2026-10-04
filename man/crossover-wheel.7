@@ -32,9 +32,9 @@ value under
 .Li HKLM\eSystem\eCurrentControlSet\eServices\eWineBus ,
 because with hidraw on the wheel has been measured missing from the bottle
 entirely. winebus reads it when the bottle boots, so it takes effect at the
-bottle's next start, and it is the bottle rather than the wheel: every device
-whose only copy came from the IOHID bus loses it, a wheelbase with its own
-force feedback included. The installer's checkbox, and
+bottle's next start, and it is the bottle rather than the wheel: winebus then
+never starts its IOHID bus, so a device SDL cannot see is missing, and a
+wheelbase with its own force feedback loses it. The installer's checkbox, and
 .Fl -keep-hidraw ,
 leave the setting alone for a bottle that needs it. RESEARCH.md A25 and B12.
 .Pp

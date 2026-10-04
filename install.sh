@@ -571,11 +571,11 @@ install_proxy()
 	# bottle that is already running keeps the route it started with and
 	# saying so is the difference between waiting and reinstalling.
 	#
-	# The cost is that it is the bottle and not the wheel. Every device
-	# whose only copy came from the IOHID bus loses it: a pad SDL enumerates
-	# too is unaffected, a wheelbase carrying its own PID collection loses
-	# the native force feedback that route gives it (RESEARCH.md B12), which
-	# is the bottle --keep-hidraw is for.
+	# The cost is that it is the bottle and not the wheel. winebus never
+	# starts its IOHID bus, so a device SDL cannot see is missing, a pad
+	# SDL enumerates too stays on SDL's copy, and a wheelbase carrying its
+	# own PID collection loses the native force feedback that route gives
+	# it (RESEARCH.md B12), which is the bottle --keep-hidraw is for.
 	#
 	# --keep-hidraw changes nothing rather than writing 0. The other writer
 	# of this value is CrossOver's own settings window, and overwriting a
