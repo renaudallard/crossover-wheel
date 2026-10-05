@@ -338,6 +338,18 @@ test_hidraw_is_turned_off_in_the_bottle()
 	    fail "--keep-hidraw wrote the setting anyway"
 	grep -q 'left as this bottle has it' "$work/out" ||
 	    fail "--keep-hidraw did not say the setting was left alone"
+
+	# And nothing else. Every update the application runs passes it, so
+	# the rest of the install has to happen as it does without it.
+	cmp -s "$work/src/t150-dinput8.dll" \
+	    "$work/bottles/alpha/drive_c/windows/system32/dinput8.dll" ||
+	    fail "--keep-hidraw left the proxy out"
+	grep -Fq "reg.exe add $key /v dinput8 /t REG_SZ /d native,builtin /f" \
+	    "$log" || fail "--keep-hidraw left the dinput8 override out"
+	for v in SDL_JOYSTICK_HIDAPI SDL_JOYSTICK_MFI; do
+		grep -q "\"$v\" = \"0\"" "$work/bottles/alpha/cxbottle.conf" ||
+		    fail "--keep-hidraw left $v out"
+	done
 }
 
 # Another tool's dinput8.dll is about to be overwritten, and the backup is the

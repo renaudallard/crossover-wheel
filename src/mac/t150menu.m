@@ -97,6 +97,7 @@ typedef enum {
 @property (strong) NSPopUpButton *bottles;
 @property (strong) NSButton *install;
 @property (strong) NSButton *hidraw;
+@property (strong) NSTextField *hidrawNote;
 @property (strong) NSTextView *out;
 @property (strong) NSMutableString *logBuf;
 @property (strong) NSMenuItem *statusLine;
@@ -1761,12 +1762,14 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	    [self.pendingBottles componentsJoinedByString:@", "]] :
 	    @"Which CrossOver bottle is the game in?";
 	self.subhead.stringValue = update ?
-	    @"Each of them gets the proxy and the settings this application "
-	    "carries. Nothing outside them is touched." :
+	    @"Each of them gets this application's proxy and settings, and "
+	    "keeps its own hidraw setting." :
 	    @"The proxy and the settings the wheel needs go into that bottle. "
 	    "Nothing outside it is touched.";
 	self.install.title = update ? @"Update" : @"Install";
 	self.bottles.enabled = !update;
+	self.hidraw.hidden = update;
+	self.hidrawNote.hidden = update;
 
 	/*
 	 * The one place the button is enabled or disabled, because a window can
@@ -1875,6 +1878,11 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	 * rather than writing a 0 over whatever CrossOver's own settings
 	 * window put there. It is the whole bottle either way, which is why
 	 * the row is here to be turned off rather than done silently.
+	 *
+	 * Hidden for an update, which always passes --keep-hidraw. An update
+	 * used to read it like an install, and it comes up ticked whenever
+	 * the window is built, so pressing Update turned hidraw off in every
+	 * bottle it covered, including one somebody had kept it on in.
 	 */
 	self.hidraw = [NSButton checkboxWithTitle:
 	    @"Turn hidraw off in this bottle" target:nil action:NULL];
@@ -1889,6 +1897,7 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 	l3.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
 	l3.textColor = [NSColor secondaryLabelColor];
 	[v addSubview:l3];
+	self.hidrawNote = l3;
 
 	NSScrollView *sc = [[NSScrollView alloc]
 	    initWithFrame:NSMakeRect(24, 24, 572, 254)];
@@ -2098,12 +2107,14 @@ static NSString * const springNames[] = { @"Off", @"Light", @"Medium",
 
 	NSArray<NSString *> *targets = self.pendingBottles;
 	/*
-	 * Read once, for the whole run. An update is one press over several
-	 * bottles and the checkbox stays live while they go, so asking it
-	 * again per bottle would install the rest of a queue differently from
-	 * the ones already done.
+	 * An update leaves each bottle's hidraw setting as that bottle has
+	 * it, so only an install asks the box, and an update hides it. Read
+	 * once, before the run: the window can be switched to the other job
+	 * while a queue goes, and the rest of that queue must not be done
+	 * differently from the bottles already done.
 	 */
-	BOOL keep = self.hidraw.state != NSControlStateValueOn;
+	BOOL keep = targets.count > 0 ||
+	    self.hidraw.state != NSControlStateValueOn;
 
 	/*
 	 * What the press is for: the bottles the proxy row named, or else the

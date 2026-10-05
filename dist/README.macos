@@ -86,7 +86,8 @@ An update replaces the application and not the bottle. The proxy lives inside
 CrossOver, and only the install puts it there, so after an update the menu
 checks your bottles and offers "Update the install in ..." for any that still
 hold an older proxy or miss a setting the install writes. It is the same
-install, opened on the bottle that needs it.
+install, opened on the bottle that needs it, except that it leaves the
+bottle's hidraw setting as it is.
 
 If you make another CrossOver bottle later, "Install into a bottle..." in that
 menu adds the proxy to it. That is the only thing the app ever installs: it

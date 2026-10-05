@@ -637,7 +637,9 @@ under `HKLM\System\CurrentControlSet\Services\WineBus` in the bottle it
 installs into, and the application's setup window carries that as a checkbox,
 ticked. `--keep-hidraw`, or unticking it, leaves the value alone rather than
 writing a 0 over it, because CrossOver's own settings window is the other
-thing that writes there.
+thing that writes there. An update the menu offers hides the box and passes
+`--keep-hidraw` for every bottle it covers, so only an install writes the
+value.
 
 Three consequences, from the source rather than from this measurement.
 `is_hidraw_enabled()` tests `options.disable_hidraw` before the per-device

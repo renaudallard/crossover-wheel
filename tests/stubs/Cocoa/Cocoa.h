@@ -337,6 +337,7 @@ extern NSString * const NSForegroundColorAttributeName;
 - (instancetype)initWithFrame:(NSRect)f;
 @property (readonly) NSRect bounds;
 @property NSRect frame;
+@property (getter=isHidden) BOOL hidden;
 @property BOOL wantsLayer;
 @property (strong) CALayer *layer;
 @property NSUInteger autoresizingMask;

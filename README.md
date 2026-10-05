@@ -106,7 +106,8 @@ hidraw on, the wheel has been measured missing from the bottle entirely
 winebus not to use that route. It is the whole bottle rather than the wheel:
 untick it if something else in that bottle needs hidraw, such as a wheelbase
 with its own force feedback, which reaches it that way and no other. The
-bottle picks it up the next time it starts.
+bottle picks it up the next time it starts. An update of the install does
+not show the box and leaves each bottle's hidraw setting as it is.
 
 Afterwards it lives in the menu bar as a small steering wheel. Start and stop
 the daemon there, see whether the wheel is connected and whether a game is
@@ -216,7 +217,8 @@ line the install writes in its `cxbottle.conf`, it offers *Update the install
 in* those bottles, by name. That is the install you already know, in
 a window that says it is an update and names them rather than asking which
 bottle the game is in, and one press does every one of them, one after
-another. It stops at the first that fails and says which were not tried.
+another. It leaves each bottle's hidraw setting as that bottle has it. It
+stops at the first that fails and says which were not tried.
 
 **The row only appears when the bottle really needs it.** It used to appear
 after every application update, for two reasons. The proxy carried a build
