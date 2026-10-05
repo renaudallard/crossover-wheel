@@ -23,7 +23,9 @@ suspect, not yet confirmed on hardware, is SDL leaving any device Apple's
 GameController framework claims to a backend that has no racing wheels, so
 the install also sets
 .Ev SDL_JOYSTICK_MFI Ns =0 .
-That turns the GameController backend off for every pad in the bottle.
+That turns the GameController backend off for every pad in the bottle and,
+by the source, keeps an Xbox One or Series controller out of it altogether,
+since SDL's IOKit backend refuses those.
 RESEARCH.md E9.
 .Pp
 The install also turns hidraw off in that bottle, a

@@ -3043,20 +3043,36 @@ turned on.
 
    `install.sh` writes `"SDL_JOYSTICK_MFI" = "0"` beside the HIDAPI line on
    that basis, since on macOS 26 it changes nothing for the T150. It costs
-   the whole bottle SDL's GameController backend: pads Apple supports arrive
-   through plain IOKit instead, and by the source lose what only that
-   backend gives them, such as rumble, HIDAPI being off already. Neither the
-   fix nor the cost is measured. Open until the tester reports whether the
-   line brings the wheel back.
+   the whole bottle SDL's GameController backend. By the source, an Xbox One
+   or Series pad then does not arrive at all, hidraw on or off: SDL 2.30.12's
+   IOKit backend refuses any device `SDL_IsJoystickXboxOne()` matches, its
+   HIDAPI layer takes only Bluetooth ones on macOS and is off already,
+   CrossOver's Xbox bus is off on macOS 15 and later (B10), and winebus
+   prefers no hidraw for them, so their IOHID copy is discarded, or never
+   made with `DisableHidraw` set. With hidraw on, an `EnableHidraw` entry or
+   a nonzero per-device `Hidraw` keeps that copy instead (D5). Other pads
+   Apple supports arrive through plain IOKit instead and lose what only
+   GameController gave them with HIDAPI off, such as rumble, except that
+   with hidraw on DualShock 4 and DualSense ride the IOHID bus (B10), which
+   the line does not touch. Neither the fix nor the cost is measured. Open
+   until the tester reports whether the line brings the wheel back.
 
    > SDL `release-2.30.12`: `src/joystick/darwin/SDL_iokitjoystick.c`
-   > `JoystickAlreadyKnown()`; `src/joystick/iphoneos/SDL_mfijoystick.m`
+   > `JoystickAlreadyKnown()`, and `GetDeviceInfo()`, which returns before
+   > adding a pad `SDL_IsJoystickXboxOne()` matches;
+   > `src/joystick/controller_list.h`, which types the Bluetooth Xbox ids as
+   > `k_eControllerType_XBoxOneController` too;
+   > `src/joystick/hidapi/SDL_hidapi_xboxone.c`
+   > `HIDAPI_DriverXboxOne_IsSupportedDevice()`, Bluetooth only on macOS;
+   > `src/joystick/iphoneos/SDL_mfijoystick.m`
    > `IOS_SupportedHIDDevice()` and `IOS_JoystickInit()`;
    > `include/SDL_config_macosx.h`, `SDL_JOYSTICK_MFI 1`; `src/SDL_hints.c`,
    > the environment read in `SDL_GetHint()`.
    > `sources/wine/dlls/winebus.sys/bus_sdl.c` in
    > `crossover-sources-26.3.0.tar.gz`, `sdl_bus_init()`, where the two
-   > rumble hints are the only `SDL_SetHint()` calls.
+   > rumble hints are the only `SDL_SetHint()` calls; `main.c`
+   > `is_hidraw_enabled()`, with no case for an Xbox One or Series pad and
+   > one for DualShock 4 and DualSense.
 
 Probes 1 to 6 are what `src/probe/` exists to answer. See
 [PROBES.md](PROBES.md).

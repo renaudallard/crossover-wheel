@@ -1130,7 +1130,12 @@ keeping a `.crossover-wheel.bak` beside the file; the SDL that CrossOver 26
 bundles drops Thrustmaster wheels without the first (RESEARCH.md B11). The
 second is for the wheel missing on macOS 27, suspected and not yet confirmed
 (E9). It also turns off SDL's GameController backend for every pad in that
-bottle, which by the source costs a pad Apple supports its rumble there.
+bottle. By the source, that costs a pad Apple supports its rumble there,
+except a DualShock 4 or DualSense in a bottle that keeps hidraw on, which
+comes in through hidraw instead. It costs an Xbox One or Series controller
+its place in the bottle altogether: SDL's IOKit backend refuses those, and
+SDL's HIDAPI layer, which the first line has turned off, takes only
+Bluetooth ones. Neither has been seen on hardware.
 
 **Leave `T150_DEBUG` and `T150_LOG` off unless you are diagnosing
 something.** With logging on the proxy writes a line for every
