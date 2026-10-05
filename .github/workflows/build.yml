@@ -20,7 +20,12 @@ jobs:
 
   dll:
     name: cross build the proxy
-    runs-on: ubuntu-latest
+    # Named rather than ubuntu-latest. The proxy carries the cross
+    # compiler's own runtime, so a newer image links different bytes from
+    # the same source and the app would offer every bottle an update for
+    # nothing. The double link below cannot see that: both of its links use
+    # the same compiler.
+    runs-on: ubuntu-24.04
     steps:
       # The proxy stamps git describe into its wrap-time log line, and a
       # shallow tagless checkout would stamp "unknown".
@@ -49,6 +54,18 @@ jobs:
                      "and the app will both refuse it" >&2; exit 1; }
           head -c 2 build/bin/t150-dinput8.dll | grep -q '^MZ' ||
               { echo "the proxy is not a PE" >&2; exit 1; }
+      # The app offers to update a bottle whose proxy differs from its own
+      # byte for byte, so the same source has to link to the same bytes. The
+      # linker used to write the link time into the file, so a release that
+      # left the proxy alone still offered every bottle an update. Linking it
+      # again and comparing is what notices a toolchain that brings that back.
+      - name: the proxy links to the same bytes twice
+        run: |
+          mv build/bin/t150-dinput8.dll build/proxy-first.dll
+          make strict
+          cmp build/proxy-first.dll build/bin/t150-dinput8.dll ||
+              { echo "two links of the same proxy differ, so the app would" \
+                     "offer every bottle an update for nothing" >&2; exit 1; }
       # The archive the releases page publishes beside the disk image, built
       # by a rule so dist/README.probe really is packaged verbatim, which is
       # what README.md says of both archives and what nothing made true for

@@ -133,6 +133,13 @@ DLL_DEPS   = $(DLL_SRCS) src/dll/proxy.h src/dll/dinput8.def $(SHARED_HDRS)
 # about the game changed. This changes when the proxy changes and at no other
 # time. Empty as well as failed becomes "unknown": git log succeeds and prints
 # nothing for a checkout with no history for those paths.
+#
+# The stamp alone did not make two builds equal. The linker also writes the
+# time of the link into the PE header and the export table, so a release that
+# left the proxy's source alone still shipped one that differed from the last
+# in a few bytes, and the menu offered every bottle an update for nothing, as
+# 0.3.4 did after 0.3.3. It is linked with --no-insert-timestamp below for
+# that reason, and CI builds it twice and compares the two.
 DLL_VERSION := $(shell v=$$(git log -1 --abbrev=12 --format=%h -- \
 	         $(DLL_DEPS) 2>/dev/null); echo "$${v:-unknown}")
 
@@ -205,7 +212,8 @@ ifeq ($(HAVE_DLL_CC),yes)
 dll: $(DLL_BIN) $(DLL_CHECK_BIN) $(DINPUT_PROBE_BIN)
 
 $(DLL_BIN): $(DLL_DEPS) | $(BIN)
-	$(DLL_CC) $(DLL_CPPFLAGS) $(DLL_CFLAGS) -shared -o $@ $(DLL_SRCS) \
+	$(DLL_CC) $(DLL_CPPFLAGS) $(DLL_CFLAGS) -shared \
+	    -Wl,--no-insert-timestamp -o $@ $(DLL_SRCS) \
 	    src/dll/dinput8.def -static-libgcc $(DLL_LIBS)
 
 # The proxy's own test, which links the sources it checks and loads the DLL

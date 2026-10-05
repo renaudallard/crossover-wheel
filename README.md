@@ -219,15 +219,21 @@ bottle the game is in, and one press does every one of them, one after
 another. It stops at the first that fails and says which were not tried.
 
 **The row only appears when the bottle really needs it.** It used to appear
-after every application update, because the proxy carries a build string and
-that string was the release: 0.3.0 and 0.3.1 have not one commit between them
+after every application update, for two reasons. The proxy carried a build
+string that was the release: 0.3.0 and 0.3.1 have not one commit between them
 under `src/dll`, and the menu still offered to replace the one in the bottle,
 the install still replaced it, and nothing about the game changed. The string
-now names the last commit that touched what the proxy is built from, so two
-releases that leave the proxy alone build the same bytes and the row stays
-away. The other reason it appears is the bottle's environment: a bottle
-installed before `SDL_JOYSTICK_MFI` was added holds the current proxy and
-still needs that line. When the row does appear, the update is one.
+now names the last commit that touched what the proxy is built from. And the
+linker wrote the time of each build into the file, so a proxy built from the
+same source still differed in a few bytes and the row came back anyway, as it
+did from 0.3.3 to 0.3.4. The proxy is now linked without that time, and CI
+checks that two builds come out the same, so releases that leave the proxy
+alone ship the same bytes as long as the compiler that builds them stays the
+same. The first release built that way still differs from the proxy already in
+your bottles, so it offers the row once more. The other reason the row appears
+is the bottle's environment: a bottle installed before `SDL_JOYSTICK_MFI` was
+added holds the current proxy and still needs that line. Apart from that
+release and a change of compiler, when the row appears the update is one.
 
 **Two settings the wheel keeps for itself** are in that menu too, because no
 game can ask for either as you want it. DirectInput has no property for a
