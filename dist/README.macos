@@ -78,6 +78,7 @@ It looks for a new version every time it starts, and says nothing unless there
 is one. "Check for updates..." in that menu asks on demand. Either way it
 installs the update itself: it downloads, checks the file against its
 published checksum and its signature, replaces the app and starts it again. A
+daemon started from the menu stops for the update and starts again with it. A
 release with no published checksum is refused rather than installed unchecked.
 You do not have to drag anything or answer any macOS dialog for an update,
 only for the very first install.

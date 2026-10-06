@@ -208,7 +208,10 @@ then replaces itself and starts again. Nothing it downloads carries
 the quarantine flag a browser sets, so an update needs none of the right-click
 Open and dragging the first install did. The old copy is moved aside and only
 removed once the new one is in place, so a failure leaves the version you had
-rather than nothing at all.
+rather than nothing at all. A daemon the menu started stops for the swap and
+starts again in whichever copy comes back; it used to stay stopped, so a game
+launched after an update had the wheel and no force feedback. One that *Start
+at login* runs belongs to launchd and is not touched.
 
 **An update replaces the application and not the bottle.** The proxy lives
 inside CrossOver and only the install puts it there, so the menu checks: when a

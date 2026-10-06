@@ -512,6 +512,19 @@ typedef enum {
 		[self openSetup:nil];
 
 	/*
+	 * An update stopped the daemon this application had running, see
+	 * applyUpdate. Once only, and not over one that holds the endpoint
+	 * already.
+	 */
+	NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+
+	if ([ud boolForKey:@"daemonBeforeUpdate"]) {
+		[ud removeObjectForKey:@"daemonBeforeUpdate"];
+		if (![self daemonElsewhere])
+			[self startDaemon];
+	}
+
+	/*
 	 * Every launch, and quietly: it says nothing at all unless there is
 	 * something newer than this.
 	 */
@@ -2382,7 +2395,8 @@ version_number(NSString *v)
 	a.informativeText = [NSString stringWithFormat:
 	    @"You have %@. This will download it, check it against the "
 	    "published checksum, replace this application and start it again. "
-	    "The daemon stops while it happens.", mine];
+	    "A daemon this menu started stops while it happens and starts "
+	    "again with the new version.", mine];
 	[a addButtonWithTitle:@"Update now"];
 	[a addButtonWithTitle:@"Later"];
 
@@ -2594,6 +2608,16 @@ sha256_of(NSData *d)
 		[self note:@"Could not start the updater."];
 		return;
 	}
+
+	/*
+	 * Quitting stops the daemon this started, and nothing started it
+	 * again: a game launched after an update found no daemon and had the
+	 * wheel with no force feedback. Whichever copy the updater opens, the
+	 * new one or the old one put back, reads this at launch.
+	 */
+	if (self.daemon != nil && self.daemon.isRunning)
+		[[NSUserDefaults standardUserDefaults]
+		    setBool:YES forKey:@"daemonBeforeUpdate"];
 
 	[self quit:nil];
 }

@@ -257,6 +257,7 @@ typedef struct {
 - (NSInteger)integerForKey:(NSString *)k;
 - (void)setBool:(BOOL)v forKey:(NSString *)k;
 - (void)setInteger:(NSInteger)v forKey:(NSString *)k;
+- (void)removeObjectForKey:(NSString *)k;
 @end
 
 @interface NSNotification : NSObject
