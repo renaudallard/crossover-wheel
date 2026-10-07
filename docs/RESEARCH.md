@@ -2154,16 +2154,30 @@ renamed copy can be loaded as an ordinary PE.
 
 > `dlls/dinput8/Makefile.in`.
 
-**B6. Seizing breaks everything else.** macOS 26 added an `fClientSeized`
-check to `setReport`: the moment any other process seizes the device, every
+**B6. Seizing breaks everything else.** `setReport` carries an
+`fClientSeized` check: the moment any other process seizes the device, every
 `setReport` from a non-seizing client returns `kIOReturnExclusiveAccess`. Not
 seizing yourself is not sufficient protection, and seizing yourself would
-take input away from CrossOver.
+take input away from CrossOver. The same check, and the console user one in
+B7, also gate reading an element's value, which is how SDL's IOKit backend
+reads the wheel, so a seize or a failed console check would cost the bottle
+its input as well as the daemon its writes.
+
+This entry used to say macOS 26 added the check. It did not: the check is in
+every IOHIDFamily from 1892.40.8, which shipped with macOS 13.0, and absent
+from 1787.140.2 and older, so only sources from before macOS 13 read the
+other way. Apple's release manifests put 2222.0.24 to 2222.80.22 in macOS
+26.0 to 26.3 and 2238.100.59 and 2238.120.5 in 26.4 and 26.5, and nothing on
+the open, seize, `setReport` or privilege path changes across them. No
+macOS 27 source has been published.
 
 > IOHIDFamily rel/IOHIDFamily-2238,
 > `IOHIDFamily/IOHIDLibUserClient.cpp:1994-1996`; `open()` sets
-> `fClientSeized = ret == kIOReturnExclusiveAccess`. This check is absent
-> from older IOHIDFamily releases, so older sources are misleading here.
+> `fClientSeized = ret == kIOReturnExclusiveAccess`.
+> `updateElementValues()`, 2238.100.59 lines 1652-1655, the same gates.
+> The history from IOHIDFamily-1446.140.2 to 2238.120.5, and the version
+> mapping from apple-oss-distributions/distribution-macOS release manifests
+> for macOS 13.0 to 26.5.
 
 **B7. setReport requires the console user.** Its `fValid` gate is
 `clientHasPrivilege(fClient, kIOClientPrivilegeConsoleUser)`. Fast user
