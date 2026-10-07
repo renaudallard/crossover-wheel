@@ -2396,7 +2396,7 @@ version_number(NSString *v)
 	    @"You have %@. This will download it, check it against the "
 	    "published checksum, replace this application and start it again. "
 	    "A daemon this menu started stops while it happens and starts "
-	    "again with the new version.", mine];
+	    "again in whichever version comes back.", mine];
 	[a addButtonWithTitle:@"Update now"];
 	[a addButtonWithTitle:@"Later"];
 
