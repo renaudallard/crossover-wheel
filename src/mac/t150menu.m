@@ -613,7 +613,7 @@ typedef enum {
 		    @"%@ · daemon running, started elsewhere", text];
 	else if (running && self.clientConnected)
 		self.statusLine.title = [NSString stringWithFormat:
-		    @"%@ · daemon running · a game is connected",
+		    @"%@ · daemon running · a program has the wheel",
 		    text];
 	else if (running)
 		self.statusLine.title = [NSString stringWithFormat:

@@ -107,12 +107,16 @@ bottle picks it up the next time it starts. An update of the install does
 not show the box and leaves each bottle's hidraw setting as it is.
 
 Afterwards it lives in the menu bar as a small steering wheel. Start and stop
-the daemon there, see whether the wheel is connected and whether a game is
-pulling on it, and switch on **Start at login** to never think about it again.
+the daemon there, see whether the wheel is connected and whether a program in a
+bottle has it, and switch on **Start at login** to never think about it again.
 That switch takes effect at once in both directions: turning it on hands the
 daemon to launchd and starts it now, turning it off stops the one that is
 running. Only one daemon runs at a time, so if one was started some other way
 the menu says so and leaves it alone rather than starting a second beside it.
+The program that has the wheel is usually the game, but anything that opens it
+through DirectInput counts, such as a launcher or CrossOver's game controller
+panel, so it does not prove the game itself has the wheel; the log names each
+one by the port it connected from.
 
 **Start at login brings this application up as well as the daemon**, and it
 used to bring up only the daemon. The wheel worked and there was no menu bar
@@ -259,8 +263,8 @@ with no strength. On Windows both live in the vendor's control panel.
 Both are written straight to the wheel and remembered, because the wheel
 forgets them when it is unplugged and the daemon is the only thing that
 notices a replug. Remembering means restarting the daemon with the new value,
-so while a game is connected the menu deliberately does not: the wheel has the
-setting at once, and says so, but the daemon restates the old one after a
+so while a program has the wheel the menu deliberately does not: the wheel has
+the setting at once, and says so, but the daemon restates the old one after a
 replug until it is restarted. The spring is also what the wheel returns to
 whenever a game lets go, rather than being released outright: that used to
 undo the setting on the first game that exited, so it survived one game at
@@ -736,8 +740,8 @@ purpose.
 `-v -w` and whatever the Rotation and Centring spring rows are set to, and
 shows what it knows as an icon. The two halves of that come from different
 places: whether the wheel is there it finds out itself, by the same IOKit
-lookup `t150boot` uses, on its own timer; whether a game is pulling on it is
-read from what the daemon prints. It runs the daemon as its own child rather
+lookup `t150boot` uses, on its own timer; whether a program has it is read
+from what the daemon prints. It runs the daemon as its own child rather
 than connecting to it, because a second client can displace the first and that
 would throw a game off the wheel.
 
