@@ -406,7 +406,8 @@ send_reply(int fd, const struct t150_reply *rep)
  * having written nothing at all.
  */
 static int
-pend_hello(struct t150_session *ps, int fd, uint8_t *buf, size_t *have)
+pend_hello(struct t150_session *ps, const struct t150_session *holder, int fd,
+    uint8_t *buf, size_t *have)
 {
 	struct t150_proto_hdr hdr;
 	struct t150_reply rep;
@@ -426,6 +427,18 @@ pend_hello(struct t150_session *ps, int fd, uint8_t *buf, size_t *have)
 		return 0;
 
 	memset(&rep, 0, sizeof(rep));
+
+	/*
+	 * Not over a client that is using the wheel, token or no token: see
+	 * T150_IN_USE_MS. Refused before the frame is looked at, so a
+	 * newcomer turned away has not opened the wheel's input either.
+	 */
+	if (holder != NULL && t150_session_in_use(holder, now_ms())) {
+		t150_session_refuse(ps, holder->peer_port, &rep);
+		(void)send_reply(fd, &rep);
+		return -1;
+	}
+
 	(void)t150_session_frame(ps, hdr.op, buf + T150_PROTO_HDR_LEN,
 	    hdr.length, now_ms(), &rep);
 	(void)send_reply(fd, &rep);
@@ -868,7 +881,8 @@ main(int argc, char *argv[])
 
 			if (r > 0) {
 				phave += (size_t)r;
-				hi = pend_hello(&psess, pfd_pend, prx, &phave);
+				hi = pend_hello(&psess, cfd != -1 ? &sess :
+				    NULL, pfd_pend, prx, &phave);
 				/* 0 means the frame is still arriving, and
 				 * only a full buffer ends that patience. */
 				if (hi == 0 && phave < sizeof(prx))

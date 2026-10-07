@@ -329,6 +329,13 @@ struct t150_session {
 	 * broken client repeating itself rather than news.
 	 */
 	uint8_t			 bad_slot_said;
+	/*
+	 * When the client last sent something other than a keepalive, which
+	 * is what decides whether a newcomer may take the wheel from it. See
+	 * T150_IN_USE_MS.
+	 */
+	uint8_t			 used;
+	uint64_t		 last_use_ms;
 	unsigned		 peer_port;	/* which connection this is, for the log */
 	char			 token[T150_TOKEN_LEN + 1];
 };
@@ -377,6 +384,19 @@ void	t150_session_panic(struct t150_session *s, const char *why);
  */
 void	t150_session_inherit_stops(struct t150_session *to,
 	    const struct t150_session *from);
+
+/*
+ * Whether a client is using the wheel: it has proved its token and sent
+ * something other than a keepalive within T150_IN_USE_MS.
+ */
+int	t150_session_in_use(const struct t150_session *s, uint64_t now_ms);
+
+/*
+ * Answer a newcomer's HELLO with T150_ERR_DEVICE_SEIZED, because the client
+ * on holder_port is using the wheel. Writes nothing to the wheel.
+ */
+void	t150_session_refuse(struct t150_session *s, unsigned holder_port,
+	    struct t150_reply *rep);
 
 /*
  * The client has gone for good rather than gone quiet: make the wheel safe

@@ -1578,6 +1578,11 @@ t150_session_frame(struct t150_session *s, uint8_t op, const uint8_t *payload,
 		return 0;
 	}
 
+	if (op != T150_OP_KEEPALIVE && op != T150_OP_BYE) {
+		s->used = 1;
+		s->last_use_ms = now_ms;
+	}
+
 	switch (op) {
 	case T150_OP_BYE:
 		t150_session_panic(s, "client said goodbye");
@@ -1616,6 +1621,24 @@ t150_session_frame(struct t150_session *s, uint8_t op, const uint8_t *payload,
 	}
 
 	return 0;
+}
+
+int
+t150_session_in_use(const struct t150_session *s, uint64_t now_ms)
+{
+	return s->hello && s->used &&
+	    now_ms - s->last_use_ms < T150_IN_USE_MS;
+}
+
+void
+t150_session_refuse(struct t150_session *s, unsigned holder_port,
+    struct t150_reply *rep)
+{
+	if (s->verbose)
+		fprintf(stderr, "t150d: port %u asked for the wheel while port "
+		    "%u is using it, turned away\n", s->peer_port,
+		    holder_port);
+	reply_err(rep, T150_ERR_DEVICE_SEIZED);
 }
 
 /*

@@ -57,10 +57,19 @@ is displacing have been stopped. A newcomer that does not authenticate within
 two seconds, or that sends anything other than a token, is dropped without the
 current client noticing: anything on the machine can reach loopback, and
 displacing on the connection alone would let any local process end a game's
-force feedback at will. One newcomer waits at a time, and one that has not yet
-proved the token gives way to the next connection rather than turning it away:
-the proxy asks once, when the game creates the wheel, so a game turned away
-there would have no force feedback for the whole session.
+force feedback at will. Nor does a newcomer with the token take the wheel from
+a client that has sent anything but keepalives in the last two seconds: a
+launcher, CrossOver's game controller panel or SDL reading the wheel's name
+creates the wheel's device and proves the token as a game does, and each used
+to take the wheel from a game in the middle of a race. It is answered with an
+error instead. A game that had the wheel and is turned away asking for it back
+asks again on its next call and gets it once the other has gone quiet, but a
+program turned away when it creates the wheel's device keeps that device
+without force feedback, so a game started while another program is driving
+the wheel has none until it is restarted. One newcomer waits at a time, and
+one that has not yet proved the token gives way to the next connection rather
+than turning it away: the proxy asks once, when the game creates the wheel, so
+a game turned away there would have no force feedback for the whole session.
 .Pp
 One daemon at a time per endpoint. Starting a second one against the same
 endpoint is refused rather than allowed to fight the first: acquiring the

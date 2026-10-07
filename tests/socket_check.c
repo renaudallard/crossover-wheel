@@ -244,6 +244,33 @@ expect_ok(int fd, const char *what)
 		fail(what);
 }
 
+/* Read one reply and check it is the error code the daemon owes us. */
+static void
+expect_err(int fd, enum t150_proto_err want, const char *what)
+{
+	uint8_t buf[T150_PROTO_HDR_LEN + 2];
+	struct t150_proto_hdr hdr;
+	struct pollfd pfd;
+	size_t have = 0;
+	ssize_t r;
+
+	pfd.fd = fd;
+	pfd.events = POLLIN;
+	while (have < sizeof(buf)) {
+		if (poll(&pfd, 1, OUTPUT_MS) != 1 ||
+		    (r = read(fd, buf + have, sizeof(buf) - have)) <= 0) {
+			fail(what);
+			return;
+		}
+		have += (size_t)r;
+	}
+	if (t150_proto_unpack_hdr(buf, have, &hdr) != 0 ||
+	    hdr.op != T150_OP_ERROR || hdr.length != 2 ||
+	    (buf[T150_PROTO_HDR_LEN] | buf[T150_PROTO_HDR_LEN + 1] << 8) !=
+	    (int)want)
+		fail(what);
+}
+
 /*
  * Collect the daemon's output until it contains want, or until the deadline.
  * Everything read stays in the buffer, so the caller can go on looking for
@@ -588,9 +615,33 @@ main(void)
 	 */
 	{
 		struct timespec settle = { 0, 300 * 1000 * 1000 };
+		struct timespec idle = { T150_IN_USE_MS / 1000 + 1, 0 };
 		uint64_t went_ms;
-		int good, mute;
+		int good, mute, early;
 		size_t mark;
+
+		/*
+		 * Not while the original client is using the wheel, which it
+		 * did a moment ago. A launcher or the game controller panel
+		 * creating the wheel's device says the same HELLO, and it used
+		 * to take the wheel from a game in the middle of a race.
+		 */
+		if ((early = connect_to(port)) == -1)
+			fail("cannot open a connection while the wheel is in use");
+		if (send_frame(early, T150_OP_HELLO, (const uint8_t *)token,
+		    T150_TOKEN_LEN) != 0)
+			fail("cannot send the token while the wheel is in use");
+		expect_err(early, T150_ERR_DEVICE_SEIZED,
+		    "a newcomer took the wheel from a client using it");
+		(void)close(early);
+		put_u32(buf, 10000);
+		if (send_frame(fd, T150_OP_SET_GAIN, buf, 4) != 0)
+			fail("the original client lost its socket");
+		expect_ok(fd, "the original client lost the wheel to a refused "
+		    "newcomer");
+
+		/* Quiet for longer than T150_IN_USE_MS, so it may be taken. */
+		(void)nanosleep(&idle, NULL);
 
 		/*
 		 * Behind a connection that is waiting and says nothing. Only

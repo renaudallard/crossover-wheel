@@ -211,6 +211,50 @@ test_handshake(void)
 	frame(99, NULL, 0, 0, T150_OP_ERROR, T150_ERR_UNSUPPORTED);
 }
 
+/*
+ * A client is using the wheel while it sends anything other than keepalives,
+ * and for T150_IN_USE_MS after. The daemon refuses a newcomer's HELLO while
+ * it is, so a launcher or the controller panel cannot take the wheel from a
+ * game in the middle of a race; a keepalive alone must not count, or a
+ * client that has stopped driving would hold the wheel for as long as its
+ * process lives.
+ */
+static void
+test_in_use(void)
+{
+	struct t150_reply rep;
+	uint8_t arg[4];
+
+	reset_session();
+	if (t150_session_in_use(&sess, 0))
+		fail("a client that has not said hello is using the wheel");
+	hello(0);
+	if (t150_session_in_use(&sess, 0))
+		fail("a hello alone counts as using the wheel");
+
+	put_u32(arg, 10000);
+	frame(T150_OP_SET_GAIN, arg, 4, 100, T150_OP_OK, T150_ERR_NONE);
+	drain_log();
+	if (!t150_session_in_use(&sess, 100 + T150_IN_USE_MS - 1))
+		fail("a client that has just set the gain is not using the "
+		    "wheel");
+	if (t150_session_in_use(&sess, 100 + T150_IN_USE_MS))
+		fail("a client quiet for T150_IN_USE_MS is still using the "
+		    "wheel");
+
+	frame(T150_OP_KEEPALIVE, NULL, 0, 100 + T150_IN_USE_MS, T150_OP_OK,
+	    T150_ERR_NONE);
+	if (t150_session_in_use(&sess, 100 + T150_IN_USE_MS))
+		fail("a keepalive counts as using the wheel");
+
+	memset(&rep, 0, sizeof(rep));
+	t150_session_refuse(&sess, 1234, &rep);
+	if (rep.op != T150_OP_ERROR || rep.len != 2 ||
+	    rep.payload[0] != (uint8_t)T150_ERR_DEVICE_SEIZED)
+		fail("a refused hello is not answered DEVICE_SEIZED");
+	expect_log("refusing a hello writes nothing to the wheel", "");
+}
+
 static void
 test_settings(void)
 {
@@ -3986,6 +4030,7 @@ main(void)
 	be.write = failing_write;
 
 	test_handshake();
+	test_in_use();
 	test_settings();
 	test_upload_and_play();
 	test_gain_folding();

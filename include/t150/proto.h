@@ -122,17 +122,41 @@ enum t150_proto_err {
 	T150_ERR_BAD_VERSION,
 	T150_ERR_BAD_TOKEN,
 	/*
-	 * Reserved and sent by nothing, and they keep their numbers because
-	 * this is a wire enum: the backend answers a write with one failure,
-	 * so a wheel that has gone and a wheel that refused arrive as
+	 * Reserved and sent by nothing, and it keeps its number because this
+	 * is a wire enum: the backend answers a write with one failure, so a
+	 * wheel that has gone and a wheel that refused arrive as
 	 * T150_ERR_DEVICE_IO and cannot be told apart from here.
 	 */
 	T150_ERR_NO_DEVICE,	/* reserved: wheel absent, or at the boot PID */
 	T150_ERR_BAD_SLOT,
 	T150_ERR_UNSUPPORTED,	/* effect kind the wheel cannot render */
 	T150_ERR_DEVICE_IO,	/* IOHIDDeviceSetReport failed */
-	T150_ERR_DEVICE_SEIZED	/* reserved: another process holds the wheel */
+	/*
+	 * A HELLO while another client is using the wheel, see
+	 * T150_IN_USE_MS. Not the IOKit seize its name suggests: that one
+	 * reaches the daemon's log and never the protocol.
+	 */
+	T150_ERR_DEVICE_SEIZED
 };
+
+/*
+ * How recently a client must have sent something other than a keepalive for
+ * the wheel to count as in use. A HELLO arriving while it is in use is
+ * answered T150_ERR_DEVICE_SEIZED rather than displacing the client.
+ *
+ * Displacing is for a game that crashed and was restarted, and a dead game
+ * sends nothing. Anything else that creates the wheel's device in a bottle
+ * says HELLO too: a launcher, CrossOver's game controller panel, SDL reading
+ * the wheel's name. Each of those used to take the wheel from a game in the
+ * middle of a race. A game that is driving sends effect updates every frame,
+ * so two seconds without one is a game that is not; it is not measured, and
+ * it only decides who waits. A proxy refused while asking for the wheel back
+ * asks again on its next call and gets it once the other has gone quiet. One
+ * refused when the game creates the wheel's device leaves that device without
+ * force feedback, which is the price of a game started while another program
+ * is driving the wheel.
+ */
+#define T150_IN_USE_MS	2000u
 
 /*
  * Watchdog.

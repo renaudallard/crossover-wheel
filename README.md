@@ -116,7 +116,9 @@ the menu says so and leaves it alone rather than starting a second beside it.
 The program that has the wheel is usually the game, but anything that opens it
 through DirectInput counts, such as a launcher or CrossOver's game controller
 panel, so it does not prove the game itself has the wheel; the log names each
-one by the port it connected from.
+one by the port it connected from. None of them can take the wheel from a game
+that is driving it, but a game started while another program is driving it
+gets no force feedback until it is restarted with the other one quiet.
 
 **Start at login brings this application up as well as the daemon**, and it
 used to bring up only the daemon. The wheel worked and there was no menu bar
