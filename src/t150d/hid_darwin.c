@@ -265,6 +265,31 @@ raw_write(struct hid_be *h, const uint8_t *buf, size_t len)
 }
 
 /*
+ * The writes acquire makes, counted, with the first refusal kept. The line
+ * saying the wheel is open used to be printed after every one of them had
+ * failed, and the two that did report a failure gave no code, so a wheel
+ * that macOS refused outright read the same as one that took everything.
+ */
+struct acq_writes {
+	int		 sent;
+	int		 failed;
+	IOReturn	 first;
+};
+
+static IOReturn
+acq_write(struct hid_be *h, struct acq_writes *aw, const uint8_t *buf,
+    size_t len)
+{
+	IOReturn r = raw_write(h, buf, len);
+
+	aw->sent++;
+	if (r != kIOReturnSuccess && aw->failed++ == 0)
+		aw->first = r;
+
+	return r;
+}
+
+/*
  * No wheel at the firmware id. It may still be sitting at the boot id, which
  * is where every replug and every wake leaves it, so switch it and let the
  * next scan find it. Until this existed a wheel unplugged during a game never
@@ -316,6 +341,7 @@ acquire(struct hid_be *h)
 	const void **items;
 	CFIndex n;
 	IOReturn r;
+	struct acq_writes aw = { 0, 0, kIOReturnSuccess };
 	/*
 	 * Holds the longest packet this function encodes, which is four bytes
 	 * for both a control and a settings write. An encoder handed a buffer
@@ -388,7 +414,7 @@ acquire(struct hid_be *h)
 	for (i = 0; i < T150_SLOT_MAX; i++) {
 		if ((len = t150_enc_control(pkt, sizeof(pkt), (uint8_t)i, 0,
 		    0)) > 0)
-			(void)raw_write(h, pkt, len);
+			(void)acq_write(h, &aw, pkt, len);
 		nap_ms(h->gap_ms);
 	}
 
@@ -422,20 +448,23 @@ acquire(struct hid_be *h)
 	 */
 	if ((len = t150_enc_autocenter_force(pkt, sizeof(pkt),
 	    h->autocenter)) > 0) {
-		IOReturn ar = raw_write(h, pkt, len);
+		IOReturn ar = acq_write(h, &aw, pkt, len);
 
-		if (h->verbose)
-			fprintf(stderr, "t150d: wheel autocentre %s: %s\n",
+		if (h->verbose && ar == kIOReturnSuccess)
+			fprintf(stderr, "t150d: wheel autocentre %s: sent\n",
+			    h->autocenter == 0 ? "released" : "set");
+		else if (h->verbose)
+			fprintf(stderr, "t150d: wheel autocentre %s: the "
+			    "write failed: 0x%08x\n",
 			    h->autocenter == 0 ? "released" : "set",
-			    ar == kIOReturnSuccess ? "sent" :
-			    "the write failed");
+			    (unsigned int)ar);
 	}
 	nap_ms(h->gap_ms);
 
 	/* The force, then the flag, which is the order t150ctl uses. */
 	if ((len = t150_enc_autocenter_enable(pkt, sizeof(pkt),
 	    h->autocenter > 0)) > 0)
-		(void)raw_write(h, pkt, len);
+		(void)acq_write(h, &aw, pkt, len);
 	nap_ms(h->gap_ms);
 
 	/*
@@ -465,12 +494,14 @@ acquire(struct hid_be *h)
 	 * daemon itself is leaving.
 	 */
 	if ((len = t150_enc_input_close(pkt, sizeof(pkt))) > 0)
-		(void)raw_write(h, pkt, len);
+		(void)acq_write(h, &aw, pkt, len);
 	nap_ms(h->gap_ms);
 
 	if ((len = t150_enc_input_open(pkt, sizeof(pkt))) > 0 &&
-	    raw_write(h, pkt, len) != kIOReturnSuccess && h->verbose)
-		fprintf(stderr, "t150d: could not open the wheel's input\n");
+	    (r = acq_write(h, &aw, pkt, len)) != kIOReturnSuccess &&
+	    h->verbose)
+		fprintf(stderr, "t150d: could not open the wheel's input: "
+		    "0x%08x\n", (unsigned int)r);
 
 	/*
 	 * Say that the wheel is a new one as far as its contents go. The
@@ -483,9 +514,13 @@ acquire(struct hid_be *h)
 		h->be->epoch++;
 	h->last_boot = -1;
 
-	if (h->verbose)
+	if (h->verbose && aw.failed == 0)
 		fprintf(stderr, "t150d: wheel %04lx:%04lx open\n", h->vid,
 		    h->pid);
+	else if (h->verbose)
+		fprintf(stderr, "t150d: wheel %04lx:%04lx open, but it refused "
+		    "%d of %d setup writes, the first with 0x%08x\n", h->vid,
+		    h->pid, aw.failed, aw.sent, (unsigned int)aw.first);
 
 	return 0;
 }

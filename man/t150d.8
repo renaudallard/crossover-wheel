@@ -1,4 +1,4 @@
-.Dd August 19, 2026
+.Dd October 7, 2026
 .Dt T150D 8
 .Os
 .Sh NAME
@@ -348,6 +348,17 @@ it. A client that comes back afterwards says how many effects were put back,
 and each start that follows says why it was replayed: a client returning, a
 wheel that had been away and a packet that went missing are three different
 faults and the line named the second for all three.
+.Pp
+Taking the wheel writes a short setup: every slot stopped, the autocentre
+spring, the input closed and opened again. The line saying the wheel is open
+says how many of those writes it refused and the code of the first, and the
+autocentre and input open lines carry the code of their own failure. A wheel
+macOS refuses every write to reads differently from one that took them all,
+which it did not before:
+.Li 0xe00002c5
+is another process holding the wheel seized,
+.Li 0xe00002e2
+a session that is not the console user's.
 .El
 .Sh LOSING THE WHEEL
 A wheel unplugged while a game is running takes the mach port behind its
