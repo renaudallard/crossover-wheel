@@ -276,10 +276,9 @@ t150_client_call(uint8_t op, const void *payload, size_t len)
 
 	/*
 	 * A dead socket used to stay dead. t150_client_start is reachable only
-	 * from di_CreateDevice and di_EnumDevices, neither of which a game
-	 * calls again for a device it already holds, so restarting the daemon
-	 * under a running game cost that game its force feedback until it was
-	 * restarted too. The tester hit this on every comparison he ran for us.
+	 * from di_CreateDevice, which a game does not call again for a device
+	 * it already holds, so restarting the daemon under a running game cost
+	 * that game its force feedback until it was restarted too. The tester hit this on every comparison he ran for us.
 	 *
 	 * Rate limited, because reconnecting takes the wheel from whoever else
 	 * has it and a game that keeps asking must not turn that into a fight.
@@ -554,9 +553,10 @@ t150_client_start(void)
 	 * asked once by di_CreateDevice and the answer is never revisited: a
 	 * -1 hands the game the raw Wine device and there is no second
 	 * chance, so a limiter that happened to be closed at that moment cost
-	 * the whole session its force feedback. The keepalive's own failed
-	 * reconnect is enough to close it, and a daemon being restarted is
-	 * exactly when both happen together.
+	 * the whole session its force feedback. Any reconnect attempt in
+	 * t150_client_call closes it, and a daemon being restarted is exactly
+	 * when one happens: the keepalive drops the dead socket, and the
+	 * game's next call tries again.
 	 *
 	 * What the limiter was extended to here for was enumeration asking as
 	 * fast as it liked, and enumeration does not ask any more:
