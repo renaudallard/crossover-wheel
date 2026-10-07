@@ -589,21 +589,24 @@ main(void)
 	{
 		struct timespec settle = { 0, 300 * 1000 * 1000 };
 		uint64_t went_ms;
-		int good;
+		int good, mute;
 		size_t mark;
 
 		/*
-		 * Only one newcomer may be pending at a time, and the one
-		 * above has only just been closed. Let the daemon see that
-		 * before connecting, or this one is refused the slot and the
-		 * handover never happens.
+		 * Behind a connection that is waiting and says nothing. Only
+		 * one newcomer is held at a time, and the one held used to
+		 * keep its place for two seconds and turn the next away, so
+		 * a game creating the wheel then never got force feedback:
+		 * the proxy asks once. The silent one has to give way.
 		 */
+		if ((mute = connect_to(port)) == -1)
+			fail("cannot open a silent connection");
 		(void)nanosleep(&settle, NULL);
 
+		mark = strlen(logbuf);
 		if ((good = connect_to(port)) == -1)
 			fail("cannot open a third connection");
 
-		mark = strlen(logbuf);
 		if (send_frame(good, T150_OP_HELLO, (const uint8_t *)token,
 		    T150_TOKEN_LEN) != 0)
 			fail("cannot send the token on the new connection");
@@ -611,6 +614,7 @@ main(void)
 
 		if (wait_for_after(pipefd[0], "write 2: 42 04\n", mark) != 0)
 			fail("the newcomer did not open the wheel's input");
+		(void)close(mute);
 
 		/*
 		 * Drive something through the new session before judging the

@@ -47,8 +47,9 @@
 
 /*
  * How long a newcomer has to prove the token before it is dropped. It only
- * has to send one frame, so this is generous, and it bounds how long a
- * process that connects and says nothing can occupy the pending slot.
+ * has to send one frame, so this is generous. A process that connects and
+ * says nothing holds the pending slot only until the next connection, which
+ * takes it.
  */
 #define PEND_MS	2000
 
@@ -1027,7 +1028,24 @@ main(int argc, char *argv[])
 				if (verbose)
 					fprintf(stderr, "t150d: client "
 					    "connected from port %u\n", peer_port);
-			} else if (pfd_pend == -1) {
+			} else {
+				/*
+				 * A connection still waiting here has not
+				 * proved the token, so it has no claim on the
+				 * slot. It used to keep it for up to PEND_MS
+				 * and turn the next one away, and the proxy
+				 * asks once, when the game creates the wheel,
+				 * so a game turned away then had no force
+				 * feedback for the whole session.
+				 */
+				if (pfd_pend != -1) {
+					if (verbose)
+						fprintf(stderr, "t150d: port %u "
+						    "had not said hello, it "
+						    "gives way to port %u\n",
+						    psess.peer_port, peer_port);
+					(void)close(pfd_pend);
+				}
 				pfd_pend = nfd2;
 				phave = 0;
 				pend_deadline = now_ms() + PEND_MS;
@@ -1043,12 +1061,6 @@ main(int argc, char *argv[])
 					fprintf(stderr, "t150d: second client "
 					    "from port %u, waiting for the "
 					    "first to go\n", peer_port);
-			} else {
-				if (verbose)
-					fprintf(stderr, "t150d: turned away a "
-					    "client from port %u, two are "
-					    "already here\n", peer_port);
-				(void)close(nfd2);
 			}
 		}
 	}

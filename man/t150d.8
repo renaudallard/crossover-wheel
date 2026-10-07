@@ -57,7 +57,10 @@ is displacing have been stopped. A newcomer that does not authenticate within
 two seconds, or that sends anything other than a token, is dropped without the
 current client noticing: anything on the machine can reach loopback, and
 displacing on the connection alone would let any local process end a game's
-force feedback at will.
+force feedback at will. One newcomer waits at a time, and one that has not yet
+proved the token gives way to the next connection rather than turning it away:
+the proxy asks once, when the game creates the wheel, so a game turned away
+there would have no force feedback for the whole session.
 .Pp
 One daemon at a time per endpoint. Starting a second one against the same
 endpoint is refused rather than allowed to fight the first: acquiring the
